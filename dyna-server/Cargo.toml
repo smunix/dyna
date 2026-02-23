@@ -1,0 +1,30 @@
+[package]
+name = "dyna-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Remote server for the Dyna distributed CRUD system, built with elfo-rs actor model"
+
+[[bin]]
+name = "dyna-server"
+path = "src/main.rs"
+
+[dependencies]
+dyna-common = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+bytes = { workspace = true }
+axum = { workspace = true }
+object_store = { workspace = true }
+elfo = { version = "0.2.0-alpha.20", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
