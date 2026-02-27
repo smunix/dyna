@@ -30,10 +30,19 @@ pub enum Commands {
         directory: Option<PathBuf>,
     },
 
-    /// Stage a JSON resource file for the next commit.
+    /// Stage JSON resource file(s) for the next commit.
+    ///
+    /// Accepts a single JSON file or a directory. When a directory is given,
+    /// all `.json` files within it are staged recursively.
     Add {
-        /// Path to the JSON resource file to stage.
+        /// Path to a JSON file or directory to stage.
         path: PathBuf,
+
+        /// Recursively add all `.json` files in the given directory.
+        /// This flag is implied when a directory path is provided, but can be
+        /// used explicitly for clarity.
+        #[arg(short, long)]
+        recursive: bool,
     },
 
     /// Record staged changes as a new patch (changeset).
@@ -65,13 +74,26 @@ pub enum Commands {
         path: PathBuf,
     },
 
-    /// Switch to or create a channel (branch).
+    /// Manage channels (branches).
+    ///
+    /// Without flags, switches to the named channel. Use `--list` to list
+    /// channels, `--remote` to include remote channels, and `--create` to
+    /// create a new channel.
     Channel {
-        /// Name of the channel.
-        name: String,
+        /// Name of the channel (required unless --list is used).
+        name: Option<String>,
+
         /// Create the channel if it doesn't exist.
         #[arg(short, long)]
         create: bool,
+
+        /// List all channels instead of switching.
+        #[arg(short, long)]
+        list: bool,
+
+        /// When used with --list, also fetch and display remote channels.
+        #[arg(short, long)]
+        remote: bool,
     },
 
     /// Promote patches from the current channel to the main channel.
