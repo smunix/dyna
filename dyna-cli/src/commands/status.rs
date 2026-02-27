@@ -99,14 +99,14 @@ pub async fn execute() -> Result<()> {
     let (modified_unstaged, untracked): (Vec<String>, Vec<String>) = izip!(json_files)
         .filter(|json_path| {
             let abs_path = repo.work_dir.join(json_path);
-            let resource_id = Repository::resource_id_from_path(&abs_path);
+            let resource_id = repo.resource_id_from_path(&abs_path);
             !staged_resource_ids.contains(&resource_id) && !staged_file_paths.contains(json_path)
         })
         .fold(
             (Vec::new(), Vec::new()),
             |(mut modified, mut untracked), json_path| {
                 let abs_path = repo.work_dir.join(&json_path);
-                let resource_id = Repository::resource_id_from_path(&abs_path);
+                let resource_id = repo.resource_id_from_path(&abs_path);
 
                 snapshots
                     .get(&resource_id)

@@ -509,9 +509,14 @@ impl Repository {
     // Resource ID extraction
     // -----------------------------------------------------------------------
 
-    pub fn resource_id_from_path(path: &Path) -> String {
-        path.file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.display().to_string())
+    pub fn resource_id_from_path(&self, path: &Path) -> String {
+        path.canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .strip_prefix(&self.work_dir)
+            .or_else(|_| path.strip_prefix("."))
+            .unwrap_or(path)
+            .with_extension("")
+            .to_string_lossy()
+            .replace('/', ".")
     }
 }

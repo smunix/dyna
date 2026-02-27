@@ -37,7 +37,7 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
                 .is_absolute()
                 .then(|| filter_path.clone())
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(filter_path));
-            let filter_resource_id = Repository::resource_id_from_path(&abs_filter);
+            let filter_resource_id = repo.resource_id_from_path(&abs_filter);
 
             izip!(&staged)
                 .filter(|s| s.file_path == filter_str || s.resource_id == filter_resource_id)

@@ -12,7 +12,7 @@ use crate::repository::Repository;
 
 pub async fn execute(path: PathBuf) -> Result<()> {
     let repo = Repository::find_current()?;
-    let resource_id = Repository::resource_id_from_path(&path);
+    let resource_id = repo.resource_id_from_path(&path);
 
     let conflicts = repo.load_conflicts(&resource_id)?;
     if conflicts.is_empty() {

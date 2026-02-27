@@ -77,7 +77,7 @@ fn stage_single_file_verbose(repo: &Repository, abs_path: &Path, display_path: &
     let current: serde_json::Value =
         serde_json::from_str(&content).context("File is not valid JSON")?;
 
-    let resource_id = Repository::resource_id_from_path(abs_path);
+    let resource_id = repo.resource_id_from_path(abs_path);
     let previous = repo.load_snapshot(&resource_id)?;
 
     let operations = previous
@@ -119,7 +119,7 @@ fn stage_single_file(repo: &Repository, abs_path: &Path) -> Result<bool> {
     let current: serde_json::Value =
         serde_json::from_str(&content).context("File is not valid JSON")?;
 
-    let resource_id = Repository::resource_id_from_path(abs_path);
+    let resource_id = repo.resource_id_from_path(abs_path);
     let previous = repo.load_snapshot(&resource_id)?;
 
     let operations = previous
