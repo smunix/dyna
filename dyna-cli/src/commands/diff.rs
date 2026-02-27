@@ -9,7 +9,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use dyna_common::models::PatchOperation;
+use dyna_core::models::PatchOperation;
 use std::path::PathBuf;
 
 use crate::repository::Repository;

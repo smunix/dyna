@@ -5,8 +5,8 @@
 //! changeset references, and appends itself to the current channel.
 
 use anyhow::{Result, bail};
-use dyna_common::models::Changeset;
-use dyna_common::patch;
+use dyna_core::models::Changeset;
+use dyna_core::patch;
 
 use crate::repository::Repository;
 

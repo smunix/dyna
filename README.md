@@ -13,17 +13,16 @@ Dyna enables multiple users to concurrently edit a shared set of JSON resources 
 │   dyna CLI (local)  │  HTTP   │         dyna-server (remote)         │
 │                     │◄───────►│                                      │
 │  .dyna/             │  REST   │  ┌──────────────┐                    │
-│  ├── changesets/    │  API    │  │ API Gateway   │ (axum + elfo)     │
-│  ├── objects/       │         │  │ Actor         │                    │
-│  ├── snapshots/     │         │  └──────┬───────┘                    │
-│  ├── HEAD           │         │         │ elfo messages              │
-│  └── ...            │         │  ┌──────▼───────┐                    │
-│                     │         │  │ Changeset     │                    │
-│                     │         │  │ Manager Actor │ (business logic)  │
+│  ├── changesets/    │  API    │  │ API Actor     │ (axum + elfo)     │
+│  ├── objects/       │         │  └──────┬───────┘                    │
+│  ├── snapshots/     │         │         │ elfo messages              │
+│  ├── HEAD           │         │  ┌──────▼───────┐                    │
+│  └── ...            │         │  │ Changeset     │                    │
+│                     │         │  │ Actor         │ (business logic)  │
 │                     │         │  └──────┬───────┘                    │
 │                     │         │         │ elfo messages              │
 │                     │         │  ┌──────▼───────┐                    │
-│                     │         │  │ S3 Storage    │ (object_store)    │
+│                     │         │  │ Storage       │ (object_store)    │
 │                     │         │  │ Actor         │                    │
 │                     │         │  └──────┬───────┘                    │
 │                     │         │         │                            │

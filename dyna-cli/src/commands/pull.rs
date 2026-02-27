@@ -3,8 +3,8 @@
 //! Fetches remote changesets and merges them into the local state.
 
 use anyhow::Result;
-use dyna_common::diff;
-use dyna_common::protocol::PullRequest;
+use dyna_core::diff;
+use dyna_core::protocol::PullRequest;
 
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;

@@ -6,8 +6,8 @@
 //! - `dyna add <directory> --recursive` — explicit recursive flag (implied for dirs)
 
 use anyhow::{Context, Result, bail};
-use dyna_common::diff;
-use dyna_common::models::StagedChange;
+use dyna_core::diff;
+use dyna_core::models::StagedChange;
 use std::path::{Path, PathBuf};
 
 use crate::repository::Repository;
@@ -103,7 +103,7 @@ fn stage_single_file_verbose(repo: &Repository, abs_path: &Path, display_path: &
     // Compute diff operations
     let operations = match &previous {
         Some(prev) => diff::diff(prev, &current),
-        None => vec![dyna_common::models::PatchOperation::Add {
+        None => vec![dyna_core::models::PatchOperation::Add {
             path: "/".to_string(),
             value: current.clone(),
         }],
@@ -144,7 +144,7 @@ fn stage_single_file(repo: &Repository, abs_path: &Path) -> Result<bool> {
 
     let operations = match &previous {
         Some(prev) => diff::diff(prev, &current),
-        None => vec![dyna_common::models::PatchOperation::Add {
+        None => vec![dyna_core::models::PatchOperation::Add {
             path: "/".to_string(),
             value: current.clone(),
         }],

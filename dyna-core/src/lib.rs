@@ -1,4 +1,4 @@
-//! # dyna-common
+//! # dyna-core
 //!
 //! Shared types, data model, changeset engine, and protocol definitions for the
 //! Dyna distributed CRUD system. This crate is used by both the CLI client and

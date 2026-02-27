@@ -1,17 +1,17 @@
 //! Elfo message definitions for inter-actor communication.
 //!
 //! These messages define the typed protocol between the three actor groups:
-//! - **API Gateway → Changeset Manager**: `HandlePush`, `HandlePull`,
+//! - **API → Changeset**: `HandlePush`, `HandlePull`,
 //!   `HandleClone`, `HandlePromote`, `HandleGetChangeset`, `HandleListChannels`.
-//! - **Changeset Manager → S3 Storage**: `StoreChangeset`, `LoadChangeset`,
+//! - **Changeset → Storage**: `StoreChangeset`, `LoadChangeset`,
 //!   `StoreChannel`, `LoadChannel`, `ListChannels`.
 //!
 //! All messages use elfo's `#[message]` macro for automatic serialization
 //! and routing. The protocol is **changeset-centric**: push, pull, clone,
 //! and promote operations exchange [`Changeset`] objects.
 
-use dyna_common::models::{Changeset, Channel};
-use dyna_common::protocol::{
+use dyna_core::models::{Changeset, Channel};
+use dyna_core::protocol::{
     CloneResponse, CreateChannelResponse, ListChannelsResponse, PromoteResponse, PullResponse,
     PushResponse,
 };
@@ -118,7 +118,7 @@ pub enum LoadAllSnapshotsResult {
 }
 
 // ---------------------------------------------------------------------------
-// Changeset Manager Messages
+// Changeset Messages
 // ---------------------------------------------------------------------------
 
 /// Handle a push request from a client (changeset-based).
@@ -161,7 +161,7 @@ pub struct HandleCreateChannel {
 pub struct HandleListChannels;
 
 /// Handle a get changeset detail request.
-#[message(ret = dyna_common::protocol::GetChangesetResponse)]
+#[message(ret = dyna_core::protocol::GetChangesetResponse)]
 pub struct HandleGetChangeset {
     pub change_id: String,
 }

@@ -1,5 +1,5 @@
 [package]
-name = "dyna-common"
+name = "dyna-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

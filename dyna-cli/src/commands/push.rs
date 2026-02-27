@@ -3,7 +3,7 @@
 //! Pushes local changesets to the remote server.
 
 use anyhow::Result;
-use dyna_common::protocol::PushRequest;
+use dyna_core::protocol::PushRequest;
 
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;

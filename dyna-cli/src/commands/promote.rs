@@ -5,7 +5,7 @@
 
 use anyhow::{Result, bail};
 use colored::Colorize;
-use dyna_common::channel::promote_changesets;
+use dyna_core::channel::promote_changesets;
 
 use crate::repository::Repository;
 
@@ -69,7 +69,7 @@ pub async fn execute() -> Result<()> {
             if let Some(remote_url) = &config.remote_url {
                 println!("\nPushing promoted changesets to remote...");
                 let client = crate::sync_client::SyncClient::new(remote_url);
-                let request = dyna_common::protocol::PromoteRequest {
+                let request = dyna_core::protocol::PromoteRequest {
                     source_channel: current_name.clone(),
                     target_channel: "main".to_string(),
                 };

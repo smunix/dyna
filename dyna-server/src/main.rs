@@ -2,16 +2,16 @@
 //!
 //! This server uses the elfo-rs actor framework to manage three actor groups:
 //!
-//! - **API Gateway Actor**: Bridges HTTP (axum) with elfo message-passing.
+//! - **API Actor**: Bridges HTTP (axum) with elfo message-passing.
 //!   Exposes endpoints for push, pull, clone, promote, and changeset retrieval.
-//! - **Changeset Manager Actor**: Core business logic for validating, storing,
+//! - **Changeset Actor**: Core business logic for validating, storing,
 //!   and retrieving changesets. Handles channel management and promotion.
-//! - **S3 Storage Actor**: Encapsulates all S3 I/O via the `object_store` crate.
+//! - **Storage Actor**: Encapsulates all S3 I/O via the `object_store` crate.
 //!   Stores changesets, patches, channels, and snapshots.
 //!
 //! The actors communicate via elfo's typed message-passing system, providing
 //! fault isolation and clean separation of concerns. The topology is:
-//! `API Gateway → Changeset Manager → S3 Storage`.
+//! `API → Changeset → Storage`.
 
 mod actors;
 mod messages;
@@ -29,19 +29,19 @@ fn topology(bind_addr: String, store: Arc<dyn object_store::ObjectStore>) -> elf
     let configurers = topology.local("system.configurers").entrypoint();
 
     // Application actors
-    let api_gateway = topology.local("api_gateway");
-    let changeset_manager = topology.local("changeset_manager");
+    let api = topology.local("api");
+    let changeset = topology.local("changeset");
     let storage = topology.local("storage");
 
     // Define message routing:
-    // API Gateway -> Changeset Manager (for business logic)
-    api_gateway.route_all_to(&changeset_manager);
-    // Changeset Manager -> Storage (for S3 I/O)
-    changeset_manager.route_all_to(&storage);
+    // API -> Changeset (for business logic)
+    api.route_all_to(&changeset);
+    // Changeset -> Storage (for S3 I/O)
+    changeset.route_all_to(&storage);
 
     // Mount actor implementations
-    api_gateway.mount(actors::api_gateway::new(bind_addr));
-    changeset_manager.mount(actors::changeset_manager::new());
+    api.mount(actors::api::new(bind_addr));
+    changeset.mount(actors::changeset::new());
     storage.mount(actors::storage::new(store));
     loggers.mount(logger);
 

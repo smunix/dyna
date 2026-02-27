@@ -10,7 +10,7 @@
 
 use anyhow::{Result, bail};
 use colored::Colorize;
-use dyna_common::models::{Changeset, PatchOperation};
+use dyna_core::models::{Changeset, PatchOperation};
 
 use crate::repository::Repository;
 

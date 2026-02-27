@@ -11,7 +11,7 @@ name = "dyna-server"
 path = "src/main.rs"
 
 [dependencies]
-dyna-common = { workspace = true }
+dyna-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

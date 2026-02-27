@@ -521,7 +521,7 @@ dependencies = [
  "console",
  "dialoguer",
  "dirs",
- "dyna-common",
+ "dyna-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -535,7 +535,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dyna-common"
+name = "dyna-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -557,7 +557,7 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
- "dyna-common",
+ "dyna-core",
  "elfo",
  "futures",
  "object_store",

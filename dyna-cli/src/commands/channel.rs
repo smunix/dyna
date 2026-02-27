@@ -13,7 +13,7 @@
 
 use anyhow::{Result, bail};
 use colored::Colorize;
-use dyna_common::diff;
+use dyna_core::diff;
 
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;

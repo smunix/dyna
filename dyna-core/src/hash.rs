@@ -11,7 +11,7 @@ use sha2::{Sha256, Digest};
 ///
 /// # Example
 /// ```
-/// let hash = dyna_common::hash::sha256_hex(b"hello world");
+/// let hash = dyna_core::hash::sha256_hex(b"hello world");
 /// assert_eq!(hash.len(), 64); // 256 bits = 64 hex chars
 /// ```
 pub fn sha256_hex(data: &[u8]) -> String {

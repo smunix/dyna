@@ -1,4 +1,4 @@
-//! Changeset Manager Actor — core business logic for the Dyna server.
+//! Changeset Actor — core business logic for the Dyna server.
 //!
 //! This elfo actor is the central coordinator for all changeset operations:
 //! - **Push**: Validates incoming changesets, appends them to the target channel,
@@ -12,21 +12,21 @@
 //! The actor maintains an in-memory cache of channels and changesets, backed
 //! by the S3 Storage Actor for persistence.
 
-use dyna_common::channel::promote_changesets;
-use dyna_common::diff;
-use dyna_common::models::{Changeset, Channel};
-use dyna_common::protocol::*;
+use dyna_core::channel::promote_changesets;
+use dyna_core::diff;
+use dyna_core::models::{Changeset, Channel};
+use dyna_core::protocol::*;
 use elfo::prelude::*;
 
 use crate::messages::*;
 
-/// Create the Changeset Manager actor blueprint.
+/// Create the Changeset actor blueprint.
 pub fn new() -> Blueprint {
-    ActorGroup::new().exec(changeset_manager)
+    ActorGroup::new().exec(changeset_actor)
 }
 
-async fn changeset_manager(mut ctx: Context) {
-    tracing::info!("Changeset Manager actor started");
+async fn changeset_actor(mut ctx: Context) {
+    tracing::info!("Changeset actor started");
 
     // Ensure the default "main" channel exists on startup.
     ensure_main_channel(&ctx).await;
@@ -91,7 +91,7 @@ async fn changeset_manager(mut ctx: Context) {
         });
     }
 
-    tracing::info!("Changeset Manager actor stopped");
+    tracing::info!("Changeset actor stopped");
 }
 
 /// Ensure the "main" channel exists in storage.

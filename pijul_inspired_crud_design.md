@@ -85,7 +85,7 @@ The data model is the cornerstone of the system, designed to ensure data integri
 The `Changeset` is the central data structure. It groups a set of patches that were committed together.
 
 ```rust
-// dyna-common/src/models.rs
+// dyna-core/src/models.rs
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Changeset {
     /// Stable, unique identifier for the changeset (16-char hex).
@@ -118,7 +118,7 @@ pub struct Changeset {
 A `Patch` represents a set of operations applied to a single JSON resource. It is now a simpler structure, as metadata is managed by the parent `Changeset`.
 
 ```rust
-// dyna-common/src/models.rs
+// dyna-core/src/models.rs
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Patch {
     /// Content-addressed hash of the patch (SHA-256).
@@ -243,9 +243,9 @@ The actor hierarchy remains the same, but the messages now carry changesets.
 
 | Actor Group | Responsibility | Key Messages Handled |
 | :--- | :--- | :--- |
-| **`ApiGateway`** | Handles HTTP requests. | `HandlePush`, `HandlePull`, `HandleClone`, `HandleGetChangeset` |
-| **`ChangesetManager`** | Validates and stores incoming changesets. | `ValidateChangeset`, `UpdateChannelHead`, `GetChannelHistory` |
-| **`S3StorageActor`** | Encapsulates S3 interactions. | `StoreChangeset`, `LoadChangeset`, `StorePatch`, `LoadPatch` |
+| **`Api`** | Handles HTTP requests. | `HandlePush`, `HandlePull`, `HandleClone`, `HandleGetChangeset` |
+| **`Changeset`** | Validates and stores incoming changesets. | `ValidateChangeset`, `UpdateChannelHead`, `GetChannelHistory` |
+| **`Storage`** | Encapsulates S3 interactions. | `StoreChangeset`, `LoadChangeset`, `StorePatch`, `LoadPatch` |
 
 ### 6.2. API Endpoints
 

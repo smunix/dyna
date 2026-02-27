@@ -1,4 +1,4 @@
-//! API Gateway Actor — HTTP bridge between CLI clients and the elfo actor system.
+//! API Actor — HTTP bridge between CLI clients and the elfo actor system.
 //!
 //! This actor bridges the HTTP layer (axum) with the elfo message-passing
 //! system. It exposes the following REST endpoints:
@@ -13,7 +13,7 @@
 //! | `GET`  | `/api/v1/channels` | List all channels |
 //! | `GET`  | `/api/v1/changesets/:id` | Fetch a single changeset |
 //!
-//! Requests are translated into elfo messages sent to the Changeset Manager
+//! Requests are translated into elfo messages sent to the Changeset
 //! actor via `tokio::sync::mpsc` channels, and responses are awaited via
 //! `tokio::sync::oneshot`.
 
@@ -24,7 +24,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use dyna_common::protocol::*;
+use dyna_core::protocol::*;
 use elfo::prelude::*;
 use tokio::sync::{mpsc, oneshot};
 
@@ -70,12 +70,12 @@ pub enum ApiRequest {
     },
 }
 
-/// Create the API Gateway actor blueprint.
+/// Create the API actor blueprint.
 pub fn new(bind_addr: String) -> Blueprint {
     ActorGroup::new().exec(move |mut ctx| {
         let bind_addr = bind_addr.clone();
         async move {
-            tracing::info!(addr = %bind_addr, "API Gateway actor starting");
+            tracing::info!(addr = %bind_addr, "API actor starting");
 
             let (request_tx, mut request_rx) = mpsc::channel::<ApiRequest>(256);
 
@@ -102,7 +102,7 @@ pub fn new(bind_addr: String) -> Blueprint {
                         match envelope {
                             Some(_envelope) => {}
                             None => {
-                                tracing::info!("API Gateway actor mailbox closed, shutting down");
+                                tracing::info!("API actor mailbox closed, shutting down");
                                 break;
                             }
                         }
@@ -140,7 +140,7 @@ pub fn new(bind_addr: String) -> Blueprint {
                                     Err(_) => PullResponse {
                                         changesets: vec![],
                                         current_head: None,
-                                        channel: dyna_common::models::Channel::new("error"),
+                                        channel: dyna_core::models::Channel::new("error"),
                                     },
                                 };
                                 let _ = reply.send(response);
@@ -190,7 +190,7 @@ pub fn new(bind_addr: String) -> Blueprint {
                                     Ok(r) => r,
                                     Err(e) => CreateChannelResponse {
                                         success: false,
-                                        channel: dyna_common::models::Channel::new("error"),
+                                        channel: dyna_core::models::Channel::new("error"),
                                         error: Some(format!("Internal error: {}", e)),
                                     },
                                 };

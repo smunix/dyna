@@ -99,11 +99,11 @@ pub async fn execute(path: PathBuf) -> Result<()> {
     repo.clear_conflicts(&resource_id)?;
 
     // Auto-stage the resolution
-    let operations = dyna_common::diff::diff(
+    let operations = dyna_core::diff::diff(
         &conflicts.first().map(|c| c.local_value.clone()).unwrap_or_default(),
         &snapshot,
     );
-    let staged = dyna_common::models::StagedChange {
+    let staged = dyna_core::models::StagedChange {
         resource_id: resource_id.clone(),
         file_path: path.display().to_string(),
         previous: repo.load_snapshot(&resource_id).ok().flatten(),

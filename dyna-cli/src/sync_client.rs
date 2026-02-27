@@ -8,7 +8,7 @@
 //! consistent with the Jujutsu-inspired changeset-centric model.
 
 use anyhow::{Context, Result, bail};
-use dyna_common::protocol::*;
+use dyna_core::protocol::*;
 use reqwest::Client;
 
 /// Client for interacting with the Dyna remote server.

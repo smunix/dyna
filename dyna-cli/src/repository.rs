@@ -29,8 +29,8 @@
 //!   channel's changeset history.
 
 use anyhow::{Context, Result, bail};
-use dyna_common::error::DynaError;
-use dyna_common::models::*;
+use dyna_core::error::DynaError;
+use dyna_core::models::*;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -318,7 +318,7 @@ impl Repository {
     // -----------------------------------------------------------------------
 
     pub fn store_patch(&self, patch: &Patch) -> Result<()> {
-        let hex = dyna_common::hash::strip_prefix(&patch.hash);
+        let hex = dyna_core::hash::strip_prefix(&patch.hash);
         let path = self.dyna_dir.join(format!("patches/{}.json", hex));
         let json = serde_json::to_string_pretty(patch)?;
         fs::write(path, json)?;
@@ -326,7 +326,7 @@ impl Repository {
     }
 
     pub fn load_patch(&self, hash: &str) -> Result<Patch> {
-        let hex = dyna_common::hash::strip_prefix(hash);
+        let hex = dyna_core::hash::strip_prefix(hash);
         let path = self.dyna_dir.join(format!("patches/{}.json", hex));
         if !path.exists() {
             bail!(DynaError::PatchNotFound(hash.to_string()));

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "dyna-common",
+    "dyna-core",
     "dyna-cli",
     "dyna-server",
 ]
@@ -52,4 +52,4 @@ reqwest = { version = "0.12", features = ["json"] }
 object_store = { version = "0.11", features = ["aws"] }
 
 # Internal crates
-dyna-common = { path = "dyna-common" }
+dyna-core = { path = "dyna-core" }

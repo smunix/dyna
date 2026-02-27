@@ -1,7 +1,7 @@
 //! Shared error types for the Dyna distributed CRUD system.
 //!
 //! Defines [`DynaError`] with variants for resource, patch, changeset, channel,
-//! conflict, and storage errors. All fallible functions in `dyna-common` return
+//! conflict, and storage errors. All fallible functions in `dyna-core` return
 //! [`DynaResult<T>`].
 
 use thiserror::Error;

@@ -3,7 +3,7 @@
 //! Clones a repository from a remote server, fetching all changesets.
 
 use anyhow::{Context, Result};
-use dyna_common::protocol::CloneRequest;
+use dyna_core::protocol::CloneRequest;
 use std::path::PathBuf;
 
 use crate::repository::Repository;
