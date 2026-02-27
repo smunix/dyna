@@ -61,11 +61,31 @@ pub enum Commands {
     /// Show the working directory and staging area status.
     Status,
 
+    /// Show detailed diffs (operations) for staged files.
+    ///
+    /// Without arguments, shows diffs for all staged files. Optionally
+    /// specify a file path to filter to a single resource.
+    Diff {
+        /// Optional: path to a specific staged file to diff.
+        path: Option<PathBuf>,
+    },
+
     /// Display the patch history for the current channel.
+    ///
+    /// Use `--verbose` to include detailed operations for each patch, or
+    /// `--patch <hash>` to inspect a single patch in full detail.
     Log {
         /// Number of recent patches to display.
         #[arg(short = 'n', long, default_value = "20")]
         count: usize,
+
+        /// Show detailed operations for each patch in the log.
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Show full detail for a specific patch by its hash (or hash prefix).
+        #[arg(short, long)]
+        patch: Option<String>,
     },
 
     /// Interactively resolve conflicts for a resource.
@@ -79,6 +99,10 @@ pub enum Commands {
     /// Without flags, switches to the named channel. Use `--list` to list
     /// channels, `--remote` to include remote channels, and `--create` to
     /// create a new channel.
+    ///
+    /// Switching is blocked if there are staged but uncommitted files.
+    /// On switch, the working directory is cleaned and repopulated with
+    /// the target channel's committed resource state.
     Channel {
         /// Name of the channel (required unless --list is used).
         name: Option<String>,

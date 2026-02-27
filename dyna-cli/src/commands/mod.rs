@@ -10,4 +10,5 @@ pub mod status;
 pub mod log;
 pub mod resolve;
 pub mod channel;
+pub mod diff;
 pub mod promote;

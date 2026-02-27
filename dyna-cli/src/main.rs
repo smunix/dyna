@@ -30,7 +30,12 @@ async fn main() -> anyhow::Result<()> {
         Commands::Push => commands::push::execute().await,
         Commands::Pull => commands::pull::execute().await,
         Commands::Status => commands::status::execute().await,
-        Commands::Log { count } => commands::log::execute(count).await,
+        Commands::Diff { path } => commands::diff::execute(path).await,
+        Commands::Log {
+            count,
+            verbose,
+            patch,
+        } => commands::log::execute(count, verbose, patch).await,
         Commands::Resolve { path } => commands::resolve::execute(path).await,
         Commands::Channel {
             name,
