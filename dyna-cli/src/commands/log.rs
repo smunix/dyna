@@ -1,246 +1,332 @@
 //! `dyna log` command implementation.
 //!
-//! Supports:
-//! - `dyna log` — show recent patch history (summary)
-//! - `dyna log --verbose` — show patch history with detailed operations
-//! - `dyna log --patch <hash>` — show detailed operations for a specific patch
+//! Displays the changeset history for the current channel. Changesets are
+//! the primary log unit (not individual patches).
+//!
+//! Options:
+//!   --verbose:     show patches and operations within each changeset
+//!   --changeset:   inspect a single changeset in full detail
+//!   --patches:     when used with --changeset, show detailed operations
 
 use anyhow::{Result, bail};
 use colored::Colorize;
-use dyna_common::models::PatchOperation;
+use dyna_common::models::{Changeset, PatchOperation};
 
 use crate::repository::Repository;
 
-pub async fn execute(count: usize, verbose: bool, patch_id: Option<String>) -> Result<()> {
+pub async fn execute(
+    count: usize,
+    verbose: bool,
+    changeset_id: Option<String>,
+    show_patches: bool,
+) -> Result<()> {
     let repo = Repository::find_current()?;
+    let channel_name = repo.current_channel_name()?;
 
-    // ------------------------------------------------------------------
-    // Single patch detail mode: `dyna log --patch <hash>`
-    // ------------------------------------------------------------------
-    if let Some(ref id) = patch_id {
-        return show_patch_detail(&repo, id);
+    // --changeset <id>: show a single changeset in detail
+    if let Some(id_or_prefix) = changeset_id {
+        return show_single_changeset(&repo, &id_or_prefix, show_patches);
     }
 
-    // ------------------------------------------------------------------
-    // Channel log mode: `dyna log [-n N] [--verbose]`
-    // ------------------------------------------------------------------
-    let channel_name = repo.current_channel_name()?;
-    let channel = repo.load_channel(&channel_name)?;
+    // Load all changesets for the current channel
+    let changesets = repo.load_channel_changesets(&channel_name)?;
 
-    if channel.patches.is_empty() {
-        println!("No patches on channel '{}'.", channel_name);
+    if changesets.is_empty() {
+        println!("No changesets in channel '{}'.", channel_name);
         return Ok(());
     }
 
+    let working_change = repo.working_change_id()?;
+
     println!(
-        "Patch history for channel '{}' (showing last {}):\n",
+        "Channel '{}' — {} changeset(s)\n",
         channel_name.bold().cyan(),
-        count
+        changesets.len()
     );
 
-    // Show patches in reverse order (most recent first)
-    let patches_to_show: Vec<_> = channel.patches.iter().rev().take(count).collect();
+    // Show the most recent `count` changesets (newest first)
+    let start = if changesets.len() > count {
+        changesets.len() - count
+    } else {
+        0
+    };
 
-    for (i, hash) in patches_to_show.iter().enumerate() {
-        match repo.load_patch(hash) {
-            Ok(patch) => {
-                let short_hash = &patch.hash[..std::cmp::min(patch.hash.len(), 19)];
-                let is_head = i == 0;
+    for cs in changesets[start..].iter().rev() {
+        print_changeset_summary(cs, &working_change);
 
-                if is_head {
-                    print!("{} ", "HEAD ->".bold().green());
-                } else {
-                    print!("       ");
-                }
-
-                println!("{}", short_hash.yellow());
-                println!("       Author:   {}", patch.author);
-                println!(
-                    "       Date:     {}",
-                    patch.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
-                );
-                println!("       Resource: {}", patch.target_resource);
-                println!("       Message:  {}", patch.message);
-
-                if !patch.dependencies.is_empty() {
-                    let deps: Vec<String> = patch
-                        .dependencies
-                        .iter()
-                        .map(|d| d[..std::cmp::min(d.len(), 15)].to_string())
-                        .collect();
-                    println!("       Deps:    [{}]", deps.join(", "));
-                }
-
-                println!(
-                    "       Ops:      {} operation(s)",
-                    patch.operations.len()
-                );
-
-                // Verbose mode: print detailed operations
-                if verbose {
-                    println!();
-                    for (op_idx, op) in patch.operations.iter().enumerate() {
-                        print_operation(op_idx + 1, op, 15);
-                    }
-                }
-
-                println!();
-            }
-            Err(_) => {
-                println!("  {} (patch data not available locally)", hash.dimmed());
-                println!();
-            }
+        if verbose {
+            print_changeset_patches(cs);
         }
+
+        println!();
     }
 
-    let total = channel.patches.len();
-    if total > count {
+    if start > 0 {
         println!(
-            "... and {} more patch(es). Use '-n {}' to see all.",
-            total - count,
-            total
+            "  ... {} earlier changeset(s) not shown (use -n to show more)",
+            start
         );
     }
 
     if !verbose {
         println!(
             "{}",
-            "Hint: Use 'dyna log --verbose' to see detailed operations for each patch.".dimmed()
+            "Hint: Use 'dyna log --verbose' to see patches and operations.".dimmed()
+        );
+        println!(
+            "{}",
+            "      Use 'dyna log --changeset <id>' to inspect a single changeset.".dimmed()
         );
     }
 
     Ok(())
 }
 
-/// Show detailed information for a single patch, identified by its hash or
-/// a prefix of its hash.
-fn show_patch_detail(repo: &Repository, patch_id: &str) -> Result<()> {
-    // Try to find the patch by exact hash or prefix match
-    let patch = match repo.load_patch(patch_id) {
-        Ok(p) => p,
+/// Print a summary of a changeset, with DAG indicators.
+fn print_changeset_summary(cs: &Changeset, working_change: &Option<String>) {
+    let is_working = working_change
+        .as_ref()
+        .map_or(false, |wc| wc == &cs.change_id);
+
+    let marker = if is_working {
+        "@".bold().green().to_string()
+    } else {
+        "○".to_string()
+    };
+
+    let immutable_flag = if cs.immutable {
+        " [immutable]".dimmed().to_string()
+    } else {
+        String::new()
+    };
+
+    let empty_flag = if cs.empty {
+        " (empty)".dimmed().to_string()
+    } else {
+        String::new()
+    };
+
+    // Bookmarks
+    let bookmarks = if cs.bookmarks.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", cs.bookmarks.join(" ").magenta())
+    };
+
+    println!(
+        "{}  {} {} {} {}{}{}{}",
+        marker,
+        cs.short_change_id().yellow().bold(),
+        cs.author.cyan(),
+        cs.created_at.format("%Y-%m-%d %H:%M:%S"),
+        cs.short_commit_hash(),
+        bookmarks,
+        immutable_flag,
+        empty_flag,
+    );
+
+    // Message
+    if !cs.message.is_empty() {
+        println!("│  {}", cs.message);
+    } else {
+        println!("│  {}", "(no description set)".dimmed());
+    }
+
+    // Resources affected
+    let resources = cs.affected_resources();
+    if !resources.is_empty() {
+        println!(
+            "│  {} resource(s): {}",
+            resources.len(),
+            resources.join(", ").dimmed()
+        );
+    }
+
+    // Parents
+    if !cs.parents.is_empty() {
+        let parent_strs: Vec<String> = cs
+            .parents
+            .iter()
+            .map(|p| p[..std::cmp::min(p.len(), 8)].to_string())
+            .collect();
+        println!("│  parent(s): {}", parent_strs.join(", ").dimmed());
+    }
+}
+
+/// Print the patches within a changeset (verbose mode).
+fn print_changeset_patches(cs: &Changeset) {
+    if cs.patches.is_empty() {
+        return;
+    }
+
+    println!(
+        "│  ── {} patch(es), {} operation(s) ──",
+        cs.patches.len(),
+        cs.total_operations()
+    );
+
+    for (i, patch) in cs.patches.iter().enumerate() {
+        let short_hash = &patch.hash[7..std::cmp::min(patch.hash.len(), 19)];
+        println!(
+            "│  patch {}: [{}] {} ({} ops)",
+            (i + 1).to_string().dimmed(),
+            short_hash.yellow(),
+            patch.target_resource.bold(),
+            patch.operations.len()
+        );
+
+        for (op_idx, op) in patch.operations.iter().enumerate() {
+            print_operation(op_idx + 1, op, "│    ");
+        }
+    }
+}
+
+/// Show a single changeset in full detail.
+fn show_single_changeset(
+    repo: &Repository,
+    id_or_prefix: &str,
+    show_patches: bool,
+) -> Result<()> {
+    // Try exact match first
+    let cs = match repo.load_changeset(id_or_prefix) {
+        Ok(cs) => cs,
         Err(_) => {
-            // Try prefix matching against all known patches
-            match find_patch_by_prefix(repo, patch_id)? {
-                Some(p) => p,
-                None => {
-                    bail!(
-                        "Patch '{}' not found. Use 'dyna log' to list available patches.",
-                        patch_id
+            // Try prefix match
+            let matches = repo.find_changeset_by_prefix(id_or_prefix)?;
+            match matches.len() {
+                0 => bail!("No changeset found matching '{}'", id_or_prefix),
+                1 => matches.into_iter().next().unwrap(),
+                n => {
+                    println!(
+                        "{} Ambiguous prefix '{}' matches {} changesets:",
+                        "warning:".yellow().bold(),
+                        id_or_prefix,
+                        n
                     );
+                    for m in &matches {
+                        println!("  {} - {}", m.short_change_id(), m.message);
+                    }
+                    bail!("Please provide a longer prefix to disambiguate.");
                 }
             }
         }
     };
 
-    // Full header
     println!("{}", "═".repeat(72).dimmed());
-    println!("Patch {}", patch.hash.yellow().bold());
+    println!("{}", "Changeset Detail".bold());
     println!("{}", "═".repeat(72).dimmed());
-    println!("  Author:   {}", patch.author);
+    println!("  change_id:   {}", cs.change_id.yellow().bold());
+    println!("  commit_hash: {}", cs.commit_hash);
+    println!("  author:      {}", cs.author.cyan());
     println!(
-        "  Date:     {}",
-        patch.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+        "  created:     {}",
+        cs.created_at.format("%Y-%m-%d %H:%M:%S")
     );
-    println!("  Resource: {}", patch.target_resource.bold());
-    println!("  Message:  {}", patch.message);
+    println!(
+        "  updated:     {}",
+        cs.updated_at.format("%Y-%m-%d %H:%M:%S")
+    );
+    println!("  immutable:   {}", cs.immutable);
+    println!("  empty:       {}", cs.empty);
 
-    if !patch.dependencies.is_empty() {
-        println!("\n  {}:", "Dependencies".underline());
-        for dep in &patch.dependencies {
-            println!("    {}", dep.dimmed());
+    if !cs.message.is_empty() {
+        println!("  message:     {}", cs.message);
+    } else {
+        println!("  message:     {}", "(no description set)".dimmed());
+    }
+
+    if cs.parents.is_empty() {
+        println!("  parents:     {}", "(root changeset)".dimmed());
+    } else {
+        for (i, parent) in cs.parents.iter().enumerate() {
+            println!("  parent[{}]:   {}", i, parent);
         }
     }
 
-    // Operations
+    if !cs.bookmarks.is_empty() {
+        println!("  bookmarks:   {}", cs.bookmarks.join(", ").magenta());
+    }
+
+    let resources = cs.affected_resources();
     println!(
-        "\n  {} ({}):",
-        "Operations".underline().bold(),
-        format!("{} total", patch.operations.len()).dimmed()
+        "\n  Resources affected: {} ({})",
+        resources.len(),
+        resources.join(", ")
     );
-    println!();
 
-    for (op_idx, op) in patch.operations.iter().enumerate() {
-        print_operation(op_idx + 1, op, 4);
+    println!(
+        "  Patches: {} ({} total operations)",
+        cs.patches.len(),
+        cs.total_operations()
+    );
+
+    // Always list patches
+    println!("\n  {}:", "Patches in this changeset".underline().bold());
+    for (i, patch) in cs.patches.iter().enumerate() {
+        let short_hash = &patch.hash[7..std::cmp::min(patch.hash.len(), 19)];
+        println!(
+            "    {}. [{}] {} — {} operation(s)",
+            i + 1,
+            short_hash.yellow(),
+            patch.target_resource.bold(),
+            patch.operations.len()
+        );
+
+        // If --patches flag, show detailed operations
+        if show_patches {
+            if let Some(ref parent) = patch.parent_snapshot {
+                println!(
+                    "       {}: {}",
+                    "parent snapshot".dimmed(),
+                    truncate_json(parent, 80)
+                );
+            }
+            if let Some(ref result) = patch.result_snapshot {
+                println!(
+                    "       {}: {}",
+                    "result snapshot".dimmed(),
+                    truncate_json(result, 80)
+                );
+            }
+
+            for (op_idx, op) in patch.operations.iter().enumerate() {
+                print_operation(op_idx + 1, op, "       ");
+            }
+        }
     }
 
-    // Parent and result snapshots
-    if let Some(ref parent) = patch.parent_snapshot {
-        println!("\n  {}:", "Parent snapshot".underline());
-        print_value_indented(parent, 4);
+    // Verify integrity
+    if cs.verify() {
+        println!("\n  Integrity: {}", "VALID".green().bold());
+    } else {
+        println!(
+            "\n  Integrity: {}",
+            "INVALID (commit hash mismatch!)".red().bold()
+        );
     }
 
-    if let Some(ref result) = patch.result_snapshot {
-        println!("\n  {}:", "Result snapshot".underline());
-        print_value_indented(result, 4);
-    }
-
-    println!("\n{}", "═".repeat(72).dimmed());
+    println!("{}", "═".repeat(72).dimmed());
 
     Ok(())
 }
 
-/// Find a patch by hash prefix. Searches all locally stored patches.
-fn find_patch_by_prefix(
-    repo: &Repository,
-    prefix: &str,
-) -> Result<Option<dyna_common::models::Patch>> {
-    let channel_name = repo.current_channel_name()?;
-    let channel = repo.load_channel(&channel_name)?;
-
-    // Normalize: allow users to omit the "sha256:" prefix
-    let search_prefix = if prefix.starts_with("sha256:") {
-        prefix.to_string()
-    } else {
-        format!("sha256:{}", prefix)
-    };
-
-    let mut matches = Vec::new();
-    for hash in &channel.patches {
-        if hash.starts_with(&search_prefix) {
-            if let Ok(patch) = repo.load_patch(hash) {
-                matches.push(patch);
-            }
-        }
-    }
-
-    match matches.len() {
-        0 => Ok(None),
-        1 => Ok(Some(matches.into_iter().next().unwrap())),
-        n => {
-            eprintln!(
-                "{} Ambiguous patch prefix '{}' matches {} patches:",
-                "warning:".yellow().bold(),
-                prefix,
-                n
-            );
-            for m in &matches {
-                eprintln!("  {}", m.hash);
-            }
-            eprintln!("Please provide a longer prefix to disambiguate.");
-            Ok(None)
-        }
-    }
-}
-
 /// Print a single patch operation with formatting.
-fn print_operation(index: usize, op: &PatchOperation, indent: usize) {
-    let pad = " ".repeat(indent);
+fn print_operation(index: usize, op: &PatchOperation, prefix: &str) {
     match op {
         PatchOperation::Add { path, value } => {
             println!(
-                "{}{}. {} {} {}",
-                pad,
+                "{}{}. {} {} = {}",
+                prefix,
                 index.to_string().dimmed(),
                 "ADD".green().bold(),
                 path.bold(),
-                "=".dimmed()
+                truncate_json(value, 60)
             );
-            print_value_indented(value, indent + 4);
         }
         PatchOperation::Remove { path } => {
             println!(
                 "{}{}. {} {}",
-                pad,
+                prefix,
                 index.to_string().dimmed(),
                 "REMOVE".red().bold(),
                 path.bold()
@@ -248,56 +334,53 @@ fn print_operation(index: usize, op: &PatchOperation, indent: usize) {
         }
         PatchOperation::Replace { path, value } => {
             println!(
-                "{}{}. {} {} {}",
-                pad,
+                "{}{}. {} {} = {}",
+                prefix,
                 index.to_string().dimmed(),
                 "REPLACE".yellow().bold(),
                 path.bold(),
-                "=".dimmed()
+                truncate_json(value, 60)
             );
-            print_value_indented(value, indent + 4);
         }
         PatchOperation::Move { from, path } => {
             println!(
-                "{}{}. {} {} {} {}",
-                pad,
+                "{}{}. {} {} -> {}",
+                prefix,
                 index.to_string().dimmed(),
                 "MOVE".blue().bold(),
                 from.bold(),
-                "->".dimmed(),
                 path.bold()
             );
         }
         PatchOperation::Copy { from, path } => {
             println!(
-                "{}{}. {} {} {} {}",
-                pad,
+                "{}{}. {} {} -> {}",
+                prefix,
                 index.to_string().dimmed(),
                 "COPY".blue().bold(),
                 from.bold(),
-                "->".dimmed(),
                 path.bold()
             );
         }
         PatchOperation::Test { path, value } => {
             println!(
-                "{}{}. {} {} {}",
-                pad,
+                "{}{}. {} {} == {}",
+                prefix,
                 index.to_string().dimmed(),
                 "TEST".magenta().bold(),
                 path.bold(),
-                "==".dimmed()
+                truncate_json(value, 60)
             );
-            print_value_indented(value, indent + 4);
         }
     }
 }
 
-/// Print a JSON value with indentation.
-fn print_value_indented(value: &serde_json::Value, indent: usize) {
-    let formatted = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
-    let prefix = " ".repeat(indent);
-    for line in formatted.lines() {
-        println!("{}{}", prefix, line);
+/// Truncate a JSON value for display.
+fn truncate_json(value: &serde_json::Value, max_len: usize) -> String {
+    let s = serde_json::to_string(value).unwrap_or_else(|_| "???".into());
+    if s.len() > max_len {
+        format!("{}...", &s[..max_len])
+    } else {
+        s
     }
 }

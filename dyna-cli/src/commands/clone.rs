@@ -1,4 +1,6 @@
 //! `dyna clone` command implementation.
+//!
+//! Clones a repository from a remote server, fetching all changesets.
 
 use anyhow::{Context, Result};
 use dyna_common::protocol::CloneRequest;
@@ -8,11 +10,9 @@ use crate::repository::Repository;
 use crate::sync_client::SyncClient;
 
 pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
-    // Determine the target directory
     let target_dir = match directory {
         Some(d) => d,
         None => {
-            // Extract a directory name from the URL
             let name = url
                 .trim_end_matches('/')
                 .rsplit('/')
@@ -28,7 +28,6 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
 
     println!("Cloning from {} into {}...", url, target_dir.display());
 
-    // Create the directory and initialize
     std::fs::create_dir_all(&target_dir)?;
     let repo = Repository::init(&target_dir)?;
 
@@ -44,11 +43,11 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
         .await
         .context("Failed to clone from remote")?;
 
-    // Store all patches locally
-    let mut patch_count = 0;
-    for patch in &clone_response.patches {
-        repo.store_patch(patch)?;
-        patch_count += 1;
+    // Store all changesets locally
+    let mut changeset_count = 0;
+    for cs in &clone_response.changesets {
+        repo.store_changeset(cs)?;
+        changeset_count += 1;
     }
 
     // Store all channels
@@ -69,20 +68,17 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
     // Update sync state
     let mut sync_state = repo.load_sync_state()?;
     for channel in &clone_response.channels {
-        if let Some(head) = &channel.head {
+        if let Some(head) = &channel.head_change_id {
             sync_state
                 .remote_heads
                 .insert(channel.name.clone(), head.clone());
         }
     }
-    for patch in &clone_response.patches {
-        sync_state.pushed_patches.push(patch.hash.clone());
-    }
     repo.save_sync_state(&sync_state)?;
 
     println!(
-        "Clone complete. Fetched {} patches, {} resources.",
-        patch_count,
+        "Clone complete. Fetched {} changeset(s), {} resource(s).",
+        changeset_count,
         clone_response.snapshots.len()
     );
 

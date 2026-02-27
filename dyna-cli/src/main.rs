@@ -1,6 +1,6 @@
-//! Dyna CLI - A distributed CRUD tool for collaborative JSON resource editing.
+//! Dyna CLI — distributed CRUD tool for collaborative JSON resource editing.
 //!
-//! This is the main entry point for the `dyna` command-line tool.
+//! Changeset-centric workflow inspired by Pijul and Jujutsu.
 
 mod cli;
 mod commands;
@@ -13,7 +13,6 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize tracing/logging
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
@@ -25,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
     let result = match cli.command {
         Commands::Init => commands::init::execute().await,
         Commands::Clone { url, directory } => commands::clone::execute(url, directory).await,
-        Commands::Add { path, recursive } => commands::add::execute(path, recursive).await,
+        Commands::Add { path, recursive: _ } => commands::add::execute(path).await,
         Commands::Commit { message } => commands::commit::execute(message).await,
         Commands::Push => commands::push::execute().await,
         Commands::Pull => commands::pull::execute().await,
@@ -34,8 +33,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Log {
             count,
             verbose,
-            patch,
-        } => commands::log::execute(count, verbose, patch).await,
+            changeset,
+            patches,
+        } => commands::log::execute(count, verbose, changeset, patches).await,
         Commands::Resolve { path } => commands::resolve::execute(path).await,
         Commands::Channel {
             name,
@@ -44,6 +44,9 @@ async fn main() -> anyhow::Result<()> {
             remote,
         } => commands::channel::execute(name, create, list, remote).await,
         Commands::Promote => commands::promote::execute().await,
+        Commands::Describe { change_id, message } => {
+            commands::describe::execute(change_id, message).await
+        }
     };
 
     if let Err(e) = result {

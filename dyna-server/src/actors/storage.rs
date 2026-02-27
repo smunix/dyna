@@ -1,8 +1,8 @@
 //! S3 Storage Actor.
 //!
 //! This actor encapsulates all interactions with the S3-compatible object store.
-//! It handles storing and retrieving patches, channels, and resource snapshots.
-//! It uses the `object_store` crate for S3 interactions.
+//! It handles storing and retrieving changesets, channels, and resource snapshots.
+//! Uses the `object_store` crate for S3 interactions.
 
 use bytes::Bytes;
 use elfo::prelude::*;
@@ -12,10 +12,6 @@ use std::sync::Arc;
 use crate::messages::*;
 
 /// Create the S3 Storage actor blueprint.
-///
-/// The `store_url` parameter can be:
-/// - `"memory://"` for an in-memory store (testing)
-/// - `"s3://bucket-name"` for a real S3 bucket (requires AWS credentials in env)
 pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
     let store_clone = store.clone();
     ActorGroup::new().exec(move |mut ctx| {
@@ -26,48 +22,57 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
             while let Some(envelope) = ctx.recv().await {
                 msg!(match envelope {
                     // ----------------------------------------------------------
-                    // Patch operations
+                    // Changeset operations
                     // ----------------------------------------------------------
-                    (StorePatch { patch }, token) => {
-                        let hex = dyna_common::hash::strip_prefix(&patch.hash);
-                        let path = ObjPath::from(format!("patches/{}.json", hex));
-                        let result = match serde_json::to_vec_pretty(&patch) {
+                    (StoreChangeset { changeset }, token) => {
+                        let path = ObjPath::from(format!(
+                            "changesets/{}.json",
+                            changeset.change_id
+                        ));
+                        let result = match serde_json::to_vec_pretty(&changeset) {
                             Ok(data) => {
                                 match store.put(&path, Bytes::from(data).into()).await {
                                     Ok(_) => {
-                                        tracing::debug!(hash = %patch.hash, "Stored patch");
-                                        StorePatchResult::Ok
+                                        tracing::debug!(
+                                            change_id = %changeset.change_id,
+                                            "Stored changeset"
+                                        );
+                                        StoreChangesetResult::Ok
                                     }
                                     Err(e) => {
-                                        tracing::error!(error = %e, "Failed to store patch");
-                                        StorePatchResult::Error(e.to_string())
+                                        tracing::error!(error = %e, "Failed to store changeset");
+                                        StoreChangesetResult::Error(e.to_string())
                                     }
                                 }
                             }
-                            Err(e) => StorePatchResult::Error(e.to_string()),
+                            Err(e) => StoreChangesetResult::Error(e.to_string()),
                         };
                         ctx.respond(token, result);
                     }
 
-                    (LoadPatch { hash }, token) => {
-                        let hex = dyna_common::hash::strip_prefix(&hash);
-                        let path = ObjPath::from(format!("patches/{}.json", hex));
+                    (LoadChangeset { change_id }, token) => {
+                        let path = ObjPath::from(format!(
+                            "changesets/{}.json",
+                            change_id
+                        ));
                         let result = match store.get(&path).await {
                             Ok(get_result) => {
                                 match get_result.bytes().await {
                                     Ok(data) => {
                                         match serde_json::from_slice(&data) {
-                                            Ok(patch) => LoadPatchResult::Ok(patch),
-                                            Err(e) => LoadPatchResult::Error(
+                                            Ok(cs) => LoadChangesetResult::Ok(cs),
+                                            Err(e) => LoadChangesetResult::Error(
                                                 format!("Deserialization error: {}", e),
                                             ),
                                         }
                                     }
-                                    Err(e) => LoadPatchResult::Error(e.to_string()),
+                                    Err(e) => LoadChangesetResult::Error(e.to_string()),
                                 }
                             }
-                            Err(object_store::Error::NotFound { .. }) => LoadPatchResult::NotFound,
-                            Err(e) => LoadPatchResult::Error(e.to_string()),
+                            Err(object_store::Error::NotFound { .. }) => {
+                                LoadChangesetResult::NotFound
+                            }
+                            Err(e) => LoadChangesetResult::Error(e.to_string()),
                         };
                         ctx.respond(token, result);
                     }

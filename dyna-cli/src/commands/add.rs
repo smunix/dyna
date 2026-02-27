@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use crate::repository::Repository;
 
-pub async fn execute(path: PathBuf, _recursive: bool) -> Result<()> {
+pub async fn execute(path: PathBuf) -> Result<()> {
     let repo = Repository::find_current()?;
 
     // Resolve the path relative to the working directory

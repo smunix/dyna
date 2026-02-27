@@ -3,10 +3,10 @@
 //! These messages define the protocol between the API Gateway actor,
 //! the Changeset Manager actor, and the S3 Storage actor.
 //!
-//! Note: elfo's `#[message]` macro automatically derives Serialize and
-//! Deserialize, so we must not derive them again.
+//! The protocol is now changeset-centric: push/pull/clone operate on
+//! changesets rather than individual patches.
 
-use dyna_common::models::{Channel, Patch};
+use dyna_common::models::{Changeset, Channel};
 use dyna_common::protocol::{
     CloneResponse, CreateChannelResponse, ListChannelsResponse, PromoteResponse, PullResponse,
     PushResponse,
@@ -17,27 +17,27 @@ use elfo::prelude::*;
 // Storage Actor Messages
 // ---------------------------------------------------------------------------
 
-/// Store a patch in S3.
-#[message(ret = StorePatchResult)]
-pub struct StorePatch {
-    pub patch: Patch,
+/// Store a changeset in S3.
+#[message(ret = StoreChangesetResult)]
+pub struct StoreChangeset {
+    pub changeset: Changeset,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum StorePatchResult {
+pub enum StoreChangesetResult {
     Ok,
     Error(String),
 }
 
-/// Load a patch from S3 by hash.
-#[message(ret = LoadPatchResult)]
-pub struct LoadPatch {
-    pub hash: String,
+/// Load a changeset from S3 by change_id.
+#[message(ret = LoadChangesetResult)]
+pub struct LoadChangeset {
+    pub change_id: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum LoadPatchResult {
-    Ok(Patch),
+pub enum LoadChangesetResult {
+    Ok(Changeset),
     NotFound,
     Error(String),
 }
@@ -117,19 +117,19 @@ pub enum LoadAllSnapshotsResult {
 // Changeset Manager Messages
 // ---------------------------------------------------------------------------
 
-/// Handle a push request from a client.
+/// Handle a push request from a client (changeset-based).
 #[message(ret = PushResponse)]
 pub struct HandlePush {
     pub channel: String,
-    pub patches: Vec<Patch>,
+    pub changesets: Vec<Changeset>,
     pub expected_head: Option<String>,
 }
 
-/// Handle a pull request from a client.
+/// Handle a pull request from a client (changeset-based).
 #[message(ret = PullResponse)]
 pub struct HandlePull {
     pub channel: String,
-    pub since_hash: Option<String>,
+    pub since_change_id: Option<String>,
 }
 
 /// Handle a clone request from a client.
@@ -138,7 +138,7 @@ pub struct HandleClone {
     pub channel: Option<String>,
 }
 
-/// Handle a promote request.
+/// Handle a promote request (changeset-based).
 #[message(ret = PromoteResponse)]
 pub struct HandlePromote {
     pub source_channel: String,
@@ -155,3 +155,9 @@ pub struct HandleCreateChannel {
 /// Handle a list channels request.
 #[message(ret = ListChannelsResponse)]
 pub struct HandleListChannels;
+
+/// Handle a get changeset detail request.
+#[message(ret = dyna_common::protocol::GetChangesetResponse)]
+pub struct HandleGetChangeset {
+    pub change_id: String,
+}

@@ -11,6 +11,9 @@ pub enum DynaError {
     #[error("Patch not found: {0}")]
     PatchNotFound(String),
 
+    #[error("Changeset not found: {0}")]
+    ChangesetNotFound(String),
+
     #[error("Channel not found: {0}")]
     ChannelNotFound(String),
 
@@ -20,7 +23,7 @@ pub enum DynaError {
         description: String,
     },
 
-    #[error("Dependency missing: patch '{0}' depends on '{1}' which is not available")]
+    #[error("Dependency missing: '{0}' depends on '{1}' which is not available")]
     DependencyMissing(String, String),
 
     #[error("Hash mismatch: expected '{expected}', got '{actual}'")]
@@ -28,6 +31,12 @@ pub enum DynaError {
 
     #[error("Concurrent modification detected: {0}")]
     ConcurrentModification(String),
+
+    #[error("Changeset is immutable: {0}")]
+    ImmutableChangeset(String),
+
+    #[error("Staged changes exist: commit or discard before proceeding")]
+    StagedChangesExist,
 
     #[error("Serialization error: {0}")]
     Serialization(String),

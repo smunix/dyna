@@ -1,64 +1,69 @@
 //! Channel management logic.
 //!
-//! Channels are named sequences of patches, analogous to branches in Git or
-//! channels in Pijul. This module provides utilities for managing channels,
-//! including promotion (merging one channel into another).
+//! Channels are now bookmarks pointing into the changeset DAG, similar to
+//! Jujutsu bookmarks. Promotion moves changesets from one channel lineage
+//! into another.
 
-use crate::models::{Channel, Patch};
 use crate::error::{DynaError, DynaResult};
+use crate::models::{Changeset, Channel};
 
-/// Promote patches from a source channel to a target channel.
+/// Promote changesets from a source channel to a target channel.
 ///
-/// This collects all patches in `source` that are not already in `target`
-/// and appends them to `target`. Returns the list of promoted patch hashes.
-pub fn promote_patches(
+/// Collects all changeset IDs in `source` that are not already in `target`
+/// and appends them. Returns the list of promoted change_ids.
+pub fn promote_changesets(
     source: &Channel,
     target: &mut Channel,
 ) -> DynaResult<Vec<String>> {
-    let target_set: std::collections::HashSet<&String> = target.patches.iter().collect();
+    let target_set: std::collections::HashSet<&String> =
+        target.changesets.iter().collect();
 
-    let new_patches: Vec<String> = source
-        .patches
+    let new_changesets: Vec<String> = source
+        .changesets
         .iter()
-        .filter(|h| !target_set.contains(h))
+        .filter(|id| !target_set.contains(id))
         .cloned()
         .collect();
 
-    if new_patches.is_empty() {
+    if new_changesets.is_empty() {
         return Err(DynaError::Other(
-            "No new patches to promote. Source and target are already in sync.".into(),
+            "No new changesets to promote. Source and target are already in sync.".into(),
         ));
     }
 
-    for hash in &new_patches {
-        target.append_patch(hash.clone());
+    for id in &new_changesets {
+        target.append_changeset(id.clone());
     }
 
-    Ok(new_patches)
+    Ok(new_changesets)
 }
 
-/// Validate that all patches in a channel form a valid dependency chain.
+/// Validate that all changesets in a channel form a valid parent chain.
 ///
-/// Each patch's dependencies must be satisfied by patches that appear earlier
-/// in the channel's patch list.
+/// Each changeset's parents must be satisfied by changesets that appear
+/// earlier in the channel's list (or be empty for the root).
 pub fn validate_channel_integrity(
     channel: &Channel,
-    patches: &std::collections::HashMap<String, Patch>,
+    changesets: &std::collections::HashMap<String, Changeset>,
 ) -> DynaResult<()> {
-    let mut available: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut available: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
-    for hash in &channel.patches {
-        let patch = patches
-            .get(hash)
-            .ok_or_else(|| DynaError::PatchNotFound(hash.clone()))?;
+    for change_id in &channel.changesets {
+        let cs = changesets
+            .get(change_id)
+            .ok_or_else(|| DynaError::Other(format!("Changeset '{}' not found", change_id)))?;
 
-        for dep in &patch.dependencies {
-            if !available.contains(dep) {
-                return Err(DynaError::DependencyMissing(hash.clone(), dep.clone()));
+        for parent in &cs.parents {
+            if !available.contains(parent) {
+                return Err(DynaError::DependencyMissing(
+                    change_id.clone(),
+                    parent.clone(),
+                ));
             }
         }
 
-        available.insert(hash.clone());
+        available.insert(change_id.clone());
     }
 
     Ok(())
@@ -66,27 +71,29 @@ pub fn validate_channel_integrity(
 
 /// Get a summary of the differences between two channels.
 pub fn channel_diff(source: &Channel, target: &Channel) -> ChannelDiffSummary {
-    let source_set: std::collections::HashSet<&String> = source.patches.iter().collect();
-    let target_set: std::collections::HashSet<&String> = target.patches.iter().collect();
+    let source_set: std::collections::HashSet<&String> =
+        source.changesets.iter().collect();
+    let target_set: std::collections::HashSet<&String> =
+        target.changesets.iter().collect();
 
     let only_in_source: Vec<String> = source
-        .patches
+        .changesets
         .iter()
-        .filter(|h| !target_set.contains(h))
+        .filter(|id| !target_set.contains(id))
         .cloned()
         .collect();
 
     let only_in_target: Vec<String> = target
-        .patches
+        .changesets
         .iter()
-        .filter(|h| !source_set.contains(h))
+        .filter(|id| !source_set.contains(id))
         .cloned()
         .collect();
 
     let common: Vec<String> = source
-        .patches
+        .changesets
         .iter()
-        .filter(|h| target_set.contains(h))
+        .filter(|id| target_set.contains(id))
         .cloned()
         .collect();
 
@@ -111,46 +118,46 @@ mod tests {
     use crate::models::Channel;
 
     #[test]
-    fn test_promote_patches() {
+    fn test_promote_changesets() {
         let mut source = Channel::new("feature");
-        source.append_patch("sha256:aaa".into());
-        source.append_patch("sha256:bbb".into());
-        source.append_patch("sha256:ccc".into());
+        source.append_changeset("aaa".into());
+        source.append_changeset("bbb".into());
+        source.append_changeset("ccc".into());
 
         let mut target = Channel::new("main");
-        target.append_patch("sha256:aaa".into());
+        target.append_changeset("aaa".into());
 
-        let promoted = promote_patches(&source, &mut target).unwrap();
-        assert_eq!(promoted, vec!["sha256:bbb", "sha256:ccc"]);
-        assert_eq!(target.patches.len(), 3);
+        let promoted = promote_changesets(&source, &mut target).unwrap();
+        assert_eq!(promoted, vec!["bbb", "ccc"]);
+        assert_eq!(target.changesets.len(), 3);
     }
 
     #[test]
-    fn test_promote_no_new_patches() {
+    fn test_promote_no_new_changesets() {
         let mut source = Channel::new("feature");
-        source.append_patch("sha256:aaa".into());
+        source.append_changeset("aaa".into());
 
         let mut target = Channel::new("main");
-        target.append_patch("sha256:aaa".into());
+        target.append_changeset("aaa".into());
 
-        let result = promote_patches(&source, &mut target);
+        let result = promote_changesets(&source, &mut target);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_channel_diff() {
         let mut a = Channel::new("a");
-        a.append_patch("sha256:1".into());
-        a.append_patch("sha256:2".into());
-        a.append_patch("sha256:3".into());
+        a.append_changeset("1".into());
+        a.append_changeset("2".into());
+        a.append_changeset("3".into());
 
         let mut b = Channel::new("b");
-        b.append_patch("sha256:2".into());
-        b.append_patch("sha256:4".into());
+        b.append_changeset("2".into());
+        b.append_changeset("4".into());
 
         let diff = channel_diff(&a, &b);
-        assert_eq!(diff.only_in_source, vec!["sha256:1", "sha256:3"]);
-        assert_eq!(diff.only_in_target, vec!["sha256:4"]);
-        assert_eq!(diff.common, vec!["sha256:2"]);
+        assert_eq!(diff.only_in_source, vec!["1", "3"]);
+        assert_eq!(diff.only_in_target, vec!["4"]);
+        assert_eq!(diff.common, vec!["2"]);
     }
 }

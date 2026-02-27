@@ -4,13 +4,10 @@
 //! It receives HTTP requests via axum, translates them into elfo messages,
 //! sends them to the Changeset Manager actor, and returns the responses.
 //!
-//! Architecture:
-//! - The axum server runs in a separate tokio task.
-//! - It communicates with the elfo actor system via a shared `Addr` (the
-//!   changeset manager's address) and `tokio::sync::mpsc` channels.
+//! The protocol is now changeset-centric.
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -23,12 +20,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::messages::*;
 
 /// The shared state for axum handlers.
-///
-/// Since axum handlers run outside the elfo actor system, we use a channel
-/// to forward requests into the actor loop.
 #[derive(Clone)]
 pub struct AppState {
-    /// Channel to send requests into the API Gateway actor's loop.
     pub request_tx: mpsc::Sender<ApiRequest>,
 }
 
@@ -57,31 +50,30 @@ pub enum ApiRequest {
     ListChannels {
         reply: oneshot::Sender<ListChannelsResponse>,
     },
+    GetChangeset {
+        change_id: String,
+        reply: oneshot::Sender<GetChangesetResponse>,
+    },
     Health {
         reply: oneshot::Sender<HealthResponse>,
     },
 }
 
 /// Create the API Gateway actor blueprint.
-///
-/// The `bind_addr` is the address to bind the HTTP server to (e.g., "0.0.0.0:8080").
 pub fn new(bind_addr: String) -> Blueprint {
     ActorGroup::new().exec(move |mut ctx| {
         let bind_addr = bind_addr.clone();
         async move {
             tracing::info!(addr = %bind_addr, "API Gateway actor starting");
 
-            // Create the channel for axum -> actor communication
             let (request_tx, mut request_rx) = mpsc::channel::<ApiRequest>(256);
 
             let state = AppState {
                 request_tx: request_tx.clone(),
             };
 
-            // Build the axum router
             let app = build_router(state);
 
-            // Spawn the HTTP server in a separate task
             let listener = tokio::net::TcpListener::bind(&bind_addr)
                 .await
                 .expect("Failed to bind HTTP server");
@@ -93,15 +85,11 @@ pub fn new(bind_addr: String) -> Blueprint {
             });
 
             // Main actor loop: forward requests from axum to the changeset manager
-            // We use a tokio select to handle both elfo messages and HTTP requests.
             loop {
                 tokio::select! {
-                    // Handle elfo system messages (e.g., shutdown)
                     envelope = ctx.recv() => {
                         match envelope {
-                            Some(_envelope) => {
-                                // Handle any elfo system messages if needed
-                            }
+                            Some(_envelope) => {}
                             None => {
                                 tracing::info!("API Gateway actor mailbox closed, shutting down");
                                 break;
@@ -109,13 +97,12 @@ pub fn new(bind_addr: String) -> Blueprint {
                         }
                     }
 
-                    // Handle HTTP requests forwarded from axum
                     Some(request) = request_rx.recv() => {
                         match request {
                             ApiRequest::Push { body, reply } => {
                                 let result = ctx.request(HandlePush {
                                     channel: body.channel,
-                                    patches: body.patches,
+                                    changesets: body.changesets,
                                     expected_head: body.expected_head,
                                 }).resolve().await;
 
@@ -134,13 +121,13 @@ pub fn new(bind_addr: String) -> Blueprint {
                             ApiRequest::Pull { body, reply } => {
                                 let result = ctx.request(HandlePull {
                                     channel: body.channel,
-                                    since_hash: body.since_hash,
+                                    since_change_id: body.since_change_id,
                                 }).resolve().await;
 
                                 let response = match result {
                                     Ok(r) => r,
                                     Err(_) => PullResponse {
-                                        patches: vec![],
+                                        changesets: vec![],
                                         current_head: None,
                                         channel: dyna_common::models::Channel::new("error"),
                                     },
@@ -157,7 +144,7 @@ pub fn new(bind_addr: String) -> Blueprint {
                                     Ok(r) => r,
                                     Err(_) => CloneResponse {
                                         channels: vec![],
-                                        patches: vec![],
+                                        changesets: vec![],
                                         snapshots: std::collections::HashMap::new(),
                                     },
                                 };
@@ -174,7 +161,7 @@ pub fn new(bind_addr: String) -> Blueprint {
                                     Ok(r) => r,
                                     Err(e) => PromoteResponse {
                                         success: false,
-                                        promoted_patches: vec![],
+                                        promoted_changesets: vec![],
                                         new_head: None,
                                         error: Some(format!("Internal error: {}", e)),
                                     },
@@ -209,11 +196,26 @@ pub fn new(bind_addr: String) -> Blueprint {
                                 let _ = reply.send(response);
                             }
 
+                            ApiRequest::GetChangeset { change_id, reply } => {
+                                let result = ctx.request(HandleGetChangeset {
+                                    change_id,
+                                }).resolve().await;
+
+                                let response = match result {
+                                    Ok(r) => r,
+                                    Err(e) => GetChangesetResponse {
+                                        changeset: None,
+                                        error: Some(format!("Internal error: {}", e)),
+                                    },
+                                };
+                                let _ = reply.send(response);
+                            }
+
                             ApiRequest::Health { reply } => {
                                 let _ = reply.send(HealthResponse {
                                     status: "ok".into(),
                                     version: env!("CARGO_PKG_VERSION").into(),
-                                    uptime_seconds: 0, // TODO: track actual uptime
+                                    uptime_seconds: 0,
                                 });
                             }
                         }
@@ -234,6 +236,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/v1/promote", post(promote_handler))
         .route("/api/v1/channels", get(list_channels_handler))
         .route("/api/v1/channels", post(create_channel_handler))
+        .route("/api/v1/changesets/:change_id", get(get_changeset_handler))
         .with_state(state)
 }
 
@@ -436,6 +439,41 @@ async fn create_channel_handler(
                 StatusCode::CREATED
             } else {
                 StatusCode::CONFLICT
+            };
+            (status, Json(serde_json::to_value(response).unwrap()))
+        }
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::to_value(ErrorResponse::new("Request timeout", "TIMEOUT")).unwrap()),
+        ),
+    }
+}
+
+async fn get_changeset_handler(
+    State(state): State<AppState>,
+    Path(change_id): Path<String>,
+) -> impl IntoResponse {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    if state
+        .request_tx
+        .send(ApiRequest::GetChangeset {
+            change_id,
+            reply: reply_tx,
+        })
+        .await
+        .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::to_value(ErrorResponse::new("Server unavailable", "UNAVAILABLE")).unwrap()),
+        );
+    }
+    match reply_rx.await {
+        Ok(response) => {
+            let status = if response.changeset.is_some() {
+                StatusCode::OK
+            } else {
+                StatusCode::NOT_FOUND
             };
             (status, Json(serde_json::to_value(response).unwrap()))
         }

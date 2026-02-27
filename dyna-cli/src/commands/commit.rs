@@ -1,6 +1,11 @@
 //! `dyna commit` command implementation.
+//!
+//! Creates a new Changeset from all staged changes. The changeset groups
+//! one Patch per modified resource, records the author, message, and parent
+//! changeset references, and appends itself to the current channel.
 
 use anyhow::{Result, bail};
+use dyna_common::models::Changeset;
 use dyna_common::patch;
 
 use crate::repository::Repository;
@@ -16,58 +21,75 @@ pub async fn execute(message: String) -> Result<()> {
     }
 
     let channel_name = repo.current_channel_name()?;
-    let mut channel = repo.load_channel(&channel_name)?;
+    let channel = repo.load_channel(&channel_name)?;
 
-    // The dependencies for new patches are the current head of the channel
-    let dependencies = match &channel.head {
+    // Determine parent changeset(s) for this new changeset.
+    // The parent is the current head of the channel (if any).
+    let parents: Vec<String> = match &channel.head_change_id {
         Some(head) => vec![head.clone()],
         None => vec![],
     };
 
-    let mut created_patches = Vec::new();
-
+    // Build a Patch for each staged change
+    let mut patches = Vec::new();
     for staged in &staged_changes {
-        // Build the patch
-        let p = patch::build_patch(
-            staged,
-            &config.user.name,
-            &message,
-            dependencies.clone(),
-        );
-
-        // Store the patch
-        repo.store_patch(&p)?;
-
-        // Update the snapshot
-        repo.save_snapshot(&staged.resource_id, &staged.current)?;
-
-        // Append to channel
-        channel.append_patch(p.hash.clone());
-
-        println!(
-            "  [{}] {} -> {}",
-            &p.hash[7..19], // Show a short hash
-            staged.resource_id,
-            p.operations.len()
-        );
-        created_patches.push(p);
+        let p = patch::build_patch(staged);
+        patches.push(p);
     }
 
-    // Save the updated channel
+    // Create the Changeset
+    let cs = Changeset::new(
+        config.user.name.clone(),
+        message.clone(),
+        parents,
+        patches,
+    );
+
+    // Print summary of patches in this changeset
+    for p in &cs.patches {
+        println!(
+            "  [{}] {} -> {} op(s)",
+            &p.hash[7..std::cmp::min(p.hash.len(), 19)],
+            p.target_resource,
+            p.operations.len()
+        );
+    }
+
+    // Store the changeset (also stores its patches)
+    repo.store_changeset(&cs)?;
+
+    // Update snapshots for each resource
+    for staged in &staged_changes {
+        repo.save_snapshot(&staged.resource_id, &staged.current)?;
+    }
+
+    // Append to the channel
+    let mut channel = repo.load_channel(&channel_name)?;
+    channel.append_changeset(cs.change_id.clone());
     repo.save_channel(&channel)?;
+
+    // Set as working change
+    repo.set_working_change(Some(&cs.change_id))?;
 
     // Clear the staging area
     repo.clear_staging()?;
 
     println!(
-        "\nCommitted {} patch(es) to channel '{}': {}",
-        created_patches.len(),
+        "\nCommitted changeset {} to channel '{}': {}",
+        cs.short_change_id(),
         channel_name,
         message
     );
+    println!(
+        "  {} patch(es), {} total operation(s)",
+        cs.patches.len(),
+        cs.total_operations()
+    );
+    println!("  change_id:   {}", cs.change_id);
+    println!("  commit_hash: {}", cs.short_commit_hash());
 
-    if let Some(head) = &channel.head {
-        println!("  HEAD: {}", &head[..std::cmp::min(head.len(), 19)]);
+    if !cs.parents.is_empty() {
+        println!("  parent(s):   {}", cs.parents.join(", "));
     }
 
     Ok(())

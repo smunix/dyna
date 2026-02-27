@@ -1,12 +1,15 @@
 //! Changeset Manager Actor.
 //!
 //! This actor is the core business logic actor. It manages channels, validates
-//! patches, handles push/pull operations, and orchestrates conflict resolution.
+//! changesets, handles push/pull operations, and orchestrates conflict resolution.
 //! It delegates all S3 I/O to the Storage actor.
+//!
+//! The protocol is now changeset-centric: all push/pull/clone/promote operations
+//! work with changesets (groups of patches) rather than individual patches.
 
-use dyna_common::channel::promote_patches;
+use dyna_common::channel::promote_changesets;
 use dyna_common::diff;
-use dyna_common::models::{Channel, Patch};
+use dyna_common::models::{Changeset, Channel};
 use dyna_common::protocol::*;
 use elfo::prelude::*;
 
@@ -26,18 +29,18 @@ async fn changeset_manager(mut ctx: Context) {
     while let Some(envelope) = ctx.recv().await {
         msg!(match envelope {
             // ----------------------------------------------------------
-            // Push: accept patches from a client
+            // Push: accept changesets from a client
             // ----------------------------------------------------------
-            (HandlePush { channel, patches, expected_head }, token) => {
-                let response = handle_push(&ctx, channel, patches, expected_head).await;
+            (HandlePush { channel, changesets, expected_head }, token) => {
+                let response = handle_push(&ctx, channel, changesets, expected_head).await;
                 ctx.respond(token, response);
             }
 
             // ----------------------------------------------------------
-            // Pull: send patches to a client
+            // Pull: send changesets to a client
             // ----------------------------------------------------------
-            (HandlePull { channel, since_hash }, token) => {
-                let response = handle_pull(&ctx, channel, since_hash).await;
+            (HandlePull { channel, since_change_id }, token) => {
+                let response = handle_pull(&ctx, channel, since_change_id).await;
                 ctx.respond(token, response);
             }
 
@@ -50,7 +53,7 @@ async fn changeset_manager(mut ctx: Context) {
             }
 
             // ----------------------------------------------------------
-            // Promote: merge patches from one channel to another
+            // Promote: merge changesets from one channel to another
             // ----------------------------------------------------------
             (HandlePromote { source_channel, target_channel }, token) => {
                 let response = handle_promote(&ctx, source_channel, target_channel).await;
@@ -70,6 +73,14 @@ async fn changeset_manager(mut ctx: Context) {
             // ----------------------------------------------------------
             (HandleListChannels, token) => {
                 let response = handle_list_channels(&ctx).await;
+                ctx.respond(token, response);
+            }
+
+            // ----------------------------------------------------------
+            // Get Changeset Detail
+            // ----------------------------------------------------------
+            (HandleGetChangeset { change_id }, token) => {
+                let response = handle_get_changeset(&ctx, change_id).await;
                 ctx.respond(token, response);
             }
         });
@@ -107,11 +118,11 @@ async fn ensure_main_channel(ctx: &Context) {
     }
 }
 
-/// Handle a push request.
+/// Handle a push request (changeset-based).
 async fn handle_push(
     ctx: &Context,
     channel_name: String,
-    patches: Vec<Patch>,
+    changesets: Vec<Changeset>,
     expected_head: Option<String>,
 ) -> PushResponse {
     // Load the channel
@@ -124,10 +135,7 @@ async fn handle_push(
 
     let mut channel = match channel_result {
         Ok(LoadChannelResult::Ok(ch)) => ch,
-        Ok(LoadChannelResult::NotFound) => {
-            // Auto-create the channel
-            Channel::new(&channel_name)
-        }
+        Ok(LoadChannelResult::NotFound) => Channel::new(&channel_name),
         _ => {
             return PushResponse {
                 success: false,
@@ -140,99 +148,101 @@ async fn handle_push(
 
     // Optimistic concurrency check
     if let Some(expected) = &expected_head {
-        if channel.head.as_deref() != Some(expected.as_str()) {
+        if channel.head_change_id.as_deref() != Some(expected.as_str()) {
             return PushResponse {
                 success: false,
-                new_head: channel.head.clone(),
+                new_head: channel.head_change_id.clone(),
                 accepted_count: 0,
                 error: Some(format!(
                     "Concurrent modification: expected head '{}', but found '{}'",
-                    &expected[..std::cmp::min(expected.len(), 19)],
+                    &expected[..std::cmp::min(expected.len(), 8)],
                     channel
-                        .head
+                        .head_change_id
                         .as_deref()
-                        .map(|h| &h[..std::cmp::min(h.len(), 19)])
+                        .map(|h| &h[..std::cmp::min(h.len(), 8)])
                         .unwrap_or("(none)")
                 )),
             };
         }
     }
 
-    // Validate and store each patch
+    // Validate and store each changeset
     let mut accepted = 0;
-    for patch in &patches {
-        // Verify patch integrity
-        if !patch.verify() {
+    for cs in &changesets {
+        // Verify changeset integrity
+        if !cs.verify() {
             return PushResponse {
                 success: false,
-                new_head: channel.head.clone(),
+                new_head: channel.head_change_id.clone(),
                 accepted_count: accepted,
                 error: Some(format!(
-                    "Patch {} failed integrity check",
-                    &patch.hash[..std::cmp::min(patch.hash.len(), 19)]
+                    "Changeset {} failed integrity check",
+                    cs.short_change_id()
                 )),
             };
         }
 
-        // Store the patch
+        // Store the changeset in S3
         let store_result = ctx
-            .request(StorePatch {
-                patch: patch.clone(),
+            .request(StoreChangeset {
+                changeset: cs.clone(),
             })
             .resolve()
             .await;
 
         match store_result {
-            Ok(StorePatchResult::Ok) => {}
+            Ok(StoreChangesetResult::Ok) => {}
             _ => {
                 return PushResponse {
                     success: false,
-                    new_head: channel.head.clone(),
+                    new_head: channel.head_change_id.clone(),
                     accepted_count: accepted,
                     error: Some(format!(
-                        "Failed to store patch {}",
-                        &patch.hash[..std::cmp::min(patch.hash.len(), 19)]
+                        "Failed to store changeset {}",
+                        cs.short_change_id()
                     )),
                 };
             }
         }
 
-        // Apply the patch to the resource snapshot
-        if let Some(result_snapshot) = &patch.result_snapshot {
-            let _ = ctx
-                .request(SaveSnapshot {
-                    resource_id: patch.target_resource.clone(),
-                    value: result_snapshot.clone(),
-                })
-                .resolve()
-                .await;
-        } else {
-            // Compute the result by applying operations
-            let snapshot_result = ctx
-                .request(LoadSnapshot {
-                    resource_id: patch.target_resource.clone(),
-                })
-                .resolve()
-                .await;
-
-            let mut current = match snapshot_result {
-                Ok(LoadSnapshotResult::Ok(v)) => v,
-                _ => serde_json::json!({}),
-            };
-
-            if diff::apply_patch(&mut current, &patch.operations).is_ok() {
+        // Apply each patch in the changeset to resource snapshots
+        for patch in &cs.patches {
+            if let Some(result_snapshot) = &patch.result_snapshot {
                 let _ = ctx
                     .request(SaveSnapshot {
                         resource_id: patch.target_resource.clone(),
-                        value: current,
+                        value: result_snapshot.clone(),
                     })
                     .resolve()
                     .await;
+            } else {
+                // Compute the result by applying operations
+                let snapshot_result = ctx
+                    .request(LoadSnapshot {
+                        resource_id: patch.target_resource.clone(),
+                    })
+                    .resolve()
+                    .await;
+
+                let mut current = match snapshot_result {
+                    Ok(LoadSnapshotResult::Ok(v)) => v,
+                    _ => serde_json::json!({}),
+                };
+
+                if diff::apply_patch(&mut current, &patch.operations).is_ok() {
+                    let _ = ctx
+                        .request(SaveSnapshot {
+                            resource_id: patch.target_resource.clone(),
+                            value: current,
+                        })
+                        .resolve()
+                        .await;
+                }
             }
         }
 
-        // Append to channel
-        channel.append_patch(patch.hash.clone());
+        // Append changeset to channel
+        channel.append_changeset(cs.change_id.clone());
         accepted += 1;
     }
 
@@ -247,24 +257,24 @@ async fn handle_push(
     match save_result {
         Ok(SaveChannelResult::Ok) => PushResponse {
             success: true,
-            new_head: channel.head.clone(),
+            new_head: channel.head_change_id.clone(),
             accepted_count: accepted,
             error: None,
         },
         _ => PushResponse {
             success: false,
-            new_head: channel.head.clone(),
+            new_head: channel.head_change_id.clone(),
             accepted_count: accepted,
             error: Some("Failed to save channel metadata".into()),
         },
     }
 }
 
-/// Handle a pull request.
+/// Handle a pull request (changeset-based).
 async fn handle_pull(
     ctx: &Context,
     channel_name: String,
-    since_hash: Option<String>,
+    since_change_id: Option<String>,
 ) -> PullResponse {
     // Load the channel
     let channel_result = ctx
@@ -278,41 +288,59 @@ async fn handle_pull(
         Ok(LoadChannelResult::Ok(ch)) => ch,
         _ => {
             return PullResponse {
-                patches: vec![],
+                changesets: vec![],
                 current_head: None,
                 channel: Channel::new(&channel_name),
             };
         }
     };
 
-    // Determine which patches to send
-    let patch_hashes = channel.patches_since(since_hash.as_deref());
+    // Determine which changesets to send (those after since_change_id)
+    let changeset_ids: Vec<String> = if let Some(ref since) = since_change_id {
+        let mut found = false;
+        channel
+            .changesets
+            .iter()
+            .filter(|id| {
+                if found {
+                    return true;
+                }
+                if *id == since {
+                    found = true;
+                }
+                false
+            })
+            .cloned()
+            .collect()
+    } else {
+        channel.changesets.clone()
+    };
 
-    // Load the patch objects
-    let mut patches = Vec::new();
-    for hash in &patch_hashes {
+    // Load the changeset objects
+    let mut changesets = Vec::new();
+    for id in &changeset_ids {
         let load_result = ctx
-            .request(LoadPatch {
-                hash: hash.clone(),
+            .request(LoadChangeset {
+                change_id: id.clone(),
             })
             .resolve()
             .await;
 
-        if let Ok(LoadPatchResult::Ok(patch)) = load_result {
-            patches.push(patch);
+        if let Ok(LoadChangesetResult::Ok(cs)) = load_result {
+            changesets.push(cs);
         } else {
-            tracing::warn!(hash = %hash, "Failed to load patch during pull");
+            tracing::warn!(change_id = %id, "Failed to load changeset during pull");
         }
     }
 
     PullResponse {
-        patches,
-        current_head: channel.head.clone(),
+        changesets,
+        current_head: channel.head_change_id.clone(),
         channel,
     }
 }
 
-/// Handle a clone request.
+/// Handle a clone request (changeset-based).
 async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse {
     // Load all channels
     let channels_result = ctx.request(ListAllChannels).resolve().await;
@@ -321,30 +349,31 @@ async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse 
         _ => vec![],
     };
 
-    // Load all patches from all channels
-    let mut all_patch_hashes = std::collections::HashSet::new();
+    // Collect all unique changeset IDs from all channels
+    let mut all_cs_ids = std::collections::HashSet::new();
     for ch in &channels {
-        for hash in &ch.patches {
-            all_patch_hashes.insert(hash.clone());
+        for id in &ch.changesets {
+            all_cs_ids.insert(id.clone());
         }
     }
 
-    let mut patches = Vec::new();
-    for hash in &all_patch_hashes {
+    // Load all changesets
+    let mut changesets = Vec::new();
+    for id in &all_cs_ids {
         let load_result = ctx
-            .request(LoadPatch {
-                hash: hash.clone(),
+            .request(LoadChangeset {
+                change_id: id.clone(),
             })
             .resolve()
             .await;
 
-        if let Ok(LoadPatchResult::Ok(patch)) = load_result {
-            patches.push(patch);
+        if let Ok(LoadChangesetResult::Ok(cs)) = load_result {
+            changesets.push(cs);
         }
     }
 
-    // Sort patches by timestamp for consistent ordering
-    patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    // Sort changesets by creation time for consistent ordering
+    changesets.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     // Load all snapshots
     let snapshots_result = ctx.request(LoadAllSnapshots).resolve().await;
@@ -355,12 +384,12 @@ async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse 
 
     CloneResponse {
         channels,
-        patches,
+        changesets,
         snapshots,
     }
 }
 
-/// Handle a promote request.
+/// Handle a promote request (changeset-based).
 async fn handle_promote(
     ctx: &Context,
     source_name: String,
@@ -379,7 +408,7 @@ async fn handle_promote(
         _ => {
             return PromoteResponse {
                 success: false,
-                promoted_patches: vec![],
+                promoted_changesets: vec![],
                 new_head: None,
                 error: Some(format!("Source channel '{}' not found", source_name)),
             };
@@ -399,16 +428,34 @@ async fn handle_promote(
         _ => {
             return PromoteResponse {
                 success: false,
-                promoted_patches: vec![],
+                promoted_changesets: vec![],
                 new_head: None,
                 error: Some(format!("Target channel '{}' not found", target_name)),
             };
         }
     };
 
-    // Promote patches
-    match promote_patches(&source, &mut target) {
-        Ok(promoted) => {
+    // Promote changesets
+    match promote_changesets(&source, &mut target) {
+        Ok(promoted_ids) => {
+            // Mark promoted changesets as immutable in storage
+            for id in &promoted_ids {
+                let load_result = ctx
+                    .request(LoadChangeset {
+                        change_id: id.clone(),
+                    })
+                    .resolve()
+                    .await;
+
+                if let Ok(LoadChangesetResult::Ok(mut cs)) = load_result {
+                    cs.immutable = true;
+                    let _ = ctx
+                        .request(StoreChangeset { changeset: cs })
+                        .resolve()
+                        .await;
+                }
+            }
+
             // Save the updated target channel
             let save_result = ctx
                 .request(SaveChannel {
@@ -420,13 +467,13 @@ async fn handle_promote(
             match save_result {
                 Ok(SaveChannelResult::Ok) => PromoteResponse {
                     success: true,
-                    promoted_patches: promoted,
-                    new_head: target.head.clone(),
+                    promoted_changesets: promoted_ids,
+                    new_head: target.head_change_id.clone(),
                     error: None,
                 },
                 _ => PromoteResponse {
                     success: false,
-                    promoted_patches: vec![],
+                    promoted_changesets: vec![],
                     new_head: None,
                     error: Some("Failed to save target channel".into()),
                 },
@@ -434,8 +481,8 @@ async fn handle_promote(
         }
         Err(e) => PromoteResponse {
             success: false,
-            promoted_patches: vec![],
-            new_head: target.head.clone(),
+            promoted_changesets: vec![],
+            new_head: target.head_change_id.clone(),
             error: Some(e.to_string()),
         },
     }
@@ -475,8 +522,8 @@ async fn handle_create_channel(
         match source_result {
             Ok(LoadChannelResult::Ok(source)) => {
                 let mut new_channel = Channel::new(&name);
-                new_channel.patches = source.patches.clone();
-                new_channel.head = source.head.clone();
+                new_channel.changesets = source.changesets.clone();
+                new_channel.head_change_id = source.head_change_id.clone();
                 new_channel
             }
             _ => {
@@ -520,6 +567,31 @@ async fn handle_list_channels(ctx: &Context) -> ListChannelsResponse {
         Ok(ListChannelsResult::Ok(channels)) => ListChannelsResponse { channels },
         _ => ListChannelsResponse {
             channels: vec![],
+        },
+    }
+}
+
+/// Handle a get changeset detail request.
+async fn handle_get_changeset(ctx: &Context, change_id: String) -> GetChangesetResponse {
+    let load_result = ctx
+        .request(LoadChangeset {
+            change_id: change_id.clone(),
+        })
+        .resolve()
+        .await;
+
+    match load_result {
+        Ok(LoadChangesetResult::Ok(cs)) => GetChangesetResponse {
+            changeset: Some(cs),
+            error: None,
+        },
+        Ok(LoadChangesetResult::NotFound) => GetChangesetResponse {
+            changeset: None,
+            error: Some(format!("Changeset '{}' not found", change_id)),
+        },
+        _ => GetChangesetResponse {
+            changeset: None,
+            error: Some("Failed to load changeset".into()),
         },
     }
 }

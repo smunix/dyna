@@ -1,7 +1,13 @@
 //! Core data model types for the Dyna system.
 //!
-//! This module defines the fundamental data structures used throughout the system:
-//! resources, patches, snapshots, channels, and repository metadata.
+//! This module defines the fundamental data structures:
+//! - **Resource**: A JSON document managed by Dyna.
+//! - **PatchOperation**: A single JSON Patch (RFC 6902) operation.
+//! - **Patch**: An atomic change to a single resource.
+//! - **Changeset**: A Jujutsu-inspired group of patches committed together,
+//!   forming a DAG with parent relationships.
+//! - **Channel**: A named bookmark pointing to a changeset (like jj bookmarks).
+//! - Supporting types: staging, conflicts, sync state, config.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -12,35 +18,30 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 /// A JSON resource managed by the Dyna system.
-///
-/// Resources are the primary unit of data. Each resource has a unique ID, a
-/// human-readable name, and an arbitrary JSON body.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Resource {
-    /// Unique identifier for this resource (e.g., "res-001").
     pub id: String,
-    /// Human-readable name / title.
     pub name: String,
-    /// The actual JSON content of the resource.
     pub body: serde_json::Value,
-    /// Metadata associated with the resource.
     pub metadata: ResourceMetadata,
 }
 
-/// Metadata attached to a resource.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResourceMetadata {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub created_by: String,
     pub updated_by: String,
-    /// Monotonically increasing version counter (local).
     pub version: u64,
 }
 
 impl Resource {
-    /// Create a new resource with the given ID, name, and body.
-    pub fn new(id: impl Into<String>, name: impl Into<String>, body: serde_json::Value, author: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        body: serde_json::Value,
+        author: impl Into<String>,
+    ) -> Self {
         let now = Utc::now();
         let author = author.into();
         Self {
@@ -59,7 +60,7 @@ impl Resource {
 }
 
 // ---------------------------------------------------------------------------
-// Patch / Changeset
+// Patch Operation (RFC 6902)
 // ---------------------------------------------------------------------------
 
 /// A single operation within a JSON Patch (RFC 6902).
@@ -91,41 +92,29 @@ pub enum PatchOperation {
     },
 }
 
-/// A complete patch (changeset) in the Dyna system.
-///
-/// This is the fundamental unit of change, inspired by Pijul's theory of patches.
-/// Each patch is self-contained, has explicit dependencies, and is identified by
-/// the SHA-256 hash of its canonical serialization.
+// ---------------------------------------------------------------------------
+// Patch (atomic change to a single resource)
+// ---------------------------------------------------------------------------
+
+/// A Patch is an atomic set of operations targeting a single resource.
+/// Multiple patches are grouped into a Changeset.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Patch {
-    /// Content-addressable hash of this patch (sha256:...).
-    /// Computed after serialization of all other fields.
+    /// Content-addressable hash (sha256:...).
     pub hash: String,
-    /// The author who created this patch.
-    pub author: String,
-    /// When this patch was created.
-    pub timestamp: DateTime<Utc>,
-    /// Human-readable description of the change.
-    pub message: String,
-    /// Hashes of patches that this patch depends on (Pijul-style dependencies).
-    pub dependencies: Vec<String>,
-    /// The resource ID that this patch targets.
+    /// The resource this patch targets.
     pub target_resource: String,
     /// The JSON Patch operations (RFC 6902).
     pub operations: Vec<PatchOperation>,
-    /// The full "before" snapshot of the resource (for three-way merge support).
+    /// The "before" snapshot (for three-way merge).
     pub parent_snapshot: Option<serde_json::Value>,
-    /// The full "after" snapshot of the resource.
+    /// The "after" snapshot.
     pub result_snapshot: Option<serde_json::Value>,
 }
 
-/// The content of a patch used for hashing (excludes the hash field itself).
+/// Content used for hashing a Patch (excludes the hash field).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchContent {
-    pub author: String,
-    pub timestamp: DateTime<Utc>,
-    pub message: String,
-    pub dependencies: Vec<String>,
     pub target_resource: String,
     pub operations: Vec<PatchOperation>,
     pub parent_snapshot: Option<serde_json::Value>,
@@ -135,34 +124,23 @@ pub struct PatchContent {
 impl Patch {
     /// Create a new patch and compute its content hash.
     pub fn new(
-        author: String,
-        message: String,
-        dependencies: Vec<String>,
         target_resource: String,
         operations: Vec<PatchOperation>,
         parent_snapshot: Option<serde_json::Value>,
         result_snapshot: Option<serde_json::Value>,
     ) -> Self {
-        let timestamp = Utc::now();
         let content = PatchContent {
-            author: author.clone(),
-            timestamp,
-            message: message.clone(),
-            dependencies: dependencies.clone(),
             target_resource: target_resource.clone(),
             operations: operations.clone(),
             parent_snapshot: parent_snapshot.clone(),
             result_snapshot: result_snapshot.clone(),
         };
-        let serialized = serde_json::to_vec(&content).expect("Failed to serialize patch content");
+        let serialized =
+            serde_json::to_vec(&content).expect("Failed to serialize patch content");
         let hash = crate::hash::content_hash(&serialized);
 
         Self {
             hash,
-            author,
-            timestamp,
-            message,
-            dependencies,
             target_resource,
             operations,
             parent_snapshot,
@@ -173,34 +151,212 @@ impl Patch {
     /// Verify the integrity of this patch by recomputing its hash.
     pub fn verify(&self) -> bool {
         let content = PatchContent {
-            author: self.author.clone(),
-            timestamp: self.timestamp,
-            message: self.message.clone(),
-            dependencies: self.dependencies.clone(),
             target_resource: self.target_resource.clone(),
             operations: self.operations.clone(),
             parent_snapshot: self.parent_snapshot.clone(),
             result_snapshot: self.result_snapshot.clone(),
         };
-        let serialized = serde_json::to_vec(&content).expect("Failed to serialize patch content");
+        let serialized =
+            serde_json::to_vec(&content).expect("Failed to serialize patch content");
         crate::hash::content_hash(&serialized) == self.hash
     }
 }
 
 // ---------------------------------------------------------------------------
-// Channel (Pijul-inspired branch)
+// Changeset (Jujutsu-inspired)
 // ---------------------------------------------------------------------------
 
-/// A channel represents a named sequence of patches, analogous to a branch
-/// in Git or a channel in Pijul.
+/// A Changeset is the primary unit of work in Dyna, inspired by Jujutsu's
+/// change concept.
+///
+/// Key properties (mirroring Jujutsu):
+/// - Has an immutable **change_id** (randomly generated, stays constant).
+/// - Has a mutable **commit_hash** (recomputed when content changes).
+/// - Contains one or more **Patches** (grouped atomic changes).
+/// - Has **parent** changesets forming a DAG.
+/// - Can be mutable (working/draft) or immutable (promoted/published).
+/// - Can be described with a human-readable message.
+///
+/// The working copy is always a Changeset (like jj's `@`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Changeset {
+    /// Immutable change identifier. Stays constant even as the changeset is
+    /// modified. This is a short random hex string (e.g., "a7f3bc12").
+    pub change_id: String,
+
+    /// Content-addressable commit hash (sha256:...). Recomputed whenever the
+    /// changeset's content (patches, message, parents) changes.
+    pub commit_hash: String,
+
+    /// Human-readable description of this changeset.
+    pub message: String,
+
+    /// The author who created this changeset.
+    pub author: String,
+
+    /// When this changeset was created.
+    pub created_at: DateTime<Utc>,
+
+    /// When this changeset was last modified.
+    pub updated_at: DateTime<Utc>,
+
+    /// Parent changeset IDs (change_ids). Empty for the root changeset.
+    /// Multiple parents indicate a merge changeset.
+    pub parents: Vec<String>,
+
+    /// The patches contained in this changeset, in order.
+    pub patches: Vec<Patch>,
+
+    /// Whether this changeset is immutable (promoted/published).
+    /// Immutable changesets cannot be edited.
+    pub immutable: bool,
+
+    /// Whether this changeset is empty (no patches).
+    pub empty: bool,
+
+    /// Optional bookmark labels pointing to this changeset.
+    pub bookmarks: Vec<String>,
+}
+
+/// Content used for computing the commit hash of a Changeset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangesetContent {
+    pub change_id: String,
+    pub message: String,
+    pub author: String,
+    pub parents: Vec<String>,
+    pub patch_hashes: Vec<String>,
+}
+
+impl Changeset {
+    /// Create a new changeset with a random change_id.
+    pub fn new(
+        author: String,
+        message: String,
+        parents: Vec<String>,
+        patches: Vec<Patch>,
+    ) -> Self {
+        let change_id = generate_change_id();
+        let now = Utc::now();
+        let empty = patches.is_empty();
+        let patch_hashes: Vec<String> = patches.iter().map(|p| p.hash.clone()).collect();
+
+        let content = ChangesetContent {
+            change_id: change_id.clone(),
+            message: message.clone(),
+            author: author.clone(),
+            parents: parents.clone(),
+            patch_hashes,
+        };
+        let serialized =
+            serde_json::to_vec(&content).expect("Failed to serialize changeset content");
+        let commit_hash = crate::hash::content_hash(&serialized);
+
+        Self {
+            change_id,
+            commit_hash,
+            message,
+            author,
+            created_at: now,
+            updated_at: now,
+            parents,
+            patches,
+            immutable: false,
+            empty,
+            bookmarks: Vec::new(),
+        }
+    }
+
+    /// Recompute the commit hash after modifying the changeset.
+    pub fn recompute_hash(&mut self) {
+        let patch_hashes: Vec<String> = self.patches.iter().map(|p| p.hash.clone()).collect();
+        let content = ChangesetContent {
+            change_id: self.change_id.clone(),
+            message: self.message.clone(),
+            author: self.author.clone(),
+            parents: self.parents.clone(),
+            patch_hashes,
+        };
+        let serialized =
+            serde_json::to_vec(&content).expect("Failed to serialize changeset content");
+        self.commit_hash = crate::hash::content_hash(&serialized);
+        self.updated_at = Utc::now();
+        self.empty = self.patches.is_empty();
+    }
+
+    /// Verify the integrity of this changeset.
+    pub fn verify(&self) -> bool {
+        let patch_hashes: Vec<String> = self.patches.iter().map(|p| p.hash.clone()).collect();
+        let content = ChangesetContent {
+            change_id: self.change_id.clone(),
+            message: self.message.clone(),
+            author: self.author.clone(),
+            parents: self.parents.clone(),
+            patch_hashes,
+        };
+        let serialized =
+            serde_json::to_vec(&content).expect("Failed to serialize changeset content");
+        crate::hash::content_hash(&serialized) == self.commit_hash
+    }
+
+    /// Return a short display form of the change_id (first 8 chars).
+    pub fn short_change_id(&self) -> &str {
+        &self.change_id[..std::cmp::min(self.change_id.len(), 8)]
+    }
+
+    /// Return a short display form of the commit_hash.
+    pub fn short_commit_hash(&self) -> &str {
+        &self.commit_hash[7..std::cmp::min(self.commit_hash.len(), 19)]
+    }
+
+    /// Total number of operations across all patches.
+    pub fn total_operations(&self) -> usize {
+        self.patches.iter().map(|p| p.operations.len()).sum()
+    }
+
+    /// Get all resource IDs affected by this changeset.
+    pub fn affected_resources(&self) -> Vec<String> {
+        let mut resources: Vec<String> = self
+            .patches
+            .iter()
+            .map(|p| p.target_resource.clone())
+            .collect();
+        resources.sort();
+        resources.dedup();
+        resources
+    }
+}
+
+/// Generate a random 16-character hex change ID.
+fn generate_change_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    // Mix in some randomness from the address of a stack variable
+    let stack_var = 0u8;
+    let addr = &stack_var as *const u8 as usize;
+    let mixed = nanos ^ (addr as u128);
+    format!("{:016x}", mixed & 0xFFFFFFFFFFFFFFFF)
+}
+
+// ---------------------------------------------------------------------------
+// Channel / Bookmark
+// ---------------------------------------------------------------------------
+
+/// A Channel is a named bookmark pointing to a changeset lineage.
+/// Channels in Dyna serve the same purpose as bookmarks in Jujutsu:
+/// they label a position in the changeset DAG, primarily for
+/// synchronization with the remote server.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Channel {
     /// Name of the channel (e.g., "main", "alice-draft").
     pub name: String,
-    /// Hash of the latest patch on this channel.
-    pub head: Option<String>,
-    /// Ordered list of patch hashes in this channel.
-    pub patches: Vec<String>,
+    /// The change_id of the changeset this channel points to.
+    pub head_change_id: Option<String>,
+    /// Ordered list of changeset change_ids in this channel's lineage.
+    pub changesets: Vec<String>,
     /// When this channel was created.
     pub created_at: DateTime<Utc>,
     /// When this channel was last updated.
@@ -208,38 +364,42 @@ pub struct Channel {
 }
 
 impl Channel {
-    /// Create a new empty channel.
     pub fn new(name: impl Into<String>) -> Self {
         let now = Utc::now();
         Self {
             name: name.into(),
-            head: None,
-            patches: Vec::new(),
+            head_change_id: None,
+            changesets: Vec::new(),
             created_at: now,
             updated_at: now,
         }
     }
 
-    /// Append a patch hash to this channel and update the head.
-    pub fn append_patch(&mut self, hash: String) {
-        self.head = Some(hash.clone());
-        self.patches.push(hash);
+    /// Append a changeset to this channel.
+    pub fn append_changeset(&mut self, change_id: String) {
+        self.head_change_id = Some(change_id.clone());
+        self.changesets.push(change_id);
         self.updated_at = Utc::now();
     }
 
-    /// Get the list of patches that are in this channel but not in `other`.
-    pub fn patches_since(&self, other_head: Option<&str>) -> Vec<String> {
-        match other_head {
-            None => self.patches.clone(),
-            Some(head) => {
-                if let Some(pos) = self.patches.iter().position(|h| h == head) {
-                    self.patches[pos + 1..].to_vec()
+    /// Get changesets since a given change_id (exclusive).
+    pub fn changesets_since(&self, since: Option<&str>) -> Vec<String> {
+        match since {
+            None => self.changesets.clone(),
+            Some(id) => {
+                if let Some(pos) = self.changesets.iter().position(|c| c == id) {
+                    self.changesets[pos + 1..].to_vec()
                 } else {
-                    // If the head is not found, return all patches
-                    self.patches.clone()
+                    self.changesets.clone()
                 }
             }
         }
+    }
+
+    // Keep backward compat: patches list derived from changesets
+    // (used by protocol types that still reference Channel)
+    pub fn patch_count_placeholder(&self) -> usize {
+        self.changesets.len()
     }
 }
 
@@ -247,14 +407,12 @@ impl Channel {
 // Repository configuration
 // ---------------------------------------------------------------------------
 
-/// Local repository configuration, stored in `.dyna/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoConfig {
     pub remote_url: Option<String>,
     pub user: UserConfig,
 }
 
-/// User identity configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserConfig {
     pub name: String,
@@ -280,15 +438,10 @@ impl Default for RepoConfig {
 /// Represents a staged change ready to be committed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StagedChange {
-    /// The resource ID.
     pub resource_id: String,
-    /// Path to the resource file relative to the working directory.
     pub file_path: String,
-    /// The previous version of the resource (None if new).
     pub previous: Option<serde_json::Value>,
-    /// The new version of the resource.
     pub current: serde_json::Value,
-    /// The computed operations (JSON Patch).
     pub operations: Vec<PatchOperation>,
 }
 
@@ -296,18 +449,12 @@ pub struct StagedChange {
 // Conflict
 // ---------------------------------------------------------------------------
 
-/// Represents a conflict that needs manual resolution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conflict {
-    /// The resource that has the conflict.
     pub resource_id: String,
-    /// Path within the JSON document where the conflict occurs.
     pub json_path: String,
-    /// The local value.
     pub local_value: serde_json::Value,
-    /// The remote value.
     pub remote_value: serde_json::Value,
-    /// The common ancestor value (if available).
     pub base_value: Option<serde_json::Value>,
 }
 
@@ -315,14 +462,17 @@ pub struct Conflict {
 // Sync state
 // ---------------------------------------------------------------------------
 
-/// Tracks synchronization state between local and remote.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SyncState {
-    /// The hash of the last patch known to be on the remote for each channel.
+    /// The change_id of the last changeset known to be on the remote for each channel.
     pub remote_heads: HashMap<String, String>,
-    /// Hashes of patches that have been pushed to the remote.
-    pub pushed_patches: Vec<String>,
+    /// Change IDs of changesets that have been pushed to the remote.
+    pub pushed_changesets: Vec<String>,
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -344,9 +494,6 @@ mod tests {
     #[test]
     fn test_patch_creation_and_verification() {
         let patch = Patch::new(
-            "alice".into(),
-            "Test patch".into(),
-            vec![],
             "res-001".into(),
             vec![PatchOperation::Replace {
                 path: "/name".into(),
@@ -360,22 +507,57 @@ mod tests {
     }
 
     #[test]
+    fn test_changeset_creation_and_verification() {
+        let patch = Patch::new(
+            "res-001".into(),
+            vec![PatchOperation::Replace {
+                path: "/name".into(),
+                value: serde_json::json!("New Name"),
+            }],
+            None,
+            None,
+        );
+        let cs = Changeset::new(
+            "alice".into(),
+            "Update resource name".into(),
+            vec![],
+            vec![patch],
+        );
+        assert_eq!(cs.change_id.len(), 16);
+        assert!(cs.commit_hash.starts_with("sha256:"));
+        assert!(cs.verify());
+        assert!(!cs.empty);
+        assert_eq!(cs.total_operations(), 1);
+        assert_eq!(cs.affected_resources(), vec!["res-001"]);
+    }
+
+    #[test]
+    fn test_changeset_recompute_hash() {
+        let mut cs = Changeset::new("alice".into(), "Draft".into(), vec![], vec![]);
+        let old_hash = cs.commit_hash.clone();
+        cs.message = "Updated message".into();
+        cs.recompute_hash();
+        assert_ne!(cs.commit_hash, old_hash);
+        assert!(cs.verify());
+    }
+
+    #[test]
     fn test_channel_operations() {
         let mut channel = Channel::new("main");
-        assert!(channel.head.is_none());
-        assert!(channel.patches.is_empty());
+        assert!(channel.head_change_id.is_none());
+        assert!(channel.changesets.is_empty());
 
-        channel.append_patch("sha256:aaa".into());
-        channel.append_patch("sha256:bbb".into());
-        channel.append_patch("sha256:ccc".into());
+        channel.append_changeset("aaa".into());
+        channel.append_changeset("bbb".into());
+        channel.append_changeset("ccc".into());
 
-        assert_eq!(channel.head, Some("sha256:ccc".into()));
-        assert_eq!(channel.patches.len(), 3);
+        assert_eq!(channel.head_change_id, Some("ccc".into()));
+        assert_eq!(channel.changesets.len(), 3);
 
-        let since = channel.patches_since(Some("sha256:aaa"));
-        assert_eq!(since, vec!["sha256:bbb", "sha256:ccc"]);
+        let since = channel.changesets_since(Some("aaa"));
+        assert_eq!(since, vec!["bbb", "ccc"]);
 
-        let all = channel.patches_since(None);
+        let all = channel.changesets_since(None);
         assert_eq!(all.len(), 3);
     }
 }

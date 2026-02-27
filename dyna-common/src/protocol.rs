@@ -1,23 +1,23 @@
 //! HTTP API protocol types shared between the CLI client and the remote server.
 //!
-//! These types define the request and response bodies for the REST API used
-//! for synchronization between the CLI and the server.
+//! These types define the request and response bodies for the REST API.
+//! The API is now changeset-centric: push/pull operate on changesets.
 
-use crate::models::{Channel, Patch};
+use crate::models::{Changeset, Channel};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
-// Push / Pull
+// Push / Pull (changeset-based)
 // ---------------------------------------------------------------------------
 
-/// Request to push patches to the remote server.
+/// Request to push changesets to the remote server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PushRequest {
     /// The channel to push to.
     pub channel: String,
-    /// The patches to push, in dependency order.
-    pub patches: Vec<Patch>,
-    /// The expected current head of the channel (for optimistic concurrency).
+    /// The changesets to push, in dependency order.
+    pub changesets: Vec<Changeset>,
+    /// The expected current head change_id of the channel (optimistic concurrency).
     pub expected_head: Option<String>,
 }
 
@@ -25,30 +25,29 @@ pub struct PushRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PushResponse {
     pub success: bool,
-    /// The new head of the channel after the push.
+    /// The new head change_id of the channel after the push.
     pub new_head: Option<String>,
-    /// Number of patches accepted.
+    /// Number of changesets accepted.
     pub accepted_count: usize,
     /// Error message if the push failed.
     pub error: Option<String>,
 }
 
-/// Request to pull patches from the remote server.
+/// Request to pull changesets from the remote server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequest {
     /// The channel to pull from.
     pub channel: String,
-    /// The hash of the last patch the client has for this channel.
-    /// If None, the client wants all patches.
-    pub since_hash: Option<String>,
+    /// The change_id of the last changeset the client has for this channel.
+    pub since_change_id: Option<String>,
 }
 
 /// Response from a pull operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullResponse {
-    /// The patches that the client is missing, in dependency order.
-    pub patches: Vec<Patch>,
-    /// The current head of the channel on the remote.
+    /// The changesets that the client is missing, in dependency order.
+    pub changesets: Vec<Changeset>,
+    /// The current head change_id of the channel on the remote.
     pub current_head: Option<String>,
     /// The channel metadata.
     pub channel: Channel,
@@ -61,7 +60,6 @@ pub struct PullResponse {
 /// Request to clone a repository.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloneRequest {
-    /// Optional: specific channel to clone. Defaults to "main".
     pub channel: Option<String>,
 }
 
@@ -70,8 +68,8 @@ pub struct CloneRequest {
 pub struct CloneResponse {
     /// All channels in the repository.
     pub channels: Vec<Channel>,
-    /// All patches in the repository, in dependency order.
-    pub patches: Vec<Patch>,
+    /// All changesets in the repository, in dependency order.
+    pub changesets: Vec<Changeset>,
     /// Current resource snapshots (resource_id -> JSON value).
     pub snapshots: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -94,7 +92,6 @@ pub struct ListChannelsResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateChannelRequest {
     pub name: String,
-    /// Optional: fork from this channel (copy its patches).
     pub fork_from: Option<String>,
 }
 
@@ -110,12 +107,10 @@ pub struct CreateChannelResponse {
 // Promote
 // ---------------------------------------------------------------------------
 
-/// Request to promote patches from one channel to another.
+/// Request to promote changesets from one channel to another.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromoteRequest {
-    /// Source channel to promote from.
     pub source_channel: String,
-    /// Target channel to promote to (usually "main").
     pub target_channel: String,
 }
 
@@ -123,10 +118,27 @@ pub struct PromoteRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromoteResponse {
     pub success: bool,
-    /// Hashes of the promoted patches.
-    pub promoted_patches: Vec<String>,
-    /// The new head of the target channel.
+    /// Change IDs of the promoted changesets.
+    pub promoted_changesets: Vec<String>,
+    /// The new head change_id of the target channel.
     pub new_head: Option<String>,
+    pub error: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Changeset detail query
+// ---------------------------------------------------------------------------
+
+/// Request to get details of a specific changeset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetChangesetRequest {
+    pub change_id: String,
+}
+
+/// Response with changeset details.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetChangesetResponse {
+    pub changeset: Option<Changeset>,
     pub error: Option<String>,
 }
 

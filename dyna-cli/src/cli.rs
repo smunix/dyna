@@ -8,7 +8,7 @@ use std::path::PathBuf;
     name = "dyna",
     author,
     version,
-    about = "A distributed CRUD tool for collaborative JSON resource editing, inspired by Pijul.",
+    about = "A distributed CRUD tool for collaborative JSON resource editing.\nInspired by Pijul and Jujutsu, with changeset-centric workflow.",
     long_about = None
 )]
 pub struct Cli {
@@ -30,62 +30,67 @@ pub enum Commands {
         directory: Option<PathBuf>,
     },
 
-    /// Stage JSON resource file(s) for the next commit.
+    /// Stage JSON resource file(s) for the next changeset.
     ///
     /// Accepts a single JSON file or a directory. When a directory is given,
     /// all `.json` files within it are staged recursively.
     Add {
         /// Path to a JSON file or directory to stage.
         path: PathBuf,
-
         /// Recursively add all `.json` files in the given directory.
-        /// This flag is implied when a directory path is provided, but can be
-        /// used explicitly for clarity.
         #[arg(short, long)]
         recursive: bool,
     },
 
-    /// Record staged changes as a new patch (changeset).
+    /// Record staged changes as a new changeset.
+    ///
+    /// A changeset groups one or more patches (one per modified resource)
+    /// into a single logical unit with a message, author, and parent
+    /// changeset references. This is analogous to `jj commit`.
     Commit {
         /// A descriptive message for this changeset.
         #[arg(short, long)]
         message: String,
     },
 
-    /// Push local patches to the remote server.
+    /// Push local changesets to the remote server.
     Push,
 
-    /// Fetch and merge remote patches into the local state.
+    /// Fetch and merge remote changesets into the local state.
     Pull,
 
     /// Show the working directory and staging area status.
     Status,
 
     /// Show detailed diffs (operations) for staged files.
-    ///
-    /// Without arguments, shows diffs for all staged files. Optionally
-    /// specify a file path to filter to a single resource.
     Diff {
         /// Optional: path to a specific staged file to diff.
         path: Option<PathBuf>,
     },
 
-    /// Display the patch history for the current channel.
+    /// Display the changeset history for the current channel.
     ///
-    /// Use `--verbose` to include detailed operations for each patch, or
-    /// `--patch <hash>` to inspect a single patch in full detail.
+    /// Shows changesets (not individual patches) as the primary log unit.
+    /// Use `--verbose` to include patches and their operations, or
+    /// `--changeset <id>` to inspect a single changeset in full detail.
     Log {
-        /// Number of recent patches to display.
+        /// Number of recent changesets to display.
         #[arg(short = 'n', long, default_value = "20")]
         count: usize,
 
-        /// Show detailed operations for each patch in the log.
+        /// Show patches and their operations within each changeset.
         #[arg(short, long)]
         verbose: bool,
 
-        /// Show full detail for a specific patch by its hash (or hash prefix).
+        /// Show full detail for a specific changeset by its change_id
+        /// (or change_id prefix).
         #[arg(short, long)]
-        patch: Option<String>,
+        changeset: Option<String>,
+
+        /// When used with --changeset, also show detailed operations
+        /// for each patch in the changeset.
+        #[arg(short, long)]
+        patches: bool,
     },
 
     /// Interactively resolve conflicts for a resource.
@@ -94,32 +99,38 @@ pub enum Commands {
         path: PathBuf,
     },
 
-    /// Manage channels (branches).
+    /// Manage channels (bookmarks into the changeset DAG).
     ///
     /// Without flags, switches to the named channel. Use `--list` to list
     /// channels, `--remote` to include remote channels, and `--create` to
     /// create a new channel.
-    ///
-    /// Switching is blocked if there are staged but uncommitted files.
-    /// On switch, the working directory is cleaned and repopulated with
-    /// the target channel's committed resource state.
     Channel {
         /// Name of the channel (required unless --list is used).
         name: Option<String>,
-
         /// Create the channel if it doesn't exist.
         #[arg(short, long)]
         create: bool,
-
         /// List all channels instead of switching.
         #[arg(short, long)]
         list: bool,
-
         /// When used with --list, also fetch and display remote channels.
         #[arg(short, long)]
         remote: bool,
     },
 
-    /// Promote patches from the current channel to the main channel.
+    /// Promote changesets from the current channel to the main channel.
+    ///
+    /// Promoted changesets are marked as immutable.
     Promote,
+
+    /// Describe (amend the message of) a changeset.
+    ///
+    /// Defaults to the current working changeset if no change_id is given.
+    Describe {
+        /// The change_id (or prefix) of the changeset to describe.
+        change_id: Option<String>,
+        /// The new description message.
+        #[arg(short, long)]
+        message: String,
+    },
 }
