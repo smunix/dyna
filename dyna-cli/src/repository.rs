@@ -31,7 +31,7 @@
 use anyhow::{Context, Result, bail};
 use dyna_core::error::DynaError;
 use dyna_core::models::*;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -110,8 +110,7 @@ impl Repository {
         }
 
         // Create all subdirectories via iterator
-        ["patches", "changesets", "staging", "channels", "snapshots", "conflicts"]
-            .iter()
+        izip!(&["patches", "changesets", "staging", "channels", "snapshots", "conflicts"])
             .try_for_each(|sub| fs::create_dir_all(dyna_dir.join(sub)).map_err(anyhow::Error::from))?;
 
         // HEAD points to the current channel
@@ -274,7 +273,7 @@ impl Repository {
                 .map_err(Into::into)
             })
             .and_then(|()| {
-                cs.patches.iter().try_for_each(|patch| self.store_patch(patch))
+                izip!(&cs.patches).try_for_each(|patch| self.store_patch(patch))
             })
     }
 
@@ -295,9 +294,7 @@ impl Repository {
     /// Uses `filter_map` to skip missing changesets with a warning.
     pub fn load_channel_changesets(&self, channel_name: &str) -> Result<Vec<Changeset>> {
         self.load_channel(channel_name).map(|channel| {
-            channel
-                .changesets
-                .iter()
+            izip!(&channel.changesets)
                 .filter_map(|change_id| {
                     self.load_changeset(change_id)
                         .inspect_err(|e| {
@@ -318,8 +315,7 @@ impl Repository {
     ///
     /// Filters all IDs by prefix, then loads each match via `try_collect`.
     pub fn find_changeset_by_prefix(&self, prefix: &str) -> Result<Vec<Changeset>> {
-        self.all_changeset_ids()?
-            .into_iter()
+        izip!(self.all_changeset_ids()?)
             .filter(|id| id.starts_with(prefix))
             .map(|id| self.load_changeset(&id))
             .try_collect()

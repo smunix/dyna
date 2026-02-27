@@ -5,6 +5,7 @@
 use anyhow::Result;
 use dyna_core::diff;
 use dyna_core::protocol::PullRequest;
+use itertools::izip;
 
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;
@@ -42,9 +43,7 @@ pub async fn execute() -> Result<()> {
     let mut channel = repo.load_channel(&channel_name)?;
 
     // Process each changeset, accumulating whether conflicts were found via fold
-    let conflicts_found = response
-        .changesets
-        .iter()
+    let conflicts_found = izip!(&response.changesets)
         .try_fold(false, |has_conflicts, cs| -> Result<bool> {
             repo.store_changeset(cs)?;
 
@@ -56,9 +55,7 @@ pub async fn execute() -> Result<()> {
             );
 
             // Apply each patch, tracking conflicts via try_fold
-            let changeset_has_conflicts = cs
-                .patches
-                .iter()
+            let changeset_has_conflicts = izip!(&cs.patches)
                 .try_fold(false, |patch_conflicts, patch| -> Result<bool> {
                     let resource_id = &patch.target_resource;
                     let current_snapshot = repo.load_snapshot(resource_id)?;
@@ -75,8 +72,7 @@ pub async fn execute() -> Result<()> {
                                         })
                                 })
                                 .unwrap_or_else(|mut merge_conflicts| {
-                                    merge_conflicts
-                                        .iter_mut()
+                                    izip!(&mut merge_conflicts)
                                         .for_each(|c| c.resource_id = resource_id.clone());
                                     repo.save_conflicts(resource_id, &merge_conflicts)
                                         .map(|()| {
@@ -140,8 +136,7 @@ pub async fn execute() -> Result<()> {
         .transpose()?;
 
     // Write updated snapshots to working directory via try_for_each
-    repo.load_all_snapshots()?
-        .iter()
+    izip!(&repo.load_all_snapshots()?)
         .try_for_each(|(resource_id, value)| -> Result<()> {
             serde_json::to_string_pretty(value)
                 .map_err(Into::into)

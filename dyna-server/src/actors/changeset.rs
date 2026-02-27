@@ -17,7 +17,7 @@ use dyna_core::diff;
 use dyna_core::models::{Changeset, Channel};
 use dyna_core::protocol::*;
 use elfo::prelude::*;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 
 use crate::messages::*;
 
@@ -325,9 +325,7 @@ async fn handle_pull(
     let changeset_ids = since_change_id
         .as_ref()
         .map(|since| {
-            channel
-                .changesets
-                .iter()
+            izip!(&channel.changesets)
                 .skip_while(|id| *id != since)
                 .skip(1)
                 .cloned()
@@ -368,9 +366,8 @@ async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse 
         .unwrap_or_default();
 
     // Collect all unique changeset IDs from all channels
-    let all_cs_ids = channels
-        .iter()
-        .flat_map(|ch| ch.changesets.iter())
+    let all_cs_ids = izip!(&channels)
+        .flat_map(|ch| izip!(&ch.changesets))
         .cloned()
         .collect::<std::collections::HashSet<_>>();
 

@@ -13,7 +13,7 @@
 
 use crate::diff;
 use crate::models::{Patch, PatchOperation, StagedChange};
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use serde_json::Value;
 
 /// Build a Patch from a staged change.
@@ -66,10 +66,9 @@ pub fn apply_patch_to_document(doc: &mut Value, patch: &Patch) -> Result<(), Str
 /// Uses `cartesian_product` from itertools to check all path pairs.
 pub fn patches_commute(a: &Patch, b: &Patch) -> bool {
     (a.target_resource != b.target_resource)
-        || a.operations
-            .iter()
+        || izip!(&a.operations)
             .map(op_path)
-            .cartesian_product(b.operations.iter().map(op_path))
+            .cartesian_product(izip!(&b.operations).map(op_path))
             .all(|(ap, bp)| !paths_overlap(ap, bp))
 }
 

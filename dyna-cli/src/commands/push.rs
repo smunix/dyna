@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use dyna_core::protocol::PushRequest;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;
@@ -28,9 +28,7 @@ pub async fn execute() -> Result<()> {
     let unpushed_ids: Vec<String> = remote_head
         .as_ref()
         .map(|head| {
-            channel
-                .changesets
-                .iter()
+            izip!(&channel.changesets)
                 .skip_while(|id| *id != head)
                 .skip(1) // skip the head itself
                 .cloned()
@@ -44,8 +42,7 @@ pub async fn execute() -> Result<()> {
     }
 
     // Load changeset objects via try_collect
-    let changesets = unpushed_ids
-        .iter()
+    let changesets = izip!(&unpushed_ids)
         .map(|id| repo.load_changeset(id))
         .try_collect::<_, Vec<_>, _>()?;
 
@@ -83,7 +80,7 @@ pub async fn execute() -> Result<()> {
         response.accepted_count
     );
 
-    changesets.iter().for_each(|cs| {
+    izip!(&changesets).for_each(|cs| {
         println!("  {} ({}) -> OK", cs.short_change_id(), cs.message);
     });
 

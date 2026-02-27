@@ -14,7 +14,7 @@
 use anyhow::{Result, bail};
 use colored::Colorize;
 use dyna_core::diff;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use std::collections::{HashMap, HashSet};
 
 use crate::repository::Repository;
@@ -39,7 +39,7 @@ pub async fn execute(
     // Guard: block switch if staged uncommitted files exist
     let staged = repo.load_staged_changes()?;
     (!staged.is_empty()).then(|| -> Result<()> {
-        let file_list = staged.iter().map(|s| s.resource_id.as_str()).join("\n  ");
+        let file_list = izip!(&staged).map(|s| s.resource_id.as_str()).join("\n  ");
         bail!(
             "Cannot switch channels: you have {} staged but uncommitted file(s):\n  {}\n\n\
              Please commit your staged changes first with 'dyna commit -m \"message\"',\n\
@@ -66,8 +66,7 @@ pub async fn execute(
     // --- Clean working directory ---
     // Remove tracked files (those with a snapshot) via fold to count removals
     let snapshots = repo.load_all_snapshots()?;
-    let removed = snapshots
-        .keys()
+    let removed = izip!(snapshots.keys())
         .map(|resource_id| repo.work_dir.join(format!("{}.json", resource_id)))
         .filter(|file_path| file_path.exists())
         .try_fold(0usize, |count, file_path| {
@@ -88,11 +87,9 @@ pub async fn execute(
 
     // --- Restore target channel state ---
     // Replay all changesets via fold to compute final resource state
-    let resource_state: HashMap<String, serde_json::Value> = target_channel
-        .changesets
-        .iter()
+    let resource_state: HashMap<String, serde_json::Value> = izip!(&target_channel.changesets)
         .filter_map(|change_id| repo.load_changeset(change_id).ok())
-        .flat_map(|cs| cs.patches.into_iter())
+        .flat_map(|cs| izip!(cs.patches))
         .fold(HashMap::new(), |mut state, patch| {
             let current_val = state
                 .entry(patch.target_resource.clone())
@@ -110,8 +107,7 @@ pub async fn execute(
         });
 
     // Write resource files and snapshots, counting via try_fold
-    let restored = resource_state
-        .iter()
+    let restored = izip!(&resource_state)
         .try_fold(0usize, |count, (resource_id, value)| -> Result<usize> {
             let file_path = repo.work_dir.join(format!("{}.json", resource_id));
             serde_json::to_string_pretty(value)
@@ -151,7 +147,7 @@ async fn list_channels(repo: &Repository, include_remote: bool) -> Result<()> {
     let local_channels = repo.list_channels()?;
 
     println!("{}", "Local channels:".bold());
-    local_channels.iter().for_each(|ch| {
+    izip!(&local_channels).for_each(|ch| {
         let marker = (ch.name == current).then(|| "* ").unwrap_or("  ");
         let head_str = ch
             .head_change_id
@@ -178,9 +174,9 @@ async fn list_channels(repo: &Repository, include_remote: bool) -> Result<()> {
                     Ok(response) => {
                         println!("\n{}", "Remote channels:".bold());
                         let local_names: HashSet<String> =
-                            local_channels.iter().map(|c| c.name.clone()).collect();
+                            izip!(&local_channels).map(|c| c.name.clone()).collect();
 
-                        response.channels.iter().for_each(|rch| {
+                        izip!(&response.channels).for_each(|rch| {
                             let head_str = rch
                                 .head_change_id
                                 .as_deref()
@@ -190,8 +186,7 @@ async fn list_channels(repo: &Repository, include_remote: bool) -> Result<()> {
                             let sync_status = local_names
                                 .contains(&rch.name)
                                 .then(|| {
-                                    local_channels
-                                        .iter()
+                                    izip!(&local_channels)
                                         .find(|c| c.name == rch.name)
                                         .and_then(|local| {
                                             (local.head_change_id == rch.head_change_id)
@@ -209,9 +204,8 @@ async fn list_channels(repo: &Repository, include_remote: bool) -> Result<()> {
 
                         // Show local-only channels
                         let remote_names: HashSet<String> =
-                            response.channels.iter().map(|c| c.name.clone()).collect();
-                        local_channels
-                            .iter()
+                            izip!(&response.channels).map(|c| c.name.clone()).collect();
+                        izip!(&local_channels)
                             .filter(|lch| !remote_names.contains(&lch.name))
                             .for_each(|lch| {
                                 println!(

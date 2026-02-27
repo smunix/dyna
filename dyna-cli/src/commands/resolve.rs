@@ -4,6 +4,7 @@
 //! auto-stages the resolution.
 
 use anyhow::{Result, bail};
+use itertools::izip;
 use dialoguer::Select;
 use std::path::PathBuf;
 
@@ -31,8 +32,7 @@ pub async fn execute(path: PathBuf) -> Result<()> {
         .unwrap_or_else(|| serde_json::json!({}));
 
     // Resolve each conflict via try_fold, accumulating the resolved snapshot
-    let snapshot = conflicts
-        .iter()
+    let snapshot = izip!(&conflicts)
         .enumerate()
         .try_fold(base_snapshot, |mut snapshot, (i, conflict)| -> Result<serde_json::Value> {
             println!("--- Conflict {} of {} ---", i + 1, conflicts.len());
@@ -148,8 +148,7 @@ fn set_nested_value(
         .split_last()
         .ok_or_else(|| anyhow::anyhow!("Empty path"))?;
 
-    let target = parent_path
-        .iter()
+    let target = izip!(parent_path)
         .try_fold(doc as &mut serde_json::Value, |current, key| -> Result<&mut serde_json::Value> {
             match current {
                 serde_json::Value::Object(map) => Ok(map

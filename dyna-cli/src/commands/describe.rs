@@ -4,6 +4,7 @@
 //! Defaults to the current working changeset if no change_id is given.
 
 use anyhow::{Result, bail};
+use itertools::izip;
 use colored::Colorize;
 
 use crate::repository::Repository;
@@ -22,7 +23,7 @@ pub async fn execute(change_id: Option<String>, message: String) -> Result<()> {
                             0 => bail!("No changeset found matching '{}'", id),
                             1 => Ok(matches[0].change_id.clone()),
                             n => {
-                                matches.iter().for_each(|m| {
+                                izip!(&matches).for_each(|m| {
                                     println!("  {} - {}", m.short_change_id(), m.message);
                                 });
                                 bail!(

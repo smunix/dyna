@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use colored::Colorize;
 use dyna_core::diff;
 use dyna_core::models::StagedChange;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use std::path::{Path, PathBuf};
 
 use crate::repository::Repository;
@@ -41,8 +41,7 @@ pub async fn execute(path: PathBuf) -> Result<()> {
         );
 
         // Process all files via fold, accumulating (staged, skipped, errors) counts
-        let (staged_count, skipped_count, error_count) = json_files
-            .iter()
+        let (staged_count, skipped_count, error_count) = izip!(&json_files)
             .fold((0usize, 0usize, 0usize), |(staged, skipped, errors), file_path| {
                 let display_path = file_path
                     .strip_prefix(&repo.work_dir)

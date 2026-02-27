@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use dyna_core::protocol::CloneRequest;
+use itertools::izip;
 use std::path::PathBuf;
 
 use crate::repository::Repository;
@@ -43,23 +44,17 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
         .context("Failed to clone from remote")?;
 
     // Store all changesets locally via try_fold to count
-    let changeset_count = clone_response
-        .changesets
-        .iter()
+    let changeset_count = izip!(&clone_response.changesets)
         .try_fold(0usize, |count, cs| {
             repo.store_changeset(cs).map(|()| count + 1)
         })?;
 
     // Store all channels via try_for_each
-    clone_response
-        .channels
-        .iter()
+    izip!(&clone_response.channels)
         .try_for_each(|channel| repo.save_channel(channel))?;
 
     // Store resource snapshots and write working directory files via try_for_each
-    clone_response
-        .snapshots
-        .iter()
+    izip!(&clone_response.snapshots)
         .try_for_each(|(resource_id, snapshot)| -> Result<()> {
             repo.save_snapshot(resource_id, snapshot)?;
             serde_json::to_string_pretty(snapshot)
@@ -71,9 +66,7 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
         })?;
 
     // Update sync state: fold channel heads into sync_state
-    clone_response
-        .channels
-        .iter()
+    izip!(&clone_response.channels)
         .filter_map(|ch| {
             ch.head_change_id
                 .as_ref()

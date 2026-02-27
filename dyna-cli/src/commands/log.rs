@@ -11,7 +11,7 @@
 use anyhow::{Result, bail};
 use colored::Colorize;
 use dyna_core::models::{Changeset, PatchOperation};
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 
 use crate::repository::Repository;
 
@@ -47,8 +47,7 @@ pub async fn execute(
     // Show the most recent `count` changesets (newest first)
     let start = changesets.len().saturating_sub(count);
 
-    changesets[start..]
-        .iter()
+    izip!(&changesets[start..])
         .rev()
         .for_each(|cs| {
             print_changeset_summary(cs, &working_change);
@@ -135,9 +134,7 @@ fn print_changeset_summary(cs: &Changeset, working_change: &Option<String>) {
 
     // Parents
     (!cs.parents.is_empty()).then(|| {
-        let parent_strs = cs
-            .parents
-            .iter()
+        let parent_strs = izip!(&cs.parents)
             .map(|p| p[..std::cmp::min(p.len(), 8)].to_string())
             .join(", ");
         println!("│  parent(s): {}", parent_strs.dimmed());
@@ -156,7 +153,7 @@ fn print_changeset_patches(cs: &Changeset) {
         cs.total_operations()
     );
 
-    cs.patches.iter().enumerate().for_each(|(i, patch)| {
+    izip!(&cs.patches).enumerate().for_each(|(i, patch)| {
         let short_hash = &patch.hash[7..std::cmp::min(patch.hash.len(), 19)];
         println!(
             "│  patch {}: [{}] {} ({} ops)",
@@ -166,9 +163,7 @@ fn print_changeset_patches(cs: &Changeset) {
             patch.operations.len()
         );
 
-        patch
-            .operations
-            .iter()
+        izip!(&patch.operations)
             .enumerate()
             .for_each(|(op_idx, op)| {
                 print_operation(op_idx + 1, op, "│    ");
@@ -189,9 +184,9 @@ fn show_single_changeset(
             repo.find_changeset_by_prefix(id_or_prefix)
                 .and_then(|matches| match matches.len() {
                     0 => bail!("No changeset found matching '{}'", id_or_prefix),
-                    1 => Ok(matches.into_iter().next().unwrap()),
+                    1 => Ok(izip!(matches).next().unwrap()),
                     n => {
-                        matches.iter().for_each(|m| {
+                        izip!(&matches).for_each(|m| {
                             println!("  {} - {}", m.short_change_id(), m.message);
                         });
                         bail!(
@@ -208,7 +203,7 @@ fn show_single_changeset(
     println!("{}", "═".repeat(72).dimmed());
 
     // Metadata fields via iterator of (label, value) tuples
-    [
+    izip!(&[
         ("change_id", cs.change_id.yellow().bold().to_string()),
         ("commit_hash", cs.commit_hash.clone()),
         ("author", cs.author.cyan().to_string()),
@@ -216,8 +211,7 @@ fn show_single_changeset(
         ("updated", cs.updated_at.format("%Y-%m-%d %H:%M:%S").to_string()),
         ("immutable", cs.immutable.to_string()),
         ("empty", cs.empty.to_string()),
-    ]
-    .iter()
+    ])
     .for_each(|(label, value)| println!("  {:12} {}", format!("{}:", label), value));
 
     cs.message
@@ -229,8 +223,7 @@ fn show_single_changeset(
         .is_empty()
         .then(|| println!("  {:12} {}", "parents:", "(root changeset)".dimmed()))
         .unwrap_or_else(|| {
-            cs.parents
-                .iter()
+            izip!(&cs.parents)
                 .enumerate()
                 .for_each(|(i, parent)| println!("  parent[{}]:   {}", i, parent));
         });
@@ -253,7 +246,7 @@ fn show_single_changeset(
 
     // Always list patches
     println!("\n  {}:", "Patches in this changeset".underline().bold());
-    cs.patches.iter().enumerate().for_each(|(i, patch)| {
+    izip!(&cs.patches).enumerate().for_each(|(i, patch)| {
         let short_hash = &patch.hash[7..std::cmp::min(patch.hash.len(), 19)];
         println!(
             "    {}. [{}] {} — {} operation(s)",
@@ -280,9 +273,7 @@ fn show_single_changeset(
                 );
             });
 
-            patch
-                .operations
-                .iter()
+            izip!(&patch.operations)
                 .enumerate()
                 .for_each(|(op_idx, op)| {
                     print_operation(op_idx + 1, op, "       ");

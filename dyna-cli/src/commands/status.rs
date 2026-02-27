@@ -9,7 +9,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -50,9 +50,7 @@ pub async fn execute() -> Result<()> {
                 .remote_heads
                 .get(&channel_name)
                 .and_then(|rh| {
-                    channel
-                        .changesets
-                        .iter()
+                    izip!(&channel.changesets)
                         .position(|id| id == rh)
                         .map(|pos| channel.changesets.len() - pos - 1)
                 })
@@ -75,16 +73,16 @@ pub async fn execute() -> Result<()> {
     // Staged changes
     let staged = repo.load_staged_changes()?;
     let staged_resource_ids: HashSet<String> =
-        staged.iter().map(|s| s.resource_id.clone()).collect();
+        izip!(&staged).map(|s| s.resource_id.clone()).collect();
     let staged_file_paths: HashSet<String> =
-        staged.iter().map(|s| s.file_path.clone()).collect();
+        izip!(&staged).map(|s| s.file_path.clone()).collect();
 
     staged
         .is_empty()
         .then(|| println!("\n{}", "No staged changes.".dimmed()))
         .unwrap_or_else(|| {
             println!("\n{}:", "Staged changes".green().bold());
-            staged.iter().for_each(|change| {
+            izip!(&staged).for_each(|change| {
                 let status = change
                     .previous
                     .is_none()
@@ -98,8 +96,7 @@ pub async fn execute() -> Result<()> {
     let json_files = find_json_files(&repo.work_dir, &repo.dyna_dir)?;
     let snapshots = repo.load_all_snapshots()?;
 
-    let (modified_unstaged, untracked): (Vec<String>, Vec<String>) = json_files
-        .into_iter()
+    let (modified_unstaged, untracked): (Vec<String>, Vec<String>) = izip!(json_files)
         .filter(|json_path| {
             let abs_path = repo.work_dir.join(json_path);
             let resource_id = Repository::resource_id_from_path(&abs_path);
@@ -133,8 +130,7 @@ pub async fn execute() -> Result<()> {
             "\n{} (use \"dyna add <file>\" to stage):",
             "Modified but not staged".yellow().bold()
         );
-        modified_unstaged
-            .iter()
+        izip!(&modified_unstaged)
             .for_each(|path| println!("  {} {}", "modified".yellow(), path));
     });
 
@@ -143,8 +139,7 @@ pub async fn execute() -> Result<()> {
             "\n{} (use \"dyna add <file>\" to track):",
             "Untracked files".red().bold()
         );
-        untracked
-            .iter()
+        izip!(&untracked)
             .for_each(|path| println!("  {} {}", "untracked".red(), path));
     });
 
@@ -155,7 +150,7 @@ pub async fn execute() -> Result<()> {
     let conflicted = repo.list_conflicted_resources()?;
     (!conflicted.is_empty()).then(|| -> Result<()> {
         println!("\n{}:", "Unresolved conflicts".red().bold());
-        conflicted.iter().try_for_each(|resource_id| {
+        izip!(&conflicted).try_for_each(|resource_id| {
             repo.load_conflicts(resource_id).map(|conflicts| {
                 println!(
                     "  {} {} ({} conflict(s))",

@@ -8,7 +8,7 @@
 //! [`apply_patch`] function applies a list of [`PatchOperation`] to a JSON value.
 
 use crate::models::PatchOperation;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use serde_json::Value;
 
 /// Compute the JSON Patch operations needed to transform `old` into `new`.
@@ -29,7 +29,7 @@ fn diff_recursive(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOpera
     match (old, new) {
         (Value::Object(old_map), Value::Object(new_map)) => {
             // Removed and modified keys via iterator chain
-            old_map.iter().for_each(|(key, old_val)| {
+            izip!(old_map).for_each(|(key, old_val)| {
                 let child_path = format!("{}/{}", path, escape_json_pointer(key));
                 new_map
                     .get(key)
@@ -41,8 +41,7 @@ fn diff_recursive(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOpera
                     });
             });
             // Added keys: filter keys not in old_map, then push Add ops
-            new_map
-                .iter()
+            izip!(new_map)
                 .filter(|(key, _)| !old_map.contains_key(key.as_str()))
                 .for_each(|(key, new_val)| {
                     ops.push(PatchOperation::Add {
@@ -53,9 +52,7 @@ fn diff_recursive(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOpera
         }
         (Value::Array(old_arr), Value::Array(new_arr)) if old_arr.len() == new_arr.len() => {
             // Same-length arrays: zip with index and recurse
-            old_arr
-                .iter()
-                .zip(new_arr.iter())
+            izip!(&**old_arr, &**new_arr)
                 .enumerate()
                 .for_each(|(i, (old_elem, new_elem))| {
                     diff_recursive(&format!("{}/{}", path, i), old_elem, new_elem, ops);
@@ -77,7 +74,7 @@ fn diff_recursive(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOpera
 /// Uses `try_fold` to sequentially apply each operation, short-circuiting
 /// on the first error.
 pub fn apply_patch(doc: &mut Value, operations: &[PatchOperation]) -> Result<(), String> {
-    operations.iter().try_fold((), |(), op| match op {
+    izip!(operations).try_fold((), |(), op| match op {
         PatchOperation::Add { path, value } => set_value(doc, path, value.clone()),
         PatchOperation::Remove { path } => remove_value(doc, path).map(|_| ()),
         PatchOperation::Replace { path, value } => set_value(doc, path, value.clone()),
@@ -110,8 +107,8 @@ fn get_value<'a>(doc: &'a Value, path: &str) -> Option<&'a Value> {
     if path.is_empty() || path == "/" {
         return Some(doc);
     }
-    parse_pointer(path)
-        .iter()
+    let parts = parse_pointer(path);
+    izip!(&parts)
         .try_fold(doc, |current, part| match current {
             Value::Object(map) => map.get(part.as_str()),
             Value::Array(arr) => part.parse::<usize>().ok().and_then(|idx| arr.get(idx)),
@@ -136,8 +133,7 @@ fn set_value(doc: &mut Value, path: &str, value: Value) -> Result<(), String> {
     let (parent_parts, last) = parts.split_at(parts.len() - 1);
     let last_key = &last[0];
 
-    let current = parent_parts
-        .iter()
+    let current = izip!(parent_parts)
         .try_fold(&mut *doc, |current, part| match current {
             Value::Object(map) => Ok(map
                 .entry(part.clone())
@@ -190,8 +186,7 @@ fn remove_value(doc: &mut Value, path: &str) -> Result<Value, String> {
     let (parent_parts, last) = parts.split_at(parts.len() - 1);
     let last_key = &last[0];
 
-    let current = parent_parts
-        .iter()
+    let current = izip!(parent_parts)
         .try_fold(&mut *doc, |current, part| match current {
             Value::Object(map) => map
                 .get_mut(part.as_str())
@@ -320,8 +315,7 @@ fn merge_recursive(
                 .dedup()
                 .collect_vec();
 
-            let merged = all_keys
-                .iter()
+            let merged = izip!(&all_keys)
                 .filter_map(|key| {
                     let child_path = if path.is_empty() {
                         format!("/{}", key)
@@ -383,8 +377,8 @@ mod tests {
         let old = json!({"name": "Alice", "age": 30});
         let new = json!({"name": "Alice", "email": "alice@example.com"});
         let ops = diff(&old, &new);
-        assert!(ops.iter().any(|op| matches!(op, PatchOperation::Remove { path } if path == "/age")));
-        assert!(ops.iter().any(|op| matches!(op, PatchOperation::Add { path, .. } if path == "/email")));
+        assert!(izip!(&ops).any(|op| matches!(op, PatchOperation::Remove { path } if path == "/age")));
+        assert!(izip!(&ops).any(|op| matches!(op, PatchOperation::Add { path, .. } if path == "/email")));
     }
 
     #[test]

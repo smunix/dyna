@@ -10,6 +10,7 @@
 //! `AmazonS3Builder::from_env()` for real S3 access.
 
 use bytes::Bytes;
+use itertools::izip;
 use elfo::prelude::*;
 use object_store::{ObjectStore, memory::InMemory, path::Path as ObjPath};
 use std::sync::Arc;
@@ -168,7 +169,7 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                         )
                         .await
                         .map(|pairs| {
-                            pairs.into_iter().map(|(_name, ch)| ch).collect::<Vec<_>>()
+                            izip!(pairs).map(|(_name, ch)| ch).collect::<Vec<_>>()
                         })
                         .map(ListChannelsResult::Ok)
                         .unwrap_or_else(ListChannelsResult::Error);
@@ -211,8 +212,7 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                         )
                         .await
                         .map(|pairs| {
-                            pairs
-                                .into_iter()
+                            izip!(pairs)
                                 .collect::<std::collections::HashMap<String, serde_json::Value>>()
                         })
                         .map(LoadAllSnapshotsResult::Ok)

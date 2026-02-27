@@ -7,7 +7,7 @@
 use anyhow::{Result, bail};
 use dyna_core::models::Changeset;
 use dyna_core::patch;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 
 use crate::repository::Repository;
 
@@ -27,13 +27,11 @@ pub async fn execute(message: String) -> Result<()> {
     let parents = channel
         .head_change_id
         .as_ref()
-        .into_iter()
-        .cloned()
-        .collect_vec();
+        .map(|id| vec![id.clone()])
+        .unwrap_or_default();
 
     // Build patches from staged changes via iterator map
-    let patches = staged_changes
-        .iter()
+    let patches = izip!(&staged_changes)
         .map(|staged| patch::build_patch(staged))
         .collect_vec();
 
@@ -46,7 +44,7 @@ pub async fn execute(message: String) -> Result<()> {
     );
 
     // Print summary of patches via for_each
-    cs.patches.iter().for_each(|p| {
+    izip!(&cs.patches).for_each(|p| {
         println!(
             "  [{}] {} -> {} op(s)",
             &p.hash[7..std::cmp::min(p.hash.len(), 19)],
@@ -59,8 +57,7 @@ pub async fn execute(message: String) -> Result<()> {
     repo.store_changeset(&cs)?;
 
     // Update snapshots for each resource via try_for_each
-    staged_changes
-        .iter()
+    izip!(&staged_changes)
         .try_for_each(|staged| repo.save_snapshot(&staged.resource_id, &staged.current))?;
 
     // Append to the channel

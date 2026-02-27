@@ -16,6 +16,7 @@
 //! - Supporting types: [`StagedChange`], [`Conflict`], [`SyncState`], [`RepoConfig`].
 
 use chrono::{DateTime, Utc};
+use itertools::{izip, Itertools};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -245,7 +246,7 @@ impl Changeset {
         let change_id = generate_change_id();
         let now = Utc::now();
         let empty = patches.is_empty();
-        let patch_hashes: Vec<String> = patches.iter().map(|p| p.hash.clone()).collect();
+        let patch_hashes: Vec<String> = izip!(&patches).map(|p| p.hash.clone()).collect();
 
         let content = ChangesetContent {
             change_id: change_id.clone(),
@@ -275,7 +276,7 @@ impl Changeset {
 
     /// Recompute the commit hash after modifying the changeset.
     pub fn recompute_hash(&mut self) {
-        let patch_hashes: Vec<String> = self.patches.iter().map(|p| p.hash.clone()).collect();
+        let patch_hashes: Vec<String> = izip!(&self.patches).map(|p| p.hash.clone()).collect();
         let content = ChangesetContent {
             change_id: self.change_id.clone(),
             message: self.message.clone(),
@@ -292,7 +293,7 @@ impl Changeset {
 
     /// Verify the integrity of this changeset.
     pub fn verify(&self) -> bool {
-        let patch_hashes: Vec<String> = self.patches.iter().map(|p| p.hash.clone()).collect();
+        let patch_hashes: Vec<String> = izip!(&self.patches).map(|p| p.hash.clone()).collect();
         let content = ChangesetContent {
             change_id: self.change_id.clone(),
             message: self.message.clone(),
@@ -317,14 +318,12 @@ impl Changeset {
 
     /// Total number of operations across all patches.
     pub fn total_operations(&self) -> usize {
-        self.patches.iter().map(|p| p.operations.len()).sum()
+        izip!(&self.patches).map(|p| p.operations.len()).sum()
     }
 
     /// Get all resource IDs affected by this changeset.
     pub fn affected_resources(&self) -> Vec<String> {
-        let mut resources: Vec<String> = self
-            .patches
-            .iter()
+        let mut resources: Vec<String> = izip!(&self.patches)
             .map(|p| p.target_resource.clone())
             .collect();
         resources.sort();
@@ -393,7 +392,7 @@ impl Channel {
         match since {
             None => self.changesets.clone(),
             Some(id) => {
-                if let Some(pos) = self.changesets.iter().position(|c| c == id) {
+                if let Some(pos) = izip!(&self.changesets).position(|c| c == id) {
                     self.changesets[pos + 1..].to_vec()
                 } else {
                     self.changesets.clone()

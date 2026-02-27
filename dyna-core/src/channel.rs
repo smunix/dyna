@@ -10,7 +10,7 @@
 
 use crate::error::{DynaError, DynaResult};
 use crate::models::{Changeset, Channel};
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use std::collections::HashSet;
 
 /// Promote changesets from a source channel to a target channel.
@@ -21,11 +21,9 @@ pub fn promote_changesets(
     source: &Channel,
     target: &mut Channel,
 ) -> DynaResult<Vec<String>> {
-    let target_set: HashSet<&String> = target.changesets.iter().collect();
+    let target_set: HashSet<&String> = izip!(&target.changesets).collect();
 
-    let new_changesets = source
-        .changesets
-        .iter()
+    let new_changesets = izip!(&source.changesets)
         .filter(|id| !target_set.contains(id))
         .cloned()
         .collect_vec();
@@ -38,8 +36,7 @@ pub fn promote_changesets(
             ))
         })
         .unwrap_or_else(|| {
-            new_changesets
-                .iter()
+            izip!(&new_changesets)
                 .for_each(|id| target.append_changeset(id.clone()));
             Ok(new_changesets)
         })
@@ -56,16 +53,13 @@ pub fn validate_channel_integrity(
     channel: &Channel,
     changesets: &std::collections::HashMap<String, Changeset>,
 ) -> DynaResult<()> {
-    channel
-        .changesets
-        .iter()
+    izip!(&channel.changesets)
         .try_fold(HashSet::new(), |mut available, change_id| {
             let cs = changesets
                 .get(change_id)
                 .ok_or_else(|| DynaError::Other(format!("Changeset '{}' not found", change_id)))?;
 
-            cs.parents
-                .iter()
+            izip!(&cs.parents)
                 .try_for_each(|parent| {
                     available
                         .contains(parent)
@@ -85,25 +79,21 @@ pub fn validate_channel_integrity(
 ///
 /// Uses itertools `collect_vec` and set operations for clean partitioning.
 pub fn channel_diff(source: &Channel, target: &Channel) -> ChannelDiffSummary {
-    let source_set: HashSet<&String> = source.changesets.iter().collect();
-    let target_set: HashSet<&String> = target.changesets.iter().collect();
+    let source_set: HashSet<&String> = izip!(&source.changesets).collect();
+    let target_set: HashSet<&String> = izip!(&target.changesets).collect();
 
-    let (common, only_in_source): (Vec<_>, Vec<_>) = source
-        .changesets
-        .iter()
+    let (common, only_in_source): (Vec<_>, Vec<_>) = izip!(&source.changesets)
         .partition(|id| target_set.contains(id));
 
-    let only_in_target = target
-        .changesets
-        .iter()
+    let only_in_target = izip!(&target.changesets)
         .filter(|id| !source_set.contains(id))
         .cloned()
         .collect_vec();
 
     ChannelDiffSummary {
-        only_in_source: only_in_source.into_iter().cloned().collect_vec(),
+        only_in_source: izip!(only_in_source).cloned().collect_vec(),
         only_in_target,
-        common: common.into_iter().cloned().collect_vec(),
+        common: izip!(common).cloned().collect_vec(),
     }
 }
 

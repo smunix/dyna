@@ -4,6 +4,7 @@
 //! Promoted changesets are marked as immutable.
 
 use anyhow::{Result, bail};
+use itertools::izip;
 use colored::Colorize;
 use dyna_core::channel::promote_changesets;
 
@@ -29,8 +30,7 @@ pub async fn execute() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Promotion failed: {}", e))
         .and_then(|promoted_ids| {
             // Mark promoted changesets as immutable via try_for_each
-            promoted_ids
-                .iter()
+            izip!(&promoted_ids)
                 .filter_map(|id| repo.load_changeset(id).ok())
                 .try_for_each(|mut cs| {
                     cs.immutable = true;
@@ -45,7 +45,7 @@ pub async fn execute() -> Result<()> {
                 promoted_ids.len().to_string().green()
             );
 
-            promoted_ids.iter().for_each(|id| {
+            izip!(&promoted_ids).for_each(|id| {
                 repo.load_changeset(id)
                     .map(|cs| {
                         println!(

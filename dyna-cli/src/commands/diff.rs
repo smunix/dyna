@@ -10,7 +10,7 @@
 use anyhow::Result;
 use colored::Colorize;
 use dyna_core::models::PatchOperation;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use std::path::PathBuf;
 
 use crate::repository::Repository;
@@ -39,12 +39,11 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(filter_path));
             let filter_resource_id = Repository::resource_id_from_path(&abs_filter);
 
-            staged
-                .iter()
+            izip!(&staged)
                 .filter(|s| s.file_path == filter_str || s.resource_id == filter_resource_id)
                 .collect_vec()
         })
-        .unwrap_or_else(|| staged.iter().collect_vec());
+        .unwrap_or_else(|| izip!(&staged).collect_vec());
 
     if filtered.is_empty() {
         path.as_ref().map(|p| {
@@ -56,7 +55,7 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
         return Ok(());
     }
 
-    filtered.iter().enumerate().for_each(|(idx, change)| {
+    izip!(&filtered).enumerate().for_each(|(idx, change)| {
         (idx > 0).then(|| println!("{}", "─".repeat(72).dimmed()));
 
         // Header
@@ -78,22 +77,18 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
         );
 
         // Print each operation
-        change
-            .operations
-            .iter()
+        izip!(&change.operations)
             .enumerate()
             .for_each(|(op_idx, op)| print_operation(op_idx + 1, op));
 
         // Print a compact before/after summary for replace operations
-        let replaces = change
-            .operations
-            .iter()
+        let replaces = izip!(&change.operations)
             .filter(|op| matches!(op, PatchOperation::Replace { .. }))
             .collect_vec();
 
         (!replaces.is_empty() && change.previous.is_some()).then(|| {
             println!("\n  {}:", "Value changes".underline());
-            replaces.iter().for_each(|op| {
+            izip!(&replaces).for_each(|op| {
                 if let PatchOperation::Replace { path, value } = op {
                     let old_value = change
                         .previous
@@ -117,7 +112,7 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
     });
 
     // Summary
-    let total_ops: usize = filtered.iter().map(|s| s.operations.len()).sum();
+    let total_ops: usize = izip!(&filtered).map(|s| s.operations.len()).sum();
     println!(
         "{}: {} file(s), {} total operation(s)",
         "Staged diff summary".bold(),
