@@ -11,6 +11,7 @@
 use anyhow::{Result, bail};
 use colored::Colorize;
 use dyna_core::models::{Changeset, PatchOperation};
+use itertools::Itertools;
 
 use crate::repository::Repository;
 
@@ -28,7 +29,6 @@ pub async fn execute(
         return show_single_changeset(&repo, &id_or_prefix, show_patches);
     }
 
-    // Load all changesets for the current channel
     let changesets = repo.load_channel_changesets(&channel_name)?;
 
     if changesets.is_empty() {
@@ -45,30 +45,27 @@ pub async fn execute(
     );
 
     // Show the most recent `count` changesets (newest first)
-    let start = if changesets.len() > count {
-        changesets.len() - count
-    } else {
-        0
-    };
+    let start = changesets.len().saturating_sub(count);
 
-    for cs in changesets[start..].iter().rev() {
-        print_changeset_summary(cs, &working_change);
+    changesets[start..]
+        .iter()
+        .rev()
+        .for_each(|cs| {
+            print_changeset_summary(cs, &working_change);
+            if verbose {
+                print_changeset_patches(cs);
+            }
+            println!();
+        });
 
-        if verbose {
-            print_changeset_patches(cs);
-        }
-
-        println!();
-    }
-
-    if start > 0 {
+    (start > 0).then(|| {
         println!(
             "  ... {} earlier changeset(s) not shown (use -n to show more)",
             start
         );
-    }
+    });
 
-    if !verbose {
+    (!verbose).then(|| {
         println!(
             "{}",
             "Hint: Use 'dyna log --verbose' to see patches and operations.".dimmed()
@@ -77,7 +74,7 @@ pub async fn execute(
             "{}",
             "      Use 'dyna log --changeset <id>' to inspect a single changeset.".dimmed()
         );
-    }
+    });
 
     Ok(())
 }
@@ -88,30 +85,25 @@ fn print_changeset_summary(cs: &Changeset, working_change: &Option<String>) {
         .as_ref()
         .map_or(false, |wc| wc == &cs.change_id);
 
-    let marker = if is_working {
-        "@".bold().green().to_string()
-    } else {
-        "○".to_string()
-    };
+    let marker = is_working
+        .then(|| "@".bold().green().to_string())
+        .unwrap_or_else(|| "○".to_string());
 
-    let immutable_flag = if cs.immutable {
-        " [immutable]".dimmed().to_string()
-    } else {
-        String::new()
-    };
+    let immutable_flag = cs
+        .immutable
+        .then(|| " [immutable]".dimmed().to_string())
+        .unwrap_or_default();
 
-    let empty_flag = if cs.empty {
-        " (empty)".dimmed().to_string()
-    } else {
-        String::new()
-    };
+    let empty_flag = cs
+        .empty
+        .then(|| " (empty)".dimmed().to_string())
+        .unwrap_or_default();
 
-    // Bookmarks
-    let bookmarks = if cs.bookmarks.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", cs.bookmarks.join(" ").magenta())
-    };
+    let bookmarks = cs
+        .bookmarks
+        .is_empty()
+        .then(String::new)
+        .unwrap_or_else(|| format!(" {}", cs.bookmarks.join(" ").magenta()));
 
     println!(
         "{}  {} {} {} {}{}{}{}",
@@ -126,31 +118,30 @@ fn print_changeset_summary(cs: &Changeset, working_change: &Option<String>) {
     );
 
     // Message
-    if !cs.message.is_empty() {
-        println!("│  {}", cs.message);
-    } else {
-        println!("│  {}", "(no description set)".dimmed());
-    }
+    cs.message
+        .is_empty()
+        .then(|| println!("│  {}", "(no description set)".dimmed()))
+        .unwrap_or_else(|| println!("│  {}", cs.message));
 
     // Resources affected
     let resources = cs.affected_resources();
-    if !resources.is_empty() {
+    (!resources.is_empty()).then(|| {
         println!(
             "│  {} resource(s): {}",
             resources.len(),
             resources.join(", ").dimmed()
         );
-    }
+    });
 
     // Parents
-    if !cs.parents.is_empty() {
-        let parent_strs: Vec<String> = cs
+    (!cs.parents.is_empty()).then(|| {
+        let parent_strs = cs
             .parents
             .iter()
             .map(|p| p[..std::cmp::min(p.len(), 8)].to_string())
-            .collect();
-        println!("│  parent(s): {}", parent_strs.join(", ").dimmed());
-    }
+            .join(", ");
+        println!("│  parent(s): {}", parent_strs.dimmed());
+    });
 }
 
 /// Print the patches within a changeset (verbose mode).
@@ -165,7 +156,7 @@ fn print_changeset_patches(cs: &Changeset) {
         cs.total_operations()
     );
 
-    for (i, patch) in cs.patches.iter().enumerate() {
+    cs.patches.iter().enumerate().for_each(|(i, patch)| {
         let short_hash = &patch.hash[7..std::cmp::min(patch.hash.len(), 19)];
         println!(
             "│  patch {}: [{}] {} ({} ops)",
@@ -175,10 +166,14 @@ fn print_changeset_patches(cs: &Changeset) {
             patch.operations.len()
         );
 
-        for (op_idx, op) in patch.operations.iter().enumerate() {
-            print_operation(op_idx + 1, op, "│    ");
-        }
-    }
+        patch
+            .operations
+            .iter()
+            .enumerate()
+            .for_each(|(op_idx, op)| {
+                print_operation(op_idx + 1, op, "│    ");
+            });
+    });
 }
 
 /// Show a single changeset in full detail.
@@ -187,65 +182,62 @@ fn show_single_changeset(
     id_or_prefix: &str,
     show_patches: bool,
 ) -> Result<()> {
-    // Try exact match first
-    let cs = match repo.load_changeset(id_or_prefix) {
-        Ok(cs) => cs,
-        Err(_) => {
-            // Try prefix match
-            let matches = repo.find_changeset_by_prefix(id_or_prefix)?;
-            match matches.len() {
-                0 => bail!("No changeset found matching '{}'", id_or_prefix),
-                1 => matches.into_iter().next().unwrap(),
-                n => {
-                    println!(
-                        "{} Ambiguous prefix '{}' matches {} changesets:",
-                        "warning:".yellow().bold(),
-                        id_or_prefix,
-                        n
-                    );
-                    for m in &matches {
-                        println!("  {} - {}", m.short_change_id(), m.message);
+    // Try exact match first, then prefix match
+    let cs = repo
+        .load_changeset(id_or_prefix)
+        .or_else(|_| {
+            repo.find_changeset_by_prefix(id_or_prefix)
+                .and_then(|matches| match matches.len() {
+                    0 => bail!("No changeset found matching '{}'", id_or_prefix),
+                    1 => Ok(matches.into_iter().next().unwrap()),
+                    n => {
+                        matches.iter().for_each(|m| {
+                            println!("  {} - {}", m.short_change_id(), m.message);
+                        });
+                        bail!(
+                            "Ambiguous prefix '{}' matches {} changesets. Please provide a longer prefix.",
+                            id_or_prefix,
+                            n
+                        );
                     }
-                    bail!("Please provide a longer prefix to disambiguate.");
-                }
-            }
-        }
-    };
+                })
+        })?;
 
     println!("{}", "═".repeat(72).dimmed());
     println!("{}", "Changeset Detail".bold());
     println!("{}", "═".repeat(72).dimmed());
-    println!("  change_id:   {}", cs.change_id.yellow().bold());
-    println!("  commit_hash: {}", cs.commit_hash);
-    println!("  author:      {}", cs.author.cyan());
-    println!(
-        "  created:     {}",
-        cs.created_at.format("%Y-%m-%d %H:%M:%S")
-    );
-    println!(
-        "  updated:     {}",
-        cs.updated_at.format("%Y-%m-%d %H:%M:%S")
-    );
-    println!("  immutable:   {}", cs.immutable);
-    println!("  empty:       {}", cs.empty);
 
-    if !cs.message.is_empty() {
-        println!("  message:     {}", cs.message);
-    } else {
-        println!("  message:     {}", "(no description set)".dimmed());
-    }
+    // Metadata fields via iterator of (label, value) tuples
+    [
+        ("change_id", cs.change_id.yellow().bold().to_string()),
+        ("commit_hash", cs.commit_hash.clone()),
+        ("author", cs.author.cyan().to_string()),
+        ("created", cs.created_at.format("%Y-%m-%d %H:%M:%S").to_string()),
+        ("updated", cs.updated_at.format("%Y-%m-%d %H:%M:%S").to_string()),
+        ("immutable", cs.immutable.to_string()),
+        ("empty", cs.empty.to_string()),
+    ]
+    .iter()
+    .for_each(|(label, value)| println!("  {:12} {}", format!("{}:", label), value));
 
-    if cs.parents.is_empty() {
-        println!("  parents:     {}", "(root changeset)".dimmed());
-    } else {
-        for (i, parent) in cs.parents.iter().enumerate() {
-            println!("  parent[{}]:   {}", i, parent);
-        }
-    }
+    cs.message
+        .is_empty()
+        .then(|| println!("  {:12} {}", "message:", "(no description set)".dimmed()))
+        .unwrap_or_else(|| println!("  {:12} {}", "message:", cs.message));
 
-    if !cs.bookmarks.is_empty() {
-        println!("  bookmarks:   {}", cs.bookmarks.join(", ").magenta());
-    }
+    cs.parents
+        .is_empty()
+        .then(|| println!("  {:12} {}", "parents:", "(root changeset)".dimmed()))
+        .unwrap_or_else(|| {
+            cs.parents
+                .iter()
+                .enumerate()
+                .for_each(|(i, parent)| println!("  parent[{}]:   {}", i, parent));
+        });
+
+    (!cs.bookmarks.is_empty()).then(|| {
+        println!("  {:12} {}", "bookmarks:", cs.bookmarks.join(", ").magenta());
+    });
 
     let resources = cs.affected_resources();
     println!(
@@ -253,7 +245,6 @@ fn show_single_changeset(
         resources.len(),
         resources.join(", ")
     );
-
     println!(
         "  Patches: {} ({} total operations)",
         cs.patches.len(),
@@ -262,7 +253,7 @@ fn show_single_changeset(
 
     // Always list patches
     println!("\n  {}:", "Patches in this changeset".underline().bold());
-    for (i, patch) in cs.patches.iter().enumerate() {
+    cs.patches.iter().enumerate().for_each(|(i, patch)| {
         let short_hash = &patch.hash[7..std::cmp::min(patch.hash.len(), 19)];
         println!(
             "    {}. [{}] {} — {} operation(s)",
@@ -274,36 +265,40 @@ fn show_single_changeset(
 
         // If --patches flag, show detailed operations
         if show_patches {
-            if let Some(ref parent) = patch.parent_snapshot {
+            patch.parent_snapshot.as_ref().map(|parent| {
                 println!(
                     "       {}: {}",
                     "parent snapshot".dimmed(),
                     truncate_json(parent, 80)
                 );
-            }
-            if let Some(ref result) = patch.result_snapshot {
+            });
+            patch.result_snapshot.as_ref().map(|result| {
                 println!(
                     "       {}: {}",
                     "result snapshot".dimmed(),
                     truncate_json(result, 80)
                 );
-            }
+            });
 
-            for (op_idx, op) in patch.operations.iter().enumerate() {
-                print_operation(op_idx + 1, op, "       ");
-            }
+            patch
+                .operations
+                .iter()
+                .enumerate()
+                .for_each(|(op_idx, op)| {
+                    print_operation(op_idx + 1, op, "       ");
+                });
         }
-    }
+    });
 
     // Verify integrity
-    if cs.verify() {
-        println!("\n  Integrity: {}", "VALID".green().bold());
-    } else {
-        println!(
-            "\n  Integrity: {}",
-            "INVALID (commit hash mismatch!)".red().bold()
-        );
-    }
+    cs.verify()
+        .then(|| println!("\n  Integrity: {}", "VALID".green().bold()))
+        .unwrap_or_else(|| {
+            println!(
+                "\n  Integrity: {}",
+                "INVALID (commit hash mismatch!)".red().bold()
+            );
+        });
 
     println!("{}", "═".repeat(72).dimmed());
 
@@ -312,75 +307,52 @@ fn show_single_changeset(
 
 /// Print a single patch operation with formatting.
 fn print_operation(index: usize, op: &PatchOperation, prefix: &str) {
+    let idx = index.to_string().dimmed();
     match op {
-        PatchOperation::Add { path, value } => {
-            println!(
-                "{}{}. {} {} = {}",
-                prefix,
-                index.to_string().dimmed(),
-                "ADD".green().bold(),
-                path.bold(),
-                truncate_json(value, 60)
-            );
-        }
-        PatchOperation::Remove { path } => {
-            println!(
-                "{}{}. {} {}",
-                prefix,
-                index.to_string().dimmed(),
-                "REMOVE".red().bold(),
-                path.bold()
-            );
-        }
-        PatchOperation::Replace { path, value } => {
-            println!(
-                "{}{}. {} {} = {}",
-                prefix,
-                index.to_string().dimmed(),
-                "REPLACE".yellow().bold(),
-                path.bold(),
-                truncate_json(value, 60)
-            );
-        }
-        PatchOperation::Move { from, path } => {
-            println!(
-                "{}{}. {} {} -> {}",
-                prefix,
-                index.to_string().dimmed(),
-                "MOVE".blue().bold(),
-                from.bold(),
-                path.bold()
-            );
-        }
-        PatchOperation::Copy { from, path } => {
-            println!(
-                "{}{}. {} {} -> {}",
-                prefix,
-                index.to_string().dimmed(),
-                "COPY".blue().bold(),
-                from.bold(),
-                path.bold()
-            );
-        }
-        PatchOperation::Test { path, value } => {
-            println!(
-                "{}{}. {} {} == {}",
-                prefix,
-                index.to_string().dimmed(),
-                "TEST".magenta().bold(),
-                path.bold(),
-                truncate_json(value, 60)
-            );
-        }
+        PatchOperation::Add { path, value } => println!(
+            "{}{}. {} {} = {}",
+            prefix, idx, "ADD".green().bold(), path.bold(), truncate_json(value, 60)
+        ),
+        PatchOperation::Remove { path } => println!(
+            "{}{}. {} {}",
+            prefix, idx, "REMOVE".red().bold(), path.bold()
+        ),
+        PatchOperation::Replace { path, value } => println!(
+            "{}{}. {} {} = {}",
+            prefix, idx, "REPLACE".yellow().bold(), path.bold(), truncate_json(value, 60)
+        ),
+        PatchOperation::Move { from, path } => println!(
+            "{}{}. {} {} -> {}",
+            prefix, idx, "MOVE".blue().bold(), from.bold(), path.bold()
+        ),
+        PatchOperation::Copy { from, path } => println!(
+            "{}{}. {} {} -> {}",
+            prefix, idx, "COPY".blue().bold(), from.bold(), path.bold()
+        ),
+        PatchOperation::Test { path, value } => println!(
+            "{}{}. {} {} == {}",
+            prefix, idx, "TEST".magenta().bold(), path.bold(), truncate_json(value, 60)
+        ),
     }
 }
 
 /// Truncate a JSON value for display.
 fn truncate_json(value: &serde_json::Value, max_len: usize) -> String {
-    let s = serde_json::to_string(value).unwrap_or_else(|_| "???".into());
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len])
-    } else {
-        s
+    serde_json::to_string(value)
+        .unwrap_or_else(|_| "???".into())
+        .chars()
+        .take(max_len)
+        .collect::<String>()
+        .pipe_if_longer(max_len, |s| format!("{}...", s))
+}
+
+/// Extension trait for conditional string transformation.
+trait PipeIfLonger {
+    fn pipe_if_longer(self, max: usize, f: impl FnOnce(String) -> String) -> String;
+}
+
+impl PipeIfLonger for String {
+    fn pipe_if_longer(self, max: usize, f: impl FnOnce(String) -> String) -> String {
+        if self.len() >= max { f(self) } else { self }
     }
 }

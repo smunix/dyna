@@ -25,15 +25,17 @@ pub async fn execute() -> Result<()> {
         current_name.bold().cyan()
     );
 
-    match promote_changesets(&source, &mut target) {
-        Ok(promoted_ids) => {
-            // Mark promoted changesets as immutable
-            for id in &promoted_ids {
-                if let Ok(mut cs) = repo.load_changeset(id) {
+    promote_changesets(&source, &mut target)
+        .map_err(|e| anyhow::anyhow!("Promotion failed: {}", e))
+        .and_then(|promoted_ids| {
+            // Mark promoted changesets as immutable via try_for_each
+            promoted_ids
+                .iter()
+                .filter_map(|id| repo.load_changeset(id).ok())
+                .try_for_each(|mut cs| {
                     cs.immutable = true;
-                    repo.store_changeset(&cs)?;
-                }
-            }
+                    repo.store_changeset(&cs)
+                })?;
 
             // Save the updated main channel
             repo.save_channel(&target)?;
@@ -42,61 +44,64 @@ pub async fn execute() -> Result<()> {
                 "\nPromoted {} changeset(s) to 'main':",
                 promoted_ids.len().to_string().green()
             );
-            for id in &promoted_ids {
-                if let Ok(cs) = repo.load_changeset(id) {
-                    println!(
-                        "  {} ({}) -> OK [immutable]",
-                        cs.short_change_id(),
-                        cs.message
-                    );
-                } else {
-                    println!(
-                        "  {} -> OK [immutable]",
-                        &id[..std::cmp::min(id.len(), 8)]
-                    );
-                }
-            }
 
-            if let Some(head) = &target.head_change_id {
+            promoted_ids.iter().for_each(|id| {
+                repo.load_changeset(id)
+                    .map(|cs| {
+                        println!(
+                            "  {} ({}) -> OK [immutable]",
+                            cs.short_change_id(),
+                            cs.message
+                        );
+                    })
+                    .unwrap_or_else(|_| {
+                        println!(
+                            "  {} -> OK [immutable]",
+                            &id[..std::cmp::min(id.len(), 8)]
+                        );
+                    });
+            });
+
+            target.head_change_id.as_ref().map(|head| {
                 println!(
                     "\nMain HEAD: {}",
                     &head[..std::cmp::min(head.len(), 8)]
                 );
-            }
+            });
 
             // Also push to remote if configured
-            let config = repo.load_config()?;
-            if let Some(remote_url) = &config.remote_url {
-                println!("\nPushing promoted changesets to remote...");
-                let client = crate::sync_client::SyncClient::new(remote_url);
-                let request = dyna_core::protocol::PromoteRequest {
-                    source_channel: current_name.clone(),
-                    target_channel: "main".to_string(),
-                };
-                match client.promote(&request).await {
-                    Ok(response) => {
-                        println!(
-                            "Remote promotion complete. {} changeset(s) promoted.",
-                            response.promoted_changesets.len()
-                        );
-                    }
-                    Err(e) => {
-                        println!(
-                            "{}",
-                            format!(
-                                "Warning: Remote promotion failed: {}. Local promotion succeeded.",
-                                e
-                            )
-                            .yellow()
-                        );
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            println!("{}", format!("Promotion failed: {}", e).red());
-        }
-    }
-
-    Ok(())
+            Ok(promoted_ids)
+        })
+        .and_then(|_promoted_ids| {
+            repo.load_config()?
+                .remote_url
+                .map(|remote_url| async move {
+                    println!("\nPushing promoted changesets to remote...");
+                    let client = crate::sync_client::SyncClient::new(&remote_url);
+                    let request = dyna_core::protocol::PromoteRequest {
+                        source_channel: current_name.clone(),
+                        target_channel: "main".to_string(),
+                    };
+                    client
+                        .promote(&request)
+                        .await
+                        .map(|response| {
+                            println!(
+                                "Remote promotion complete. {} changeset(s) promoted.",
+                                response.promoted_changesets.len()
+                            );
+                        })
+                        .unwrap_or_else(|e| {
+                            println!(
+                                "{}",
+                                format!(
+                                    "Warning: Remote promotion failed: {}. Local promotion succeeded.",
+                                    e
+                                )
+                                .yellow()
+                            );
+                        });
+                });
+            Ok(())
+        })
 }

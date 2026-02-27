@@ -16,6 +16,80 @@ use std::sync::Arc;
 
 use crate::messages::*;
 
+/// Helper: serialize + put to object store, returning a typed result.
+async fn store_json<T: serde::Serialize>(
+    store: &dyn ObjectStore,
+    path: &ObjPath,
+    value: &T,
+) -> Result<(), String> {
+    serde_json::to_vec_pretty(value)
+        .map_err(|e| e.to_string())
+        .map(Bytes::from)
+        .map(|bytes| (path.clone(), bytes))
+        .map_err(|e| e.to_string())?;
+
+    let data = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    store
+        .put(path, Bytes::from(data).into())
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Helper: get from object store + deserialize, returning Option or error.
+async fn load_json<T: serde::de::DeserializeOwned>(
+    store: &dyn ObjectStore,
+    path: &ObjPath,
+) -> Result<Option<T>, String> {
+    match store.get(path).await {
+        Ok(get_result) => get_result
+            .bytes()
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|data| {
+                serde_json::from_slice(&data)
+                    .map_err(|e| format!("Deserialization error: {}", e))
+            })
+            .map(Some),
+        Err(object_store::Error::NotFound { .. }) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Helper: list objects under a prefix, load each, and deserialize.
+async fn list_and_load_all<T: serde::de::DeserializeOwned>(
+    store: &dyn ObjectStore,
+    prefix: &ObjPath,
+) -> Result<Vec<(String, T)>, String> {
+    let list_result = store
+        .list_with_delimiter(Some(prefix))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for obj in &list_result.objects {
+        let name = obj
+            .location
+            .filename()
+            .unwrap_or_default()
+            .trim_end_matches(".json")
+            .to_string();
+
+        let loaded = store
+            .get(&obj.location)
+            .await
+            .ok()
+            .and_then(|gr| futures::executor::block_on(gr.bytes()).ok())
+            .and_then(|data| serde_json::from_slice::<T>(&data).ok())
+            .map(|value| (name, value));
+
+        if let Some(pair) = loaded {
+            results.push(pair);
+        }
+    }
+    Ok(results)
+}
+
 /// Create the S3 Storage actor blueprint.
 pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
     let store_clone = store.clone();
@@ -34,51 +108,28 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                             "changesets/{}.json",
                             changeset.change_id
                         ));
-                        let result = match serde_json::to_vec_pretty(&changeset) {
-                            Ok(data) => {
-                                match store.put(&path, Bytes::from(data).into()).await {
-                                    Ok(_) => {
-                                        tracing::debug!(
-                                            change_id = %changeset.change_id,
-                                            "Stored changeset"
-                                        );
-                                        StoreChangesetResult::Ok
-                                    }
-                                    Err(e) => {
-                                        tracing::error!(error = %e, "Failed to store changeset");
-                                        StoreChangesetResult::Error(e.to_string())
-                                    }
-                                }
-                            }
-                            Err(e) => StoreChangesetResult::Error(e.to_string()),
-                        };
+                        let result = store_json(store.as_ref(), &path, &changeset)
+                            .await
+                            .map(|()| {
+                                tracing::debug!(change_id = %changeset.change_id, "Stored changeset");
+                                StoreChangesetResult::Ok
+                            })
+                            .unwrap_or_else(|e| {
+                                tracing::error!(error = %e, "Failed to store changeset");
+                                StoreChangesetResult::Error(e)
+                            });
                         ctx.respond(token, result);
                     }
 
                     (LoadChangeset { change_id }, token) => {
-                        let path = ObjPath::from(format!(
-                            "changesets/{}.json",
-                            change_id
-                        ));
-                        let result = match store.get(&path).await {
-                            Ok(get_result) => {
-                                match get_result.bytes().await {
-                                    Ok(data) => {
-                                        match serde_json::from_slice(&data) {
-                                            Ok(cs) => LoadChangesetResult::Ok(cs),
-                                            Err(e) => LoadChangesetResult::Error(
-                                                format!("Deserialization error: {}", e),
-                                            ),
-                                        }
-                                    }
-                                    Err(e) => LoadChangesetResult::Error(e.to_string()),
-                                }
-                            }
-                            Err(object_store::Error::NotFound { .. }) => {
-                                LoadChangesetResult::NotFound
-                            }
-                            Err(e) => LoadChangesetResult::Error(e.to_string()),
-                        };
+                        let path = ObjPath::from(format!("changesets/{}.json", change_id));
+                        let result = load_json(store.as_ref(), &path)
+                            .await
+                            .map(|opt| {
+                                opt.map(LoadChangesetResult::Ok)
+                                    .unwrap_or(LoadChangesetResult::NotFound)
+                            })
+                            .unwrap_or_else(LoadChangesetResult::Error);
                         ctx.respond(token, result);
                     }
 
@@ -87,74 +138,41 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     // ----------------------------------------------------------
                     (SaveChannel { channel }, token) => {
                         let path = ObjPath::from(format!("channels/{}.json", channel.name));
-                        let result = match serde_json::to_vec_pretty(&channel) {
-                            Ok(data) => {
-                                match store.put(&path, Bytes::from(data).into()).await {
-                                    Ok(_) => {
-                                        tracing::debug!(name = %channel.name, "Saved channel");
-                                        SaveChannelResult::Ok
-                                    }
-                                    Err(e) => SaveChannelResult::Error(e.to_string()),
-                                }
-                            }
-                            Err(e) => SaveChannelResult::Error(e.to_string()),
-                        };
+                        let result = store_json(store.as_ref(), &path, &channel)
+                            .await
+                            .map(|()| {
+                                tracing::debug!(name = %channel.name, "Saved channel");
+                                SaveChannelResult::Ok
+                            })
+                            .unwrap_or_else(SaveChannelResult::Error);
                         ctx.respond(token, result);
                     }
 
                     (LoadChannel { name }, token) => {
                         let path = ObjPath::from(format!("channels/{}.json", name));
-                        let result = match store.get(&path).await {
-                            Ok(get_result) => {
-                                match get_result.bytes().await {
-                                    Ok(data) => {
-                                        match serde_json::from_slice(&data) {
-                                            Ok(channel) => LoadChannelResult::Ok(channel),
-                                            Err(e) => LoadChannelResult::Error(
-                                                format!("Deserialization error: {}", e),
-                                            ),
-                                        }
-                                    }
-                                    Err(e) => LoadChannelResult::Error(e.to_string()),
-                                }
-                            }
-                            Err(object_store::Error::NotFound { .. }) => {
-                                LoadChannelResult::NotFound
-                            }
-                            Err(e) => LoadChannelResult::Error(e.to_string()),
-                        };
+                        let result = load_json(store.as_ref(), &path)
+                            .await
+                            .map(|opt| {
+                                opt.map(LoadChannelResult::Ok)
+                                    .unwrap_or(LoadChannelResult::NotFound)
+                            })
+                            .unwrap_or_else(LoadChannelResult::Error);
                         ctx.respond(token, result);
                     }
 
                     (ListAllChannels, token) => {
                         let prefix = ObjPath::from("channels/");
-                        let result = match store.list_with_delimiter(Some(&prefix)).await {
-                            Ok(list_result) => {
-                                let mut channels = Vec::new();
-                                for obj in &list_result.objects {
-                                    match store.get(&obj.location).await {
-                                        Ok(get_result) => {
-                                            if let Ok(data) = get_result.bytes().await {
-                                                if let Ok(channel) =
-                                                    serde_json::from_slice(&data)
-                                                {
-                                                    channels.push(channel);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                error = %e,
-                                                path = %obj.location,
-                                                "Failed to load channel"
-                                            );
-                                        }
-                                    }
-                                }
-                                ListChannelsResult::Ok(channels)
-                            }
-                            Err(e) => ListChannelsResult::Error(e.to_string()),
-                        };
+                        let result = list_and_load_all::<dyna_core::models::Channel>(
+                            store.as_ref(),
+                            &prefix,
+                        )
+                        .await
+                        .map(|pairs| {
+                            pairs.into_iter().map(|(_name, ch)| ch).collect::<Vec<_>>()
+                        })
+                        .map(ListChannelsResult::Ok)
+                        .unwrap_or_else(ListChannelsResult::Error);
+
                         ctx.respond(token, result);
                     }
 
@@ -163,84 +181,43 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     // ----------------------------------------------------------
                     (SaveSnapshot { resource_id, value }, token) => {
                         let path = ObjPath::from(format!("snapshots/{}.json", resource_id));
-                        let result = match serde_json::to_vec_pretty(&value) {
-                            Ok(data) => {
-                                match store.put(&path, Bytes::from(data).into()).await {
-                                    Ok(_) => {
-                                        tracing::debug!(
-                                            resource_id = %resource_id,
-                                            "Saved snapshot"
-                                        );
-                                        SaveSnapshotResult::Ok
-                                    }
-                                    Err(e) => SaveSnapshotResult::Error(e.to_string()),
-                                }
-                            }
-                            Err(e) => SaveSnapshotResult::Error(e.to_string()),
-                        };
+                        let result = store_json(store.as_ref(), &path, &value)
+                            .await
+                            .map(|()| {
+                                tracing::debug!(resource_id = %resource_id, "Saved snapshot");
+                                SaveSnapshotResult::Ok
+                            })
+                            .unwrap_or_else(SaveSnapshotResult::Error);
                         ctx.respond(token, result);
                     }
 
                     (LoadSnapshot { resource_id }, token) => {
                         let path = ObjPath::from(format!("snapshots/{}.json", resource_id));
-                        let result = match store.get(&path).await {
-                            Ok(get_result) => {
-                                match get_result.bytes().await {
-                                    Ok(data) => {
-                                        match serde_json::from_slice(&data) {
-                                            Ok(value) => LoadSnapshotResult::Ok(value),
-                                            Err(e) => LoadSnapshotResult::Error(
-                                                format!("Deserialization error: {}", e),
-                                            ),
-                                        }
-                                    }
-                                    Err(e) => LoadSnapshotResult::Error(e.to_string()),
-                                }
-                            }
-                            Err(object_store::Error::NotFound { .. }) => {
-                                LoadSnapshotResult::NotFound
-                            }
-                            Err(e) => LoadSnapshotResult::Error(e.to_string()),
-                        };
+                        let result = load_json(store.as_ref(), &path)
+                            .await
+                            .map(|opt| {
+                                opt.map(LoadSnapshotResult::Ok)
+                                    .unwrap_or(LoadSnapshotResult::NotFound)
+                            })
+                            .unwrap_or_else(LoadSnapshotResult::Error);
                         ctx.respond(token, result);
                     }
 
                     (LoadAllSnapshots, token) => {
                         let prefix = ObjPath::from("snapshots/");
-                        let result = match store.list_with_delimiter(Some(&prefix)).await {
-                            Ok(list_result) => {
-                                let mut snapshots = std::collections::HashMap::new();
-                                for obj in &list_result.objects {
-                                    let resource_id = obj
-                                        .location
-                                        .filename()
-                                        .unwrap_or_default()
-                                        .trim_end_matches(".json")
-                                        .to_string();
+                        let result = list_and_load_all::<serde_json::Value>(
+                            store.as_ref(),
+                            &prefix,
+                        )
+                        .await
+                        .map(|pairs| {
+                            pairs
+                                .into_iter()
+                                .collect::<std::collections::HashMap<String, serde_json::Value>>()
+                        })
+                        .map(LoadAllSnapshotsResult::Ok)
+                        .unwrap_or_else(LoadAllSnapshotsResult::Error);
 
-                                    match store.get(&obj.location).await {
-                                        Ok(get_result) => {
-                                            if let Ok(data) = get_result.bytes().await {
-                                                if let Ok(value) =
-                                                    serde_json::from_slice(&data)
-                                                {
-                                                    snapshots.insert(resource_id, value);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                error = %e,
-                                                path = %obj.location,
-                                                "Failed to load snapshot"
-                                            );
-                                        }
-                                    }
-                                }
-                                LoadAllSnapshotsResult::Ok(snapshots)
-                            }
-                            Err(e) => LoadAllSnapshotsResult::Error(e.to_string()),
-                        };
                         ctx.respond(token, result);
                     }
                 });
@@ -268,13 +245,18 @@ pub fn create_s3_store() -> Result<Arc<dyn ObjectStore>, anyhow::Error> {
     let bucket = std::env::var("DYNA_S3_BUCKET")
         .unwrap_or_else(|_| "dyna-store".to_string());
 
-    let mut builder = object_store::aws::AmazonS3Builder::from_env()
-        .with_bucket_name(&bucket);
+    let builder = std::env::var("DYNA_S3_ENDPOINT")
+        .ok()
+        .map(|endpoint| {
+            object_store::aws::AmazonS3Builder::from_env()
+                .with_bucket_name(&bucket)
+                .with_endpoint(&endpoint)
+                .with_allow_http(true)
+        })
+        .unwrap_or_else(|| {
+            object_store::aws::AmazonS3Builder::from_env()
+                .with_bucket_name(&bucket)
+        });
 
-    if let Ok(endpoint) = std::env::var("DYNA_S3_ENDPOINT") {
-        builder = builder.with_endpoint(&endpoint).with_allow_http(true);
-    }
-
-    let store = builder.build()?;
-    Ok(Arc::new(store))
+    builder.build().map(|s| Arc::new(s) as Arc<dyn ObjectStore>).map_err(Into::into)
 }

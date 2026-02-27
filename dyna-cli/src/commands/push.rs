@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use dyna_core::protocol::PushRequest;
+use itertools::Itertools;
 
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;
@@ -20,42 +21,33 @@ pub async fn execute() -> Result<()> {
     let channel_name = repo.current_channel_name()?;
     let channel = repo.load_channel(&channel_name)?;
 
-    // Determine which changesets haven't been pushed yet
     let sync_state = repo.load_sync_state()?;
     let remote_head = sync_state.remote_heads.get(&channel_name).cloned();
 
-    // Find changesets after the remote head
-    let unpushed_ids: Vec<String> = if let Some(ref head) = remote_head {
-        let mut found = false;
-        channel
-            .changesets
-            .iter()
-            .filter(|id| {
-                if found {
-                    return true;
-                }
-                if *id == head {
-                    found = true;
-                }
-                false
-            })
-            .cloned()
-            .collect()
-    } else {
-        channel.changesets.clone()
-    };
+    // Find changesets after the remote head using skip_while + skip
+    let unpushed_ids: Vec<String> = remote_head
+        .as_ref()
+        .map(|head| {
+            channel
+                .changesets
+                .iter()
+                .skip_while(|id| *id != head)
+                .skip(1) // skip the head itself
+                .cloned()
+                .collect_vec()
+        })
+        .unwrap_or_else(|| channel.changesets.clone());
 
     if unpushed_ids.is_empty() {
         println!("Everything up-to-date on channel '{}'.", channel_name);
         return Ok(());
     }
 
-    // Load the changeset objects
-    let mut changesets = Vec::new();
-    for id in &unpushed_ids {
-        let cs = repo.load_changeset(id)?;
-        changesets.push(cs);
-    }
+    // Load changeset objects via try_collect
+    let changesets = unpushed_ids
+        .iter()
+        .map(|id| repo.load_changeset(id))
+        .try_collect::<_, Vec<_>, _>()?;
 
     println!(
         "Pushing {} changeset(s) to {} (channel: {})...",
@@ -74,26 +66,26 @@ pub async fn execute() -> Result<()> {
     let response = client.push(&request).await?;
 
     // Update sync state
-    let mut sync_state = repo.load_sync_state()?;
-    if let Some(new_head) = &response.new_head {
-        sync_state
-            .remote_heads
-            .insert(channel_name.clone(), new_head.clone());
-    }
-    repo.save_sync_state(&sync_state)?;
+    response
+        .new_head
+        .as_ref()
+        .map(|new_head| -> Result<()> {
+            let mut sync_state = repo.load_sync_state()?;
+            sync_state
+                .remote_heads
+                .insert(channel_name.clone(), new_head.clone());
+            repo.save_sync_state(&sync_state)
+        })
+        .transpose()?;
 
     println!(
         "Push complete. {} changeset(s) accepted.",
         response.accepted_count
     );
 
-    for cs in &changesets {
-        println!(
-            "  {} ({}) -> OK",
-            cs.short_change_id(),
-            cs.message
-        );
-    }
+    changesets.iter().for_each(|cs| {
+        println!("  {} ({}) -> OK", cs.short_change_id(), cs.message);
+    });
 
     Ok(())
 }

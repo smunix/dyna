@@ -44,6 +44,9 @@ anyhow = "1"
 # Bytes
 bytes = "1"
 
+# Itertools
+itertools = "0.13"
+
 # HTTP
 axum = "0.7"
 reqwest = { version = "0.12", features = ["json"] }

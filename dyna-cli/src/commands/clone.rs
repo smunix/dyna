@@ -10,17 +10,14 @@ use crate::repository::Repository;
 use crate::sync_client::SyncClient;
 
 pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
-    let target_dir = match directory {
-        Some(d) => d,
-        None => {
-            let name = url
-                .trim_end_matches('/')
+    let target_dir = directory.unwrap_or_else(|| {
+        PathBuf::from(
+            url.trim_end_matches('/')
                 .rsplit('/')
                 .next()
-                .unwrap_or("dyna-repo");
-            PathBuf::from(name)
-        }
-    };
+                .unwrap_or("dyna-repo"),
+        )
+    });
 
     if target_dir.exists() {
         anyhow::bail!("Directory '{}' already exists", target_dir.display());
@@ -32,9 +29,11 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
     let repo = Repository::init(&target_dir)?;
 
     // Save the remote URL in config
-    let mut config = repo.load_config()?;
-    config.remote_url = Some(url.clone());
-    repo.save_config(&config)?;
+    repo.load_config()
+        .and_then(|mut config| {
+            config.remote_url = Some(url.clone());
+            repo.save_config(&config)
+        })?;
 
     // Fetch all data from the remote
     let client = SyncClient::new(&url);
@@ -43,38 +42,48 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
         .await
         .context("Failed to clone from remote")?;
 
-    // Store all changesets locally
-    let mut changeset_count = 0;
-    for cs in &clone_response.changesets {
-        repo.store_changeset(cs)?;
-        changeset_count += 1;
-    }
+    // Store all changesets locally via try_fold to count
+    let changeset_count = clone_response
+        .changesets
+        .iter()
+        .try_fold(0usize, |count, cs| {
+            repo.store_changeset(cs).map(|()| count + 1)
+        })?;
 
-    // Store all channels
-    for channel in &clone_response.channels {
-        repo.save_channel(channel)?;
-    }
+    // Store all channels via try_for_each
+    clone_response
+        .channels
+        .iter()
+        .try_for_each(|channel| repo.save_channel(channel))?;
 
-    // Store resource snapshots
-    for (resource_id, snapshot) in &clone_response.snapshots {
-        repo.save_snapshot(resource_id, snapshot)?;
+    // Store resource snapshots and write working directory files via try_for_each
+    clone_response
+        .snapshots
+        .iter()
+        .try_for_each(|(resource_id, snapshot)| -> Result<()> {
+            repo.save_snapshot(resource_id, snapshot)?;
+            serde_json::to_string_pretty(snapshot)
+                .map_err(Into::into)
+                .and_then(|json| {
+                    std::fs::write(target_dir.join(format!("{}.json", resource_id)), json)
+                        .map_err(Into::into)
+                })
+        })?;
 
-        // Also write the resource file to the working directory
-        let resource_path = target_dir.join(format!("{}.json", resource_id));
-        let json = serde_json::to_string_pretty(snapshot)?;
-        std::fs::write(resource_path, json)?;
-    }
-
-    // Update sync state
-    let mut sync_state = repo.load_sync_state()?;
-    for channel in &clone_response.channels {
-        if let Some(head) = &channel.head_change_id {
-            sync_state
-                .remote_heads
-                .insert(channel.name.clone(), head.clone());
-        }
-    }
-    repo.save_sync_state(&sync_state)?;
+    // Update sync state: fold channel heads into sync_state
+    clone_response
+        .channels
+        .iter()
+        .filter_map(|ch| {
+            ch.head_change_id
+                .as_ref()
+                .map(|head| (ch.name.clone(), head.clone()))
+        })
+        .try_fold(repo.load_sync_state()?, |mut sync_state, (name, head)| {
+            sync_state.remote_heads.insert(name, head);
+            Ok::<_, anyhow::Error>(sync_state)
+        })
+        .and_then(|sync_state| repo.save_sync_state(&sync_state))?;
 
     println!(
         "Clone complete. Fetched {} changeset(s), {} resource(s).",

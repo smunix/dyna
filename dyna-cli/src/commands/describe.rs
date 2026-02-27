@@ -12,40 +12,36 @@ pub async fn execute(change_id: Option<String>, message: String) -> Result<()> {
     let repo = Repository::find_current()?;
 
     // Determine which changeset to describe
-    let target_id = match change_id {
-        Some(id) => {
-            // Try exact match, then prefix match
-            match repo.load_changeset(&id) {
-                Ok(cs) => cs.change_id,
-                Err(_) => {
-                    let matches = repo.find_changeset_by_prefix(&id)?;
-                    match matches.len() {
-                        0 => bail!("No changeset found matching '{}'", id),
-                        1 => matches[0].change_id.clone(),
-                        n => {
-                            println!(
-                                "{} Ambiguous prefix '{}' matches {} changesets:",
-                                "warning:".yellow().bold(),
-                                id,
-                                n
-                            );
-                            for m in &matches {
-                                println!("  {} - {}", m.short_change_id(), m.message);
+    let target_id = change_id
+        .map(|id| {
+            repo.load_changeset(&id)
+                .map(|cs| cs.change_id)
+                .or_else(|_| {
+                    repo.find_changeset_by_prefix(&id).and_then(|matches| {
+                        match matches.len() {
+                            0 => bail!("No changeset found matching '{}'", id),
+                            1 => Ok(matches[0].change_id.clone()),
+                            n => {
+                                matches.iter().for_each(|m| {
+                                    println!("  {} - {}", m.short_change_id(), m.message);
+                                });
+                                bail!(
+                                    "Ambiguous prefix '{}' matches {} changesets. Please provide a longer prefix.",
+                                    id, n
+                                );
                             }
-                            bail!("Please provide a longer prefix.");
                         }
-                    }
-                }
-            }
-        }
-        None => {
-            // Default to working changeset
-            match repo.working_change_id()? {
-                Some(id) => id,
-                None => bail!("No working changeset. Commit some changes first, or specify a change_id."),
-            }
-        }
-    };
+                    })
+                })
+        })
+        .unwrap_or_else(|| {
+            repo.working_change_id()?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No working changeset. Commit some changes first, or specify a change_id."
+                    )
+                })
+        })?;
 
     let mut cs = repo.load_changeset(&target_id)?;
 
@@ -59,8 +55,6 @@ pub async fn execute(change_id: Option<String>, message: String) -> Result<()> {
     let old_message = cs.message.clone();
     cs.message = message.clone();
     cs.updated_at = chrono::Utc::now();
-
-    // Recompute commit hash since content changed
     cs.recompute_hash();
 
     repo.store_changeset(&cs)?;
@@ -69,9 +63,7 @@ pub async fn execute(change_id: Option<String>, message: String) -> Result<()> {
         "Updated changeset {}",
         cs.short_change_id().to_string().yellow().bold()
     );
-    if !old_message.is_empty() {
-        println!("  was: {}", old_message.dimmed());
-    }
+    (!old_message.is_empty()).then(|| println!("  was: {}", old_message.dimmed()));
     println!("  now: {}", message);
 
     Ok(())

@@ -13,6 +13,7 @@
 
 use crate::diff;
 use crate::models::{Patch, PatchOperation, StagedChange};
+use itertools::Itertools;
 use serde_json::Value;
 
 /// Build a Patch from a staged change.
@@ -20,19 +21,22 @@ use serde_json::Value;
 /// The patch captures the resource ID, operations, and before/after snapshots.
 /// Author and message metadata are stored on the parent Changeset.
 pub fn build_patch(staged: &StagedChange) -> Patch {
-    let operations = if staged.operations.is_empty() {
-        match &staged.previous {
-            Some(prev) => diff::diff(prev, &staged.current),
-            None => {
-                vec![PatchOperation::Add {
-                    path: "/".to_string(),
-                    value: staged.current.clone(),
-                }]
-            }
-        }
-    } else {
-        staged.operations.clone()
-    };
+    let operations = staged
+        .operations
+        .is_empty()
+        .then(|| {
+            staged
+                .previous
+                .as_ref()
+                .map(|prev| diff::diff(prev, &staged.current))
+                .unwrap_or_else(|| {
+                    vec![PatchOperation::Add {
+                        path: "/".to_string(),
+                        value: staged.current.clone(),
+                    }]
+                })
+        })
+        .unwrap_or_else(|| staged.operations.clone());
 
     Patch::new(
         staged.resource_id.clone(),
@@ -58,30 +62,25 @@ pub fn apply_patch_to_document(doc: &mut Value, patch: &Patch) -> Result<(), Str
 }
 
 /// Determine if two patches can commute (are independent).
+///
+/// Uses `cartesian_product` from itertools to check all path pairs.
 pub fn patches_commute(a: &Patch, b: &Patch) -> bool {
-    if a.target_resource != b.target_resource {
-        return true;
-    }
-    let a_paths: Vec<&str> = a.operations.iter().map(|op| op_path(op)).collect();
-    let b_paths: Vec<&str> = b.operations.iter().map(|op| op_path(op)).collect();
-    for ap in &a_paths {
-        for bp in &b_paths {
-            if paths_overlap(ap, bp) {
-                return false;
-            }
-        }
-    }
-    true
+    (a.target_resource != b.target_resource)
+        || a.operations
+            .iter()
+            .map(op_path)
+            .cartesian_product(b.operations.iter().map(op_path))
+            .all(|(ap, bp)| !paths_overlap(ap, bp))
 }
 
 fn op_path(op: &PatchOperation) -> &str {
     match op {
-        PatchOperation::Add { path, .. } => path,
-        PatchOperation::Remove { path } => path,
-        PatchOperation::Replace { path, .. } => path,
-        PatchOperation::Move { path, .. } => path,
-        PatchOperation::Copy { path, .. } => path,
-        PatchOperation::Test { path, .. } => path,
+        PatchOperation::Add { path, .. }
+        | PatchOperation::Remove { path }
+        | PatchOperation::Replace { path, .. }
+        | PatchOperation::Move { path, .. }
+        | PatchOperation::Copy { path, .. }
+        | PatchOperation::Test { path, .. } => path,
     }
 }
 

@@ -7,7 +7,7 @@
 //! All operations exchange [`Changeset`] objects (not individual patches),
 //! consistent with the Jujutsu-inspired changeset-centric model.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use dyna_core::protocol::*;
 use reqwest::Client;
 
@@ -26,184 +26,114 @@ impl SyncClient {
         }
     }
 
-    /// Push patches to the remote server.
-    pub async fn push(&self, request: &PushRequest) -> Result<PushResponse> {
-        let url = format!("{}/api/v1/push", self.base_url);
-        let response = self
-            .client
+    /// Generic helper: POST JSON, check status, parse response, and optionally
+    /// validate a success flag.
+    async fn post_json<Req, Resp>(
+        &self,
+        endpoint: &str,
+        request: &Req,
+        operation: &str,
+    ) -> Result<Resp>
+    where
+        Req: serde::Serialize,
+        Resp: serde::de::DeserializeOwned,
+    {
+        let url = format!("{}{}", self.base_url, endpoint);
+        self.client
             .post(&url)
             .json(request)
             .send()
             .await
-            .context("Failed to connect to remote server")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("Push failed (HTTP {}): {}", status, body);
-        }
-
-        let push_response: PushResponse = response
-            .json()
+            .context(format!("Failed to connect to remote server for {}", operation))
+            .and_then(|response| {
+                response
+                    .status()
+                    .is_success()
+                    .then_some(response)
+                    .ok_or_else(|| anyhow::anyhow!("{} failed", operation))
+            })?
+            .json::<Resp>()
             .await
-            .context("Failed to parse push response")?;
-
-        if !push_response.success {
-            bail!(
-                "Push rejected: {}",
-                push_response.error.unwrap_or_else(|| "Unknown error".into())
-            );
-        }
-
-        Ok(push_response)
+            .context(format!("Failed to parse {} response", operation))
     }
 
-    /// Pull patches from the remote server.
-    pub async fn pull(&self, request: &PullRequest) -> Result<PullResponse> {
-        let url = format!("{}/api/v1/pull", self.base_url);
-        let response = self
-            .client
-            .post(&url)
-            .json(request)
+    /// Generic helper: GET, check status, parse response.
+    async fn get_json<Resp>(&self, endpoint: &str, operation: &str) -> Result<Resp>
+    where
+        Resp: serde::de::DeserializeOwned,
+    {
+        let url = format!("{}{}", self.base_url, endpoint);
+        self.client
+            .get(&url)
             .send()
             .await
-            .context("Failed to connect to remote server")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("Pull failed (HTTP {}): {}", status, body);
-        }
-
-        let pull_response: PullResponse = response
-            .json()
+            .context(format!("Failed to connect to remote server for {}", operation))
+            .and_then(|response| {
+                response
+                    .status()
+                    .is_success()
+                    .then_some(response)
+                    .ok_or_else(|| anyhow::anyhow!("{} failed", operation))
+            })?
+            .json::<Resp>()
             .await
-            .context("Failed to parse pull response")?;
+            .context(format!("Failed to parse {} response", operation))
+    }
 
-        Ok(pull_response)
+    /// Push changesets to the remote server.
+    pub async fn push(&self, request: &PushRequest) -> Result<PushResponse> {
+        self.post_json::<_, PushResponse>("/api/v1/push", request, "Push")
+            .await
+            .and_then(|resp| {
+                resp.success
+                    .then_some(resp.clone())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Push rejected: {}",
+                            resp.error.unwrap_or_else(|| "Unknown error".into())
+                        )
+                    })
+            })
+    }
+
+    /// Pull changesets from the remote server.
+    pub async fn pull(&self, request: &PullRequest) -> Result<PullResponse> {
+        self.post_json("/api/v1/pull", request, "Pull").await
     }
 
     /// Clone a repository from the remote server.
     pub async fn clone_repo(&self, request: &CloneRequest) -> Result<CloneResponse> {
-        let url = format!("{}/api/v1/clone", self.base_url);
-        let response = self
-            .client
-            .post(&url)
-            .json(request)
-            .send()
-            .await
-            .context("Failed to connect to remote server")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("Clone failed (HTTP {}): {}", status, body);
-        }
-
-        let clone_response: CloneResponse = response
-            .json()
-            .await
-            .context("Failed to parse clone response")?;
-
-        Ok(clone_response)
+        self.post_json("/api/v1/clone", request, "Clone").await
     }
 
     /// List all channels on the remote server.
     pub async fn list_channels(&self) -> Result<ListChannelsResponse> {
-        let url = format!("{}/api/v1/channels", self.base_url);
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("Failed to connect to remote server")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("List channels failed (HTTP {}): {}", status, body);
-        }
-
-        let list_response: ListChannelsResponse = response
-            .json()
-            .await
-            .context("Failed to parse channels response")?;
-
-        Ok(list_response)
+        self.get_json("/api/v1/channels", "List channels").await
     }
 
     /// Create a new channel on the remote server.
     pub async fn create_channel(&self, request: &CreateChannelRequest) -> Result<CreateChannelResponse> {
-        let url = format!("{}/api/v1/channels", self.base_url);
-        let response = self
-            .client
-            .post(&url)
-            .json(request)
-            .send()
-            .await
-            .context("Failed to connect to remote server")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("Create channel failed (HTTP {}): {}", status, body);
-        }
-
-        let create_response: CreateChannelResponse = response
-            .json()
-            .await
-            .context("Failed to parse create channel response")?;
-
-        Ok(create_response)
+        self.post_json("/api/v1/channels", request, "Create channel").await
     }
 
-    /// Promote patches from one channel to another on the remote server.
+    /// Promote changesets from one channel to another on the remote server.
     pub async fn promote(&self, request: &PromoteRequest) -> Result<PromoteResponse> {
-        let url = format!("{}/api/v1/promote", self.base_url);
-        let response = self
-            .client
-            .post(&url)
-            .json(request)
-            .send()
+        self.post_json::<_, PromoteResponse>("/api/v1/promote", request, "Promote")
             .await
-            .context("Failed to connect to remote server")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("Promote failed (HTTP {}): {}", status, body);
-        }
-
-        let promote_response: PromoteResponse = response
-            .json()
-            .await
-            .context("Failed to parse promote response")?;
-
-        if !promote_response.success {
-            bail!(
-                "Promote rejected: {}",
-                promote_response.error.unwrap_or_else(|| "Unknown error".into())
-            );
-        }
-
-        Ok(promote_response)
+            .and_then(|resp| {
+                resp.success
+                    .then_some(resp.clone())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Promote rejected: {}",
+                            resp.error.unwrap_or_else(|| "Unknown error".into())
+                        )
+                    })
+            })
     }
 
     /// Check the health of the remote server.
     pub async fn health(&self) -> Result<HealthResponse> {
-        let url = format!("{}/api/v1/health", self.base_url);
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("Failed to connect to remote server")?;
-
-        let health: HealthResponse = response
-            .json()
-            .await
-            .context("Failed to parse health response")?;
-
-        Ok(health)
+        self.get_json("/api/v1/health", "Health check").await
     }
 }

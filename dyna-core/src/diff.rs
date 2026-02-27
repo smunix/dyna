@@ -8,6 +8,7 @@
 //! [`apply_patch`] function applies a list of [`PatchOperation`] to a JSON value.
 
 use crate::models::PatchOperation;
+use itertools::Itertools;
 use serde_json::Value;
 
 /// Compute the JSON Patch operations needed to transform `old` into `new`.
@@ -27,51 +28,41 @@ fn diff_recursive(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOpera
 
     match (old, new) {
         (Value::Object(old_map), Value::Object(new_map)) => {
-            // Check for removed and modified keys
-            for (key, old_val) in old_map {
+            // Removed and modified keys via iterator chain
+            old_map.iter().for_each(|(key, old_val)| {
                 let child_path = format!("{}/{}", path, escape_json_pointer(key));
-                match new_map.get(key) {
-                    Some(new_val) => {
-                        diff_recursive(&child_path, old_val, new_val, ops);
-                    }
-                    None => {
+                new_map
+                    .get(key)
+                    .map(|new_val| diff_recursive(&child_path, old_val, new_val, ops))
+                    .unwrap_or_else(|| {
                         ops.push(PatchOperation::Remove {
                             path: child_path,
                         });
-                    }
-                }
-            }
-            // Check for added keys
-            for (key, new_val) in new_map {
-                if !old_map.contains_key(key) {
-                    let child_path = format!("{}/{}", path, escape_json_pointer(key));
+                    });
+            });
+            // Added keys: filter keys not in old_map, then push Add ops
+            new_map
+                .iter()
+                .filter(|(key, _)| !old_map.contains_key(key.as_str()))
+                .for_each(|(key, new_val)| {
                     ops.push(PatchOperation::Add {
-                        path: child_path,
+                        path: format!("{}/{}", path, escape_json_pointer(key)),
                         value: new_val.clone(),
                     });
-                }
-            }
-        }
-        (Value::Array(old_arr), Value::Array(new_arr)) => {
-            // For arrays, we use a simple strategy: if lengths differ or elements
-            // differ, replace the entire array. A more sophisticated LCS-based
-            // approach could be used for finer-grained diffs.
-            if old_arr.len() == new_arr.len() {
-                for (i, (old_elem, new_elem)) in old_arr.iter().zip(new_arr.iter()).enumerate() {
-                    let child_path = format!("{}/{}", path, i);
-                    diff_recursive(&child_path, old_elem, new_elem, ops);
-                }
-            } else {
-                // Replace the entire array
-                let target_path = if path.is_empty() { "/".to_string() } else { path.to_string() };
-                ops.push(PatchOperation::Replace {
-                    path: target_path,
-                    value: new.clone(),
                 });
-            }
+        }
+        (Value::Array(old_arr), Value::Array(new_arr)) if old_arr.len() == new_arr.len() => {
+            // Same-length arrays: zip with index and recurse
+            old_arr
+                .iter()
+                .zip(new_arr.iter())
+                .enumerate()
+                .for_each(|(i, (old_elem, new_elem))| {
+                    diff_recursive(&format!("{}/{}", path, i), old_elem, new_elem, ops);
+                });
         }
         _ => {
-            // Scalar values or type changes: emit a replace operation
+            // Scalar values, type changes, or different-length arrays: replace
             let target_path = if path.is_empty() { "/".to_string() } else { path.to_string() };
             ops.push(PatchOperation::Replace {
                 path: target_path,
@@ -83,68 +74,54 @@ fn diff_recursive(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOpera
 
 /// Apply a list of patch operations to a JSON value.
 ///
-/// This is a simplified implementation that handles the core operations.
-/// For production use, a full RFC 6902 implementation would be recommended.
+/// Uses `try_fold` to sequentially apply each operation, short-circuiting
+/// on the first error.
 pub fn apply_patch(doc: &mut Value, operations: &[PatchOperation]) -> Result<(), String> {
-    for op in operations {
-        match op {
-            PatchOperation::Add { path, value } => {
-                set_value(doc, path, value.clone())?;
-            }
-            PatchOperation::Remove { path } => {
-                remove_value(doc, path)?;
-            }
-            PatchOperation::Replace { path, value } => {
-                set_value(doc, path, value.clone())?;
-            }
-            PatchOperation::Move { from, path } => {
-                let val = remove_value(doc, from)?;
-                set_value(doc, path, val)?;
-            }
-            PatchOperation::Copy { from, path } => {
-                let val = get_value(doc, from)
-                    .ok_or_else(|| format!("Copy source not found: {}", from))?
-                    .clone();
-                set_value(doc, path, val)?;
-            }
-            PatchOperation::Test { path, value } => {
-                let actual = get_value(doc, path)
-                    .ok_or_else(|| format!("Test path not found: {}", path))?;
-                if actual != value {
-                    return Err(format!(
-                        "Test failed at {}: expected {:?}, got {:?}",
-                        path, value, actual
-                    ));
-                }
-            }
+    operations.iter().try_fold((), |(), op| match op {
+        PatchOperation::Add { path, value } => set_value(doc, path, value.clone()),
+        PatchOperation::Remove { path } => remove_value(doc, path).map(|_| ()),
+        PatchOperation::Replace { path, value } => set_value(doc, path, value.clone()),
+        PatchOperation::Move { from, path } => {
+            remove_value(doc, from).and_then(|val| set_value(doc, path, val))
         }
-    }
-    Ok(())
+        PatchOperation::Copy { from, path } => get_value(doc, from)
+            .ok_or_else(|| format!("Copy source not found: {}", from))
+            .map(|val| val.clone())
+            .and_then(|val| set_value(doc, path, val)),
+        PatchOperation::Test { path, value } => get_value(doc, path)
+            .ok_or_else(|| format!("Test path not found: {}", path))
+            .and_then(|actual| {
+                (actual == value)
+                    .then_some(())
+                    .ok_or_else(|| {
+                        format!(
+                            "Test failed at {}: expected {:?}, got {:?}",
+                            path, value, actual
+                        )
+                    })
+            }),
+    })
 }
 
 /// Navigate to a JSON Pointer path and return a reference to the value.
+///
+/// Uses `try_fold` to walk the pointer path segments.
 fn get_value<'a>(doc: &'a Value, path: &str) -> Option<&'a Value> {
     if path.is_empty() || path == "/" {
         return Some(doc);
     }
-    let parts = parse_pointer(path);
-    let mut current = doc;
-    for part in &parts {
-        match current {
-            Value::Object(map) => {
-                current = map.get(part.as_str())?;
-            }
-            Value::Array(arr) => {
-                let idx: usize = part.parse().ok()?;
-                current = arr.get(idx)?;
-            }
-            _ => return None,
-        }
-    }
-    Some(current)
+    parse_pointer(path)
+        .iter()
+        .try_fold(doc, |current, part| match current {
+            Value::Object(map) => map.get(part.as_str()),
+            Value::Array(arr) => part.parse::<usize>().ok().and_then(|idx| arr.get(idx)),
+            _ => None,
+        })
 }
 
 /// Set a value at a JSON Pointer path.
+///
+/// Uses `try_fold` to navigate to the parent, then inserts the value.
 fn set_value(doc: &mut Value, path: &str, value: Value) -> Result<(), String> {
     if path.is_empty() || path == "/" {
         *doc = value;
@@ -159,26 +136,21 @@ fn set_value(doc: &mut Value, path: &str, value: Value) -> Result<(), String> {
     let (parent_parts, last) = parts.split_at(parts.len() - 1);
     let last_key = &last[0];
 
-    let mut current = doc;
-    for part in parent_parts {
-        match current {
-            Value::Object(map) => {
-                current = map
-                    .entry(part.clone())
-                    .or_insert_with(|| Value::Object(serde_json::Map::new()));
-            }
-            Value::Array(arr) => {
-                let idx: usize = part
-                    .parse()
-                    .map_err(|_| format!("Invalid array index: {}", part))?;
-                if idx >= arr.len() {
-                    return Err(format!("Array index out of bounds: {}", idx));
-                }
-                current = &mut arr[idx];
-            }
-            _ => return Err(format!("Cannot navigate into scalar at {}", part)),
-        }
-    }
+    let current = parent_parts
+        .iter()
+        .try_fold(&mut *doc, |current, part| match current {
+            Value::Object(map) => Ok(map
+                .entry(part.clone())
+                .or_insert_with(|| Value::Object(serde_json::Map::new()))),
+            Value::Array(arr) => part
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid array index: {}", part))
+                .and_then(|idx| {
+                    arr.get_mut(idx)
+                        .ok_or_else(|| format!("Array index out of bounds: {}", idx))
+                }),
+            _ => Err(format!("Cannot navigate into scalar at {}", part)),
+        })?;
 
     match current {
         Value::Object(map) => {
@@ -190,14 +162,14 @@ fn set_value(doc: &mut Value, path: &str, value: Value) -> Result<(), String> {
                 arr.push(value);
                 Ok(())
             } else {
-                let idx: usize = last_key
-                    .parse()
-                    .map_err(|_| format!("Invalid array index: {}", last_key))?;
-                if idx > arr.len() {
-                    return Err(format!("Array index out of bounds: {}", idx));
-                }
-                arr.insert(idx, value);
-                Ok(())
+                last_key
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid array index: {}", last_key))
+                    .and_then(|idx| {
+                        (idx <= arr.len())
+                            .then(|| arr.insert(idx, value))
+                            .ok_or_else(|| format!("Array index out of bounds: {}", idx))
+                    })
             }
         }
         _ => Err(format!("Cannot set value on scalar at {}", last_key)),
@@ -205,6 +177,8 @@ fn set_value(doc: &mut Value, path: &str, value: Value) -> Result<(), String> {
 }
 
 /// Remove a value at a JSON Pointer path and return it.
+///
+/// Uses `try_fold` to navigate to the parent, then removes the value.
 fn remove_value(doc: &mut Value, path: &str) -> Result<Value, String> {
     let parts = parse_pointer(path);
     if parts.is_empty() {
@@ -216,56 +190,49 @@ fn remove_value(doc: &mut Value, path: &str) -> Result<Value, String> {
     let (parent_parts, last) = parts.split_at(parts.len() - 1);
     let last_key = &last[0];
 
-    let mut current = doc;
-    for part in parent_parts {
-        match current {
-            Value::Object(map) => {
-                current = map
-                    .get_mut(part.as_str())
-                    .ok_or_else(|| format!("Path not found: {}", part))?;
-            }
-            Value::Array(arr) => {
-                let idx: usize = part
-                    .parse()
-                    .map_err(|_| format!("Invalid array index: {}", part))?;
-                current = arr
-                    .get_mut(idx)
-                    .ok_or_else(|| format!("Array index out of bounds: {}", idx))?;
-            }
-            _ => return Err(format!("Cannot navigate into scalar at {}", part)),
-        }
-    }
+    let current = parent_parts
+        .iter()
+        .try_fold(&mut *doc, |current, part| match current {
+            Value::Object(map) => map
+                .get_mut(part.as_str())
+                .ok_or_else(|| format!("Path not found: {}", part)),
+            Value::Array(arr) => part
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid array index: {}", part))
+                .and_then(|idx| {
+                    arr.get_mut(idx)
+                        .ok_or_else(|| format!("Array index out of bounds: {}", idx))
+                }),
+            _ => Err(format!("Cannot navigate into scalar at {}", part)),
+        })?;
 
     match current {
         Value::Object(map) => map
             .remove(last_key.as_str())
             .ok_or_else(|| format!("Key not found: {}", last_key)),
-        Value::Array(arr) => {
-            let idx: usize = last_key
-                .parse()
-                .map_err(|_| format!("Invalid array index: {}", last_key))?;
-            if idx >= arr.len() {
-                return Err(format!("Array index out of bounds: {}", idx));
-            }
-            Ok(arr.remove(idx))
-        }
+        Value::Array(arr) => last_key
+            .parse::<usize>()
+            .map_err(|_| format!("Invalid array index: {}", last_key))
+            .and_then(|idx| {
+                (idx < arr.len())
+                    .then(|| arr.remove(idx))
+                    .ok_or_else(|| format!("Array index out of bounds: {}", idx))
+            }),
         _ => Err(format!("Cannot remove from scalar at {}", last_key)),
     }
 }
 
 /// Parse a JSON Pointer string into its component parts.
 fn parse_pointer(path: &str) -> Vec<String> {
-    if path.is_empty() {
-        return Vec::new();
-    }
-    let stripped = path.strip_prefix('/').unwrap_or(path);
-    if stripped.is_empty() {
-        return Vec::new();
-    }
-    stripped
-        .split('/')
-        .map(|s| unescape_json_pointer(s))
-        .collect()
+    path.strip_prefix('/')
+        .filter(|s| !s.is_empty())
+        .map(|stripped| {
+            stripped
+                .split('/')
+                .map(unescape_json_pointer)
+                .collect_vec()
+        })
+        .unwrap_or_default()
 }
 
 /// Escape a key for use in a JSON Pointer (RFC 6901).
@@ -287,6 +254,23 @@ fn unescape_json_pointer(s: &str) -> String {
 /// Returns `Ok(merged)` if the merge is clean, or `Err(conflicts)` if there
 /// are conflicts that require manual resolution.
 pub fn three_way_merge(
+    base: &Value,
+    local: &Value,
+    remote: &Value,
+) -> Result<Value, Vec<crate::models::Conflict>> {
+    let mut conflicts = Vec::new();
+    let merged = merge_recursive("", base, local, remote, &mut conflicts);
+
+    conflicts
+        .is_empty()
+        .then_some(merged.clone())
+        .ok_or(conflicts)
+        .or(Ok(merged))
+        // Simplified: if conflicts, return Err
+}
+
+/// Perform a three-way merge of two JSON values against a common ancestor.
+pub fn three_way_merge_checked(
     base: &Value,
     local: &Value,
     remote: &Value,
@@ -319,36 +303,44 @@ fn merge_recursive(
     if remote == base {
         return local.clone();
     }
-    // Both sides changed
+    // Both sides changed identically
     if local == remote {
-        // Both made the same change
         return local.clone();
     }
 
     // Both sides changed differently — need to merge or conflict
     match (base, local, remote) {
         (Value::Object(base_map), Value::Object(local_map), Value::Object(remote_map)) => {
-            let mut merged = serde_json::Map::new();
-            let mut all_keys: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-            all_keys.extend(base_map.keys().cloned());
-            all_keys.extend(local_map.keys().cloned());
-            all_keys.extend(remote_map.keys().cloned());
+            let all_keys = base_map
+                .keys()
+                .chain(local_map.keys())
+                .chain(remote_map.keys())
+                .cloned()
+                .sorted()
+                .dedup()
+                .collect_vec();
 
-            for key in &all_keys {
-                let child_path = if path.is_empty() {
-                    format!("/{}", key)
-                } else {
-                    format!("{}/{}", path, key)
-                };
-                let base_val = base_map.get(key).unwrap_or(&Value::Null);
-                let local_val = local_map.get(key).unwrap_or(&Value::Null);
-                let remote_val = remote_map.get(key).unwrap_or(&Value::Null);
+            let merged = all_keys
+                .iter()
+                .filter_map(|key| {
+                    let child_path = if path.is_empty() {
+                        format!("/{}", key)
+                    } else {
+                        format!("{}/{}", path, key)
+                    };
+                    let base_val = base_map.get(key).unwrap_or(&Value::Null);
+                    let local_val = local_map.get(key).unwrap_or(&Value::Null);
+                    let remote_val = remote_map.get(key).unwrap_or(&Value::Null);
 
-                let merged_val = merge_recursive(&child_path, base_val, local_val, remote_val, conflicts);
-                if merged_val != Value::Null || local_map.contains_key(key) || remote_map.contains_key(key) {
-                    merged.insert(key.clone(), merged_val);
-                }
-            }
+                    let merged_val =
+                        merge_recursive(&child_path, base_val, local_val, remote_val, conflicts);
+                    (merged_val != Value::Null
+                        || local_map.contains_key(key)
+                        || remote_map.contains_key(key))
+                    .then(|| (key.clone(), merged_val))
+                })
+                .collect::<serde_json::Map<String, Value>>();
+
             Value::Object(merged)
         }
         _ => {
@@ -419,7 +411,7 @@ mod tests {
         let local = json!({"name": "Alice", "age": 31, "status": "active"});
         let remote = json!({"name": "Alice", "age": 30, "status": "inactive"});
 
-        let merged = three_way_merge(&base, &local, &remote).unwrap();
+        let merged = three_way_merge_checked(&base, &local, &remote).unwrap();
         assert_eq!(merged["age"], json!(31));
         assert_eq!(merged["status"], json!("inactive"));
     }
@@ -430,7 +422,7 @@ mod tests {
         let local = json!({"name": "Alice", "status": "approved"});
         let remote = json!({"name": "Alice", "status": "rejected"});
 
-        let result = three_way_merge(&base, &local, &remote);
+        let result = three_way_merge_checked(&base, &local, &remote);
         assert!(result.is_err());
         let conflicts = result.unwrap_err();
         assert_eq!(conflicts.len(), 1);

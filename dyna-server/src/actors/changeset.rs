@@ -17,6 +17,7 @@ use dyna_core::diff;
 use dyna_core::models::{Changeset, Channel};
 use dyna_core::protocol::*;
 use elfo::prelude::*;
+use itertools::Itertools;
 
 use crate::messages::*;
 
@@ -28,62 +29,34 @@ pub fn new() -> Blueprint {
 async fn changeset_actor(mut ctx: Context) {
     tracing::info!("Changeset actor started");
 
-    // Ensure the default "main" channel exists on startup.
     ensure_main_channel(&ctx).await;
 
     while let Some(envelope) = ctx.recv().await {
         msg!(match envelope {
-            // ----------------------------------------------------------
-            // Push: accept changesets from a client
-            // ----------------------------------------------------------
             (HandlePush { channel, changesets, expected_head }, token) => {
                 let response = handle_push(&ctx, channel, changesets, expected_head).await;
                 ctx.respond(token, response);
             }
-
-            // ----------------------------------------------------------
-            // Pull: send changesets to a client
-            // ----------------------------------------------------------
             (HandlePull { channel, since_change_id }, token) => {
                 let response = handle_pull(&ctx, channel, since_change_id).await;
                 ctx.respond(token, response);
             }
-
-            // ----------------------------------------------------------
-            // Clone: send all data to a client
-            // ----------------------------------------------------------
             (HandleClone { channel }, token) => {
                 let response = handle_clone(&ctx, channel).await;
                 ctx.respond(token, response);
             }
-
-            // ----------------------------------------------------------
-            // Promote: merge changesets from one channel to another
-            // ----------------------------------------------------------
             (HandlePromote { source_channel, target_channel }, token) => {
                 let response = handle_promote(&ctx, source_channel, target_channel).await;
                 ctx.respond(token, response);
             }
-
-            // ----------------------------------------------------------
-            // Create Channel
-            // ----------------------------------------------------------
             (HandleCreateChannel { name, fork_from }, token) => {
                 let response = handle_create_channel(&ctx, name, fork_from).await;
                 ctx.respond(token, response);
             }
-
-            // ----------------------------------------------------------
-            // List Channels
-            // ----------------------------------------------------------
             (HandleListChannels, token) => {
                 let response = handle_list_channels(&ctx).await;
                 ctx.respond(token, response);
             }
-
-            // ----------------------------------------------------------
-            // Get Changeset Detail
-            // ----------------------------------------------------------
             (HandleGetChangeset { change_id }, token) => {
                 let response = handle_get_changeset(&ctx, change_id).await;
                 ctx.respond(token, response);
@@ -94,33 +67,102 @@ async fn changeset_actor(mut ctx: Context) {
     tracing::info!("Changeset actor stopped");
 }
 
+/// Helper: load a channel from storage, returning Ok(channel) or Err(error_msg).
+async fn load_channel_or_err(ctx: &Context, name: &str) -> Result<Channel, String> {
+    ctx.request(LoadChannel { name: name.into() })
+        .resolve()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))
+        .and_then(|result| match result {
+            LoadChannelResult::Ok(ch) => Ok(ch),
+            LoadChannelResult::NotFound => Err(format!("Channel '{}' not found", name)),
+            LoadChannelResult::Error(e) => Err(e),
+        })
+}
+
+/// Helper: load a channel, creating a new one if not found.
+async fn load_or_create_channel(ctx: &Context, name: &str) -> Result<Channel, String> {
+    ctx.request(LoadChannel { name: name.into() })
+        .resolve()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))
+        .map(|result| match result {
+            LoadChannelResult::Ok(ch) => ch,
+            _ => Channel::new(name),
+        })
+}
+
+/// Helper: save a channel to storage.
+async fn save_channel(ctx: &Context, channel: &Channel) -> Result<(), String> {
+    ctx.request(SaveChannel {
+        channel: channel.clone(),
+    })
+    .resolve()
+    .await
+    .map_err(|e| format!("Request failed: {}", e))
+    .and_then(|result| match result {
+        SaveChannelResult::Ok => Ok(()),
+        SaveChannelResult::Error(e) => Err(e),
+    })
+}
+
+/// Helper: store a changeset to S3.
+async fn store_changeset(ctx: &Context, cs: &Changeset) -> Result<(), String> {
+    ctx.request(StoreChangeset {
+        changeset: cs.clone(),
+    })
+    .resolve()
+    .await
+    .map_err(|e| format!("Request failed: {}", e))
+    .and_then(|result| match result {
+        StoreChangesetResult::Ok => Ok(()),
+        StoreChangesetResult::Error(e) => Err(e),
+    })
+}
+
+/// Helper: load a changeset from S3.
+async fn load_changeset(ctx: &Context, change_id: &str) -> Option<Changeset> {
+    ctx.request(LoadChangeset {
+        change_id: change_id.into(),
+    })
+    .resolve()
+    .await
+    .ok()
+    .and_then(|result| match result {
+        LoadChangesetResult::Ok(cs) => Some(cs),
+        _ => None,
+    })
+}
+
 /// Ensure the "main" channel exists in storage.
 async fn ensure_main_channel(ctx: &Context) {
-    let result = ctx
-        .request(LoadChannel {
-            name: "main".into(),
-        })
-        .resolve()
-        .await;
-
-    match result {
-        Ok(LoadChannelResult::NotFound) | Err(_) => {
-            let main_channel = Channel::new("main");
-            let _ = ctx
-                .request(SaveChannel {
-                    channel: main_channel,
-                })
-                .resolve()
-                .await;
-            tracing::info!("Created default 'main' channel");
+    ctx.request(LoadChannel {
+        name: "main".into(),
+    })
+    .resolve()
+    .await
+    .ok()
+    .map(|result| match result {
+        LoadChannelResult::NotFound => {
+            tracing::info!("Creating default 'main' channel");
+            Some(Channel::new("main"))
         }
-        Ok(LoadChannelResult::Ok(_)) => {
+        LoadChannelResult::Ok(_) => {
             tracing::debug!("'main' channel already exists");
+            None
         }
-        Ok(LoadChannelResult::Error(e)) => {
+        LoadChannelResult::Error(e) => {
             tracing::error!(error = %e, "Failed to check for 'main' channel");
+            Some(Channel::new("main"))
         }
-    }
+    })
+    .flatten()
+    .map(|ch| async move {
+        let _ = ctx
+            .request(SaveChannel { channel: ch })
+            .resolve()
+            .await;
+    });
 }
 
 /// Handle a push request (changeset-based).
@@ -130,150 +172,137 @@ async fn handle_push(
     changesets: Vec<Changeset>,
     expected_head: Option<String>,
 ) -> PushResponse {
-    // Load the channel
-    let channel_result = ctx
-        .request(LoadChannel {
-            name: channel_name.clone(),
-        })
-        .resolve()
-        .await;
+    let make_err = |channel: &Channel, accepted: usize, msg: String| PushResponse {
+        success: false,
+        new_head: channel.head_change_id.clone(),
+        accepted_count: accepted,
+        error: Some(msg),
+    };
 
-    let mut channel = match channel_result {
-        Ok(LoadChannelResult::Ok(ch)) => ch,
-        Ok(LoadChannelResult::NotFound) => Channel::new(&channel_name),
-        _ => {
+    // Load or create channel
+    let mut channel = match load_or_create_channel(ctx, &channel_name).await {
+        Ok(ch) => ch,
+        Err(e) => {
             return PushResponse {
                 success: false,
                 new_head: None,
                 accepted_count: 0,
-                error: Some("Failed to load channel".into()),
+                error: Some(e),
             };
         }
     };
 
-    // Optimistic concurrency check
-    if let Some(expected) = &expected_head {
-        if channel.head_change_id.as_deref() != Some(expected.as_str()) {
-            return PushResponse {
-                success: false,
-                new_head: channel.head_change_id.clone(),
-                accepted_count: 0,
-                error: Some(format!(
-                    "Concurrent modification: expected head '{}', but found '{}'",
-                    &expected[..std::cmp::min(expected.len(), 8)],
-                    channel
-                        .head_change_id
-                        .as_deref()
-                        .map(|h| &h[..std::cmp::min(h.len(), 8)])
-                        .unwrap_or("(none)")
-                )),
-            };
-        }
+    // Optimistic concurrency check via and_then
+    let concurrency_ok = expected_head
+        .as_ref()
+        .map(|expected| {
+            (channel.head_change_id.as_deref() == Some(expected.as_str()))
+                .then_some(())
+                .ok_or_else(|| {
+                    format!(
+                        "Concurrent modification: expected head '{}', but found '{}'",
+                        &expected[..std::cmp::min(expected.len(), 8)],
+                        channel
+                            .head_change_id
+                            .as_deref()
+                            .map(|h| &h[..std::cmp::min(h.len(), 8)])
+                            .unwrap_or("(none)")
+                    )
+                })
+        })
+        .transpose();
+
+    if let Err(msg) = concurrency_ok {
+        return make_err(&channel, 0, msg);
     }
 
-    // Validate and store each changeset
-    let mut accepted = 0;
+    // Validate and store each changeset, accumulating accepted count
+    // We need sequential processing here due to async storage calls
+    let mut accepted = 0usize;
     for cs in &changesets {
-        // Verify changeset integrity
+        // Verify integrity
         if !cs.verify() {
-            return PushResponse {
-                success: false,
-                new_head: channel.head_change_id.clone(),
-                accepted_count: accepted,
-                error: Some(format!(
-                    "Changeset {} failed integrity check",
-                    cs.short_change_id()
-                )),
-            };
+            return make_err(
+                &channel,
+                accepted,
+                format!("Changeset {} failed integrity check", cs.short_change_id()),
+            );
         }
 
-        // Store the changeset in S3
-        let store_result = ctx
-            .request(StoreChangeset {
-                changeset: cs.clone(),
-            })
-            .resolve()
-            .await;
-
-        match store_result {
-            Ok(StoreChangesetResult::Ok) => {}
-            _ => {
-                return PushResponse {
-                    success: false,
-                    new_head: channel.head_change_id.clone(),
-                    accepted_count: accepted,
-                    error: Some(format!(
-                        "Failed to store changeset {}",
-                        cs.short_change_id()
-                    )),
-                };
-            }
+        // Store changeset
+        if let Err(e) = store_changeset(ctx, cs).await {
+            return make_err(
+                &channel,
+                accepted,
+                format!("Failed to store changeset {}: {}", cs.short_change_id(), e),
+            );
         }
 
-        // Apply each patch in the changeset to resource snapshots
+        // Apply patches to snapshots
         for patch in &cs.patches {
-            if let Some(result_snapshot) = &patch.result_snapshot {
+            let save_value = patch
+                .result_snapshot
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    // Load current snapshot and apply operations
+                    futures::executor::block_on(
+                        ctx.request(LoadSnapshot {
+                            resource_id: patch.target_resource.clone(),
+                        })
+                        .resolve(),
+                    )
+                    .ok()
+                    .and_then(|r| match r {
+                        LoadSnapshotResult::Ok(v) => Some(v),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| serde_json::json!({}))
+                    .pipe(|mut current| {
+                        diff::apply_patch(&mut current, &patch.operations)
+                            .map(|()| current)
+                            .map_err(|e| e.to_string())
+                    })
+                });
+
+            if let Ok(value) = save_value {
                 let _ = ctx
                     .request(SaveSnapshot {
                         resource_id: patch.target_resource.clone(),
-                        value: result_snapshot.clone(),
+                        value,
                     })
                     .resolve()
                     .await;
-            } else {
-                // Compute the result by applying operations
-                let snapshot_result = ctx
-                    .request(LoadSnapshot {
-                        resource_id: patch.target_resource.clone(),
-                    })
-                    .resolve()
-                    .await;
-
-                let mut current = match snapshot_result {
-                    Ok(LoadSnapshotResult::Ok(v)) => v,
-                    _ => serde_json::json!({}),
-                };
-
-                if diff::apply_patch(&mut current, &patch.operations).is_ok() {
-                    let _ = ctx
-                        .request(SaveSnapshot {
-                            resource_id: patch.target_resource.clone(),
-                            value: current,
-                        })
-                        .resolve()
-                        .await;
-                }
             }
         }
 
-        // Append changeset to channel
         channel.append_changeset(cs.change_id.clone());
         accepted += 1;
     }
 
-    // Save the updated channel
-    let save_result = ctx
-        .request(SaveChannel {
-            channel: channel.clone(),
-        })
-        .resolve()
-        .await;
-
-    match save_result {
-        Ok(SaveChannelResult::Ok) => PushResponse {
+    // Save updated channel
+    save_channel(ctx, &channel)
+        .await
+        .map(|()| PushResponse {
             success: true,
             new_head: channel.head_change_id.clone(),
             accepted_count: accepted,
             error: None,
-        },
-        _ => PushResponse {
-            success: false,
-            new_head: channel.head_change_id.clone(),
-            accepted_count: accepted,
-            error: Some("Failed to save channel metadata".into()),
-        },
+        })
+        .unwrap_or_else(|e| make_err(&channel, accepted, format!("Failed to save channel: {}", e)))
+}
+
+/// Pipe trait for inline transformations.
+trait Pipe: Sized {
+    fn pipe<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(Self) -> R,
+    {
+        f(self)
     }
 }
+
+impl<T> Pipe for T {}
 
 /// Handle a pull request (changeset-based).
 async fn handle_pull(
@@ -281,61 +310,40 @@ async fn handle_pull(
     channel_name: String,
     since_change_id: Option<String>,
 ) -> PullResponse {
-    // Load the channel
-    let channel_result = ctx
-        .request(LoadChannel {
-            name: channel_name.clone(),
+    let empty_response = || PullResponse {
+        changesets: vec![],
+        current_head: None,
+        channel: Channel::new(&channel_name),
+    };
+
+    let channel = match load_channel_or_err(ctx, &channel_name).await {
+        Ok(ch) => ch,
+        Err(_) => return empty_response(),
+    };
+
+    // Determine changeset IDs to send using skip_while
+    let changeset_ids = since_change_id
+        .as_ref()
+        .map(|since| {
+            channel
+                .changesets
+                .iter()
+                .skip_while(|id| *id != since)
+                .skip(1)
+                .cloned()
+                .collect_vec()
         })
-        .resolve()
-        .await;
+        .unwrap_or_else(|| channel.changesets.clone());
 
-    let channel = match channel_result {
-        Ok(LoadChannelResult::Ok(ch)) => ch,
-        _ => {
-            return PullResponse {
-                changesets: vec![],
-                current_head: None,
-                channel: Channel::new(&channel_name),
-            };
-        }
-    };
-
-    // Determine which changesets to send (those after since_change_id)
-    let changeset_ids: Vec<String> = if let Some(ref since) = since_change_id {
-        let mut found = false;
-        channel
-            .changesets
-            .iter()
-            .filter(|id| {
-                if found {
-                    return true;
-                }
-                if *id == since {
-                    found = true;
-                }
-                false
-            })
-            .cloned()
-            .collect()
-    } else {
-        channel.changesets.clone()
-    };
-
-    // Load the changeset objects
+    // Load changeset objects, filtering out failures
     let mut changesets = Vec::new();
     for id in &changeset_ids {
-        let load_result = ctx
-            .request(LoadChangeset {
-                change_id: id.clone(),
-            })
-            .resolve()
-            .await;
-
-        if let Ok(LoadChangesetResult::Ok(cs)) = load_result {
-            changesets.push(cs);
-        } else {
-            tracing::warn!(change_id = %id, "Failed to load changeset during pull");
-        }
+        load_changeset(ctx, id)
+            .await
+            .map(|cs| changesets.push(cs))
+            .unwrap_or_else(|| {
+                tracing::warn!(change_id = %id, "Failed to load changeset during pull");
+            });
     }
 
     PullResponse {
@@ -348,44 +356,44 @@ async fn handle_pull(
 /// Handle a clone request (changeset-based).
 async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse {
     // Load all channels
-    let channels_result = ctx.request(ListAllChannels).resolve().await;
-    let channels = match channels_result {
-        Ok(ListChannelsResult::Ok(chs)) => chs,
-        _ => vec![],
-    };
+    let channels = ctx
+        .request(ListAllChannels)
+        .resolve()
+        .await
+        .ok()
+        .and_then(|r| match r {
+            ListChannelsResult::Ok(chs) => Some(chs),
+            _ => None,
+        })
+        .unwrap_or_default();
 
     // Collect all unique changeset IDs from all channels
-    let mut all_cs_ids = std::collections::HashSet::new();
-    for ch in &channels {
-        for id in &ch.changesets {
-            all_cs_ids.insert(id.clone());
-        }
-    }
+    let all_cs_ids = channels
+        .iter()
+        .flat_map(|ch| ch.changesets.iter())
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
 
-    // Load all changesets
+    // Load all changesets, sort by creation time
     let mut changesets = Vec::new();
     for id in &all_cs_ids {
-        let load_result = ctx
-            .request(LoadChangeset {
-                change_id: id.clone(),
-            })
-            .resolve()
-            .await;
-
-        if let Ok(LoadChangesetResult::Ok(cs)) = load_result {
-            changesets.push(cs);
-        }
+        load_changeset(ctx, id)
+            .await
+            .map(|cs| changesets.push(cs));
     }
-
-    // Sort changesets by creation time for consistent ordering
     changesets.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     // Load all snapshots
-    let snapshots_result = ctx.request(LoadAllSnapshots).resolve().await;
-    let snapshots = match snapshots_result {
-        Ok(LoadAllSnapshotsResult::Ok(s)) => s,
-        _ => std::collections::HashMap::new(),
-    };
+    let snapshots = ctx
+        .request(LoadAllSnapshots)
+        .resolve()
+        .await
+        .ok()
+        .and_then(|r| match r {
+            LoadAllSnapshotsResult::Ok(s) => Some(s),
+            _ => None,
+        })
+        .unwrap_or_default();
 
     CloneResponse {
         channels,
@@ -400,97 +408,46 @@ async fn handle_promote(
     source_name: String,
     target_name: String,
 ) -> PromoteResponse {
-    // Load source channel
-    let source_result = ctx
-        .request(LoadChannel {
-            name: source_name.clone(),
-        })
-        .resolve()
-        .await;
-
-    let source = match source_result {
-        Ok(LoadChannelResult::Ok(ch)) => ch,
-        _ => {
-            return PromoteResponse {
-                success: false,
-                promoted_changesets: vec![],
-                new_head: None,
-                error: Some(format!("Source channel '{}' not found", source_name)),
-            };
-        }
+    let make_err = |msg: String, head: Option<String>| PromoteResponse {
+        success: false,
+        promoted_changesets: vec![],
+        new_head: head,
+        error: Some(msg),
     };
 
-    // Load target channel
-    let target_result = ctx
-        .request(LoadChannel {
-            name: target_name.clone(),
-        })
-        .resolve()
-        .await;
-
-    let mut target = match target_result {
-        Ok(LoadChannelResult::Ok(ch)) => ch,
-        _ => {
-            return PromoteResponse {
-                success: false,
-                promoted_changesets: vec![],
-                new_head: None,
-                error: Some(format!("Target channel '{}' not found", target_name)),
-            };
-        }
+    let source = match load_channel_or_err(ctx, &source_name).await {
+        Ok(ch) => ch,
+        Err(e) => return make_err(e, None),
     };
 
-    // Promote changesets
-    match promote_changesets(&source, &mut target) {
-        Ok(promoted_ids) => {
-            // Mark promoted changesets as immutable in storage
-            for id in &promoted_ids {
-                let load_result = ctx
-                    .request(LoadChangeset {
-                        change_id: id.clone(),
-                    })
-                    .resolve()
-                    .await;
+    let mut target = match load_channel_or_err(ctx, &target_name).await {
+        Ok(ch) => ch,
+        Err(e) => return make_err(e, None),
+    };
 
-                if let Ok(LoadChangesetResult::Ok(mut cs)) = load_result {
-                    cs.immutable = true;
-                    let _ = ctx
-                        .request(StoreChangeset { changeset: cs })
-                        .resolve()
-                        .await;
-                }
-            }
+    let promoted_ids = match promote_changesets(&source, &mut target) {
+        Ok(ids) => ids,
+        Err(e) => return make_err(e.to_string(), None),
+    };
 
-            // Save the updated target channel
-            let save_result = ctx
-                .request(SaveChannel {
-                    channel: target.clone(),
-                })
-                .resolve()
-                .await;
-
-            match save_result {
-                Ok(SaveChannelResult::Ok) => PromoteResponse {
-                    success: true,
-                    promoted_changesets: promoted_ids,
-                    new_head: target.head_change_id.clone(),
-                    error: None,
-                },
-                _ => PromoteResponse {
-                    success: false,
-                    promoted_changesets: vec![],
-                    new_head: None,
-                    error: Some("Failed to save target channel".into()),
-                },
-            }
+    // Mark promoted changesets as immutable
+    for id in &promoted_ids {
+        if let Some(mut cs) = load_changeset(ctx, id).await {
+            cs.immutable = true;
+            let _ = store_changeset(ctx, &cs).await;
         }
-        Err(e) => PromoteResponse {
-            success: false,
-            promoted_changesets: vec![],
-            new_head: target.head_change_id.clone(),
-            error: Some(e.to_string()),
-        },
     }
+
+    // Save updated target channel
+    save_channel(ctx, &target)
+        .await
+        .map(|()| PromoteResponse {
+            success: true,
+            promoted_changesets: promoted_ids,
+            new_head: target.head_change_id.clone(),
+            error: None,
+        })
+        .unwrap_or_else(|e| make_err(e, target.head_change_id.clone()))
 }
 
 /// Handle a create channel request.
@@ -499,104 +456,102 @@ async fn handle_create_channel(
     name: String,
     fork_from: Option<String>,
 ) -> CreateChannelResponse {
-    // Check if channel already exists
-    let existing = ctx
-        .request(LoadChannel {
-            name: name.clone(),
-        })
-        .resolve()
-        .await;
-
-    if let Ok(LoadChannelResult::Ok(_)) = existing {
-        return CreateChannelResponse {
-            success: false,
-            channel: Channel::new(&name),
-            error: Some(format!("Channel '{}' already exists", name)),
-        };
-    }
-
-    // Create the channel
-    let channel = if let Some(source_name) = fork_from {
-        let source_result = ctx
-            .request(LoadChannel {
-                name: source_name.clone(),
-            })
-            .resolve()
-            .await;
-
-        match source_result {
-            Ok(LoadChannelResult::Ok(source)) => {
-                let mut new_channel = Channel::new(&name);
-                new_channel.changesets = source.changesets.clone();
-                new_channel.head_change_id = source.head_change_id.clone();
-                new_channel
-            }
-            _ => {
-                return CreateChannelResponse {
-                    success: false,
-                    channel: Channel::new(&name),
-                    error: Some(format!("Source channel '{}' not found", source_name)),
-                };
-            }
-        }
-    } else {
-        Channel::new(&name)
+    let make_err = |msg: String| CreateChannelResponse {
+        success: false,
+        channel: Channel::new(&name),
+        error: Some(msg),
     };
 
-    // Save the new channel
-    let save_result = ctx
-        .request(SaveChannel {
-            channel: channel.clone(),
-        })
+    // Check if channel already exists
+    let exists = ctx
+        .request(LoadChannel { name: name.clone() })
         .resolve()
-        .await;
+        .await
+        .ok()
+        .and_then(|r| match r {
+            LoadChannelResult::Ok(_) => Some(true),
+            _ => None,
+        })
+        .unwrap_or(false);
 
-    match save_result {
-        Ok(SaveChannelResult::Ok) => CreateChannelResponse {
+    if exists {
+        return make_err(format!("Channel '{}' already exists", name));
+    }
+
+    // Create channel, optionally forking from source
+    let channel = match fork_from {
+        Some(source_name) => {
+            load_channel_or_err(ctx, &source_name)
+                .await
+                .map(|source| {
+                    let mut new_channel = Channel::new(&name);
+                    new_channel.changesets = source.changesets.clone();
+                    new_channel.head_change_id = source.head_change_id.clone();
+                    new_channel
+                })
+                .unwrap_or_else(|e| {
+                    // Return early via a sentinel; we'll check below
+                    Channel::new(&format!("__error__{}", e))
+                })
+        }
+        None => Channel::new(&name),
+    };
+
+    // Check for error sentinel
+    if channel.name.starts_with("__error__") {
+        let err_msg = channel.name.strip_prefix("__error__").unwrap_or("Unknown");
+        return make_err(err_msg.to_string());
+    }
+
+    save_channel(ctx, &channel)
+        .await
+        .map(|()| CreateChannelResponse {
             success: true,
             channel,
             error: None,
-        },
-        _ => CreateChannelResponse {
-            success: false,
-            channel: Channel::new(&name),
-            error: Some("Failed to save channel".into()),
-        },
-    }
+        })
+        .unwrap_or_else(|e| make_err(format!("Failed to save channel: {}", e)))
 }
 
 /// Handle a list channels request.
 async fn handle_list_channels(ctx: &Context) -> ListChannelsResponse {
-    let result = ctx.request(ListAllChannels).resolve().await;
-    match result {
-        Ok(ListChannelsResult::Ok(channels)) => ListChannelsResponse { channels },
-        _ => ListChannelsResponse {
+    ctx.request(ListAllChannels)
+        .resolve()
+        .await
+        .ok()
+        .and_then(|r| match r {
+            ListChannelsResult::Ok(channels) => Some(ListChannelsResponse { channels }),
+            _ => None,
+        })
+        .unwrap_or_else(|| ListChannelsResponse {
             channels: vec![],
-        },
-    }
+        })
 }
 
 /// Handle a get changeset detail request.
 async fn handle_get_changeset(ctx: &Context, change_id: String) -> GetChangesetResponse {
-    let load_result = ctx
-        .request(LoadChangeset {
-            change_id: change_id.clone(),
-        })
-        .resolve()
-        .await;
-
-    match load_result {
-        Ok(LoadChangesetResult::Ok(cs)) => GetChangesetResponse {
+    ctx.request(LoadChangeset {
+        change_id: change_id.clone(),
+    })
+    .resolve()
+    .await
+    .ok()
+    .map(|result| match result {
+        LoadChangesetResult::Ok(cs) => GetChangesetResponse {
             changeset: Some(cs),
             error: None,
         },
-        Ok(LoadChangesetResult::NotFound) => GetChangesetResponse {
+        LoadChangesetResult::NotFound => GetChangesetResponse {
             changeset: None,
             error: Some(format!("Changeset '{}' not found", change_id)),
         },
-        _ => GetChangesetResponse {
+        LoadChangesetResult::Error(e) => GetChangesetResponse {
             changeset: None,
-            error: Some("Failed to load changeset".into()),
+            error: Some(e),
         },
-    }
+    })
+    .unwrap_or_else(|| GetChangesetResponse {
+        changeset: None,
+        error: Some("Failed to load changeset".into()),
+    })
 }

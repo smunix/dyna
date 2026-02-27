@@ -6,8 +6,10 @@
 //! - `dyna add <directory> --recursive` — explicit recursive flag (implied for dirs)
 
 use anyhow::{Context, Result, bail};
+use colored::Colorize;
 use dyna_core::diff;
 use dyna_core::models::StagedChange;
+use itertools::Itertools;
 use std::path::{Path, PathBuf};
 
 use crate::repository::Repository;
@@ -15,19 +17,16 @@ use crate::repository::Repository;
 pub async fn execute(path: PathBuf) -> Result<()> {
     let repo = Repository::find_current()?;
 
-    // Resolve the path relative to the working directory
-    let abs_path = if path.is_absolute() {
-        path.clone()
-    } else {
-        std::env::current_dir()?.join(&path)
-    };
+    let abs_path = path
+        .is_absolute()
+        .then(|| path.clone())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(&path));
 
     if !abs_path.exists() {
         bail!("Path not found: {}", abs_path.display());
     }
 
     if abs_path.is_dir() {
-        // Recursively add all .json files in the directory
         let json_files = collect_json_files_recursive(&abs_path, &repo.dyna_dir)?;
 
         if json_files.is_empty() {
@@ -41,38 +40,25 @@ pub async fn execute(path: PathBuf) -> Result<()> {
             path.display()
         );
 
-        let mut staged_count = 0;
-        let mut skipped_count = 0;
-        let mut error_count = 0;
-
-        for file_path in &json_files {
-            match stage_single_file(&repo, file_path) {
-                Ok(staged) => {
-                    if staged {
-                        // Compute the display path relative to the current directory
-                        let display_path = file_path
-                            .strip_prefix(&repo.work_dir)
-                            .unwrap_or(file_path);
+        // Process all files via fold, accumulating (staged, skipped, errors) counts
+        let (staged_count, skipped_count, error_count) = json_files
+            .iter()
+            .fold((0usize, 0usize, 0usize), |(staged, skipped, errors), file_path| {
+                let display_path = file_path
+                    .strip_prefix(&repo.work_dir)
+                    .unwrap_or(file_path);
+                match stage_single_file(&repo, file_path) {
+                    Ok(true) => {
                         println!("  {} {}", "staged".green(), display_path.display());
-                        staged_count += 1;
-                    } else {
-                        skipped_count += 1;
+                        (staged + 1, skipped, errors)
+                    }
+                    Ok(false) => (staged, skipped + 1, errors),
+                    Err(e) => {
+                        eprintln!("  {} {} — {}", "error".red(), display_path.display(), e);
+                        (staged, skipped, errors + 1)
                     }
                 }
-                Err(e) => {
-                    let display_path = file_path
-                        .strip_prefix(&repo.work_dir)
-                        .unwrap_or(file_path);
-                    eprintln!(
-                        "  {} {} — {}",
-                        "error".red(),
-                        display_path.display(),
-                        e
-                    );
-                    error_count += 1;
-                }
-            }
-        }
+            });
 
         println!();
         println!(
@@ -80,7 +66,6 @@ pub async fn execute(path: PathBuf) -> Result<()> {
             staged_count, skipped_count, error_count
         );
     } else {
-        // Single file mode
         stage_single_file_verbose(&repo, &abs_path, &path)?;
     }
 
@@ -89,32 +74,28 @@ pub async fn execute(path: PathBuf) -> Result<()> {
 
 /// Stage a single file and print verbose output. Used for the single-file case.
 fn stage_single_file_verbose(repo: &Repository, abs_path: &Path, display_path: &Path) -> Result<()> {
-    // Read and validate JSON
     let content = std::fs::read_to_string(abs_path).context("Failed to read file")?;
     let current: serde_json::Value =
         serde_json::from_str(&content).context("File is not valid JSON")?;
 
-    // Derive resource ID from filename
     let resource_id = Repository::resource_id_from_path(abs_path);
-
-    // Load the previous snapshot (if any)
     let previous = repo.load_snapshot(&resource_id)?;
 
-    // Compute diff operations
-    let operations = match &previous {
-        Some(prev) => diff::diff(prev, &current),
-        None => vec![dyna_core::models::PatchOperation::Add {
-            path: "/".to_string(),
-            value: current.clone(),
-        }],
-    };
+    let operations = previous
+        .as_ref()
+        .map(|prev| diff::diff(prev, &current))
+        .unwrap_or_else(|| {
+            vec![dyna_core::models::PatchOperation::Add {
+                path: "/".to_string(),
+                value: current.clone(),
+            }]
+        });
 
     if operations.is_empty() {
         println!("No changes detected in {}", display_path.display());
         return Ok(());
     }
 
-    // Create the staged change
     let relative_path = display_path.display().to_string();
     let staged = StagedChange {
         resource_id: resource_id.clone(),
@@ -142,13 +123,15 @@ fn stage_single_file(repo: &Repository, abs_path: &Path) -> Result<bool> {
     let resource_id = Repository::resource_id_from_path(abs_path);
     let previous = repo.load_snapshot(&resource_id)?;
 
-    let operations = match &previous {
-        Some(prev) => diff::diff(prev, &current),
-        None => vec![dyna_core::models::PatchOperation::Add {
-            path: "/".to_string(),
-            value: current.clone(),
-        }],
-    };
+    let operations = previous
+        .as_ref()
+        .map(|prev| diff::diff(prev, &current))
+        .unwrap_or_else(|| {
+            vec![dyna_core::models::PatchOperation::Add {
+                path: "/".to_string(),
+                value: current.clone(),
+            }]
+        });
 
     if operations.is_empty() {
         return Ok(false);
@@ -168,8 +151,7 @@ fn stage_single_file(repo: &Repository, abs_path: &Path) -> Result<bool> {
         operations,
     };
 
-    repo.stage_change(&staged)?;
-    Ok(true)
+    repo.stage_change(&staged).map(|()| true)
 }
 
 /// Recursively collect all `.json` files in a directory, skipping the `.dyna/`
@@ -182,33 +164,27 @@ fn collect_json_files_recursive(dir: &Path, dyna_dir: &Path) -> Result<Vec<PathB
 }
 
 fn walk_dir(dir: &Path, dyna_dir: &Path, results: &mut Vec<PathBuf>) -> Result<()> {
-    if !dir.is_dir() {
+    if !dir.is_dir() || dir.starts_with(dyna_dir) {
         return Ok(());
     }
 
-    // Skip the .dyna directory
-    if dir.starts_with(dyna_dir) {
-        return Ok(());
-    }
-
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            // Skip hidden directories
-            if name.starts_with('.') {
-                continue;
+    std::fs::read_dir(dir)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .sorted()
+        .try_for_each(|path| {
+            if path.is_dir() {
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .filter(|name| !name.starts_with('.'))
+                    .map(|_| walk_dir(&path, dyna_dir, results))
+                    .unwrap_or(Ok(()))
+            } else {
+                let is_json = path.extension().map_or(false, |ext| ext == "json");
+                if is_json {
+                    results.push(path);
+                }
+                Ok(())
             }
-            walk_dir(&path, dyna_dir, results)?;
-        } else if path.extension().map_or(false, |ext| ext == "json") {
-            results.push(path);
-        }
-    }
-
-    Ok(())
+        })
 }
-
-// Bring colored trait into scope for the green/red methods on &str
-use colored::Colorize;

@@ -22,10 +22,7 @@ pub async fn execute() -> Result<()> {
     let sync_state = repo.load_sync_state()?;
     let local_remote_head = sync_state.remote_heads.get(&channel_name).cloned();
 
-    println!(
-        "Pulling from {} (channel: {})...",
-        remote_url, channel_name
-    );
+    println!("Pulling from {} (channel: {})...", remote_url, channel_name);
 
     let client = SyncClient::new(remote_url);
     let request = PullRequest {
@@ -40,110 +37,126 @@ pub async fn execute() -> Result<()> {
         return Ok(());
     }
 
-    println!(
-        "Fetched {} new changeset(s).",
-        response.changesets.len()
-    );
+    println!("Fetched {} new changeset(s).", response.changesets.len());
 
     let mut channel = repo.load_channel(&channel_name)?;
-    let mut conflicts_found = false;
 
-    for cs in &response.changesets {
-        // Store the changeset locally (also stores its patches)
-        repo.store_changeset(cs)?;
+    // Process each changeset, accumulating whether conflicts were found via fold
+    let conflicts_found = response
+        .changesets
+        .iter()
+        .try_fold(false, |has_conflicts, cs| -> Result<bool> {
+            repo.store_changeset(cs)?;
 
-        println!(
-            "  {} ({}) — {} patch(es)",
-            cs.short_change_id(),
-            cs.message,
-            cs.patches.len()
-        );
+            println!(
+                "  {} ({}) — {} patch(es)",
+                cs.short_change_id(),
+                cs.message,
+                cs.patches.len()
+            );
 
-        // Apply each patch in the changeset
-        for patch in &cs.patches {
-            let resource_id = &patch.target_resource;
-            let current_snapshot = repo.load_snapshot(resource_id)?;
+            // Apply each patch, tracking conflicts via try_fold
+            let changeset_has_conflicts = cs
+                .patches
+                .iter()
+                .try_fold(false, |patch_conflicts, patch| -> Result<bool> {
+                    let resource_id = &patch.target_resource;
+                    let current_snapshot = repo.load_snapshot(resource_id)?;
 
-            match (&current_snapshot, &patch.parent_snapshot, &patch.result_snapshot) {
-                (Some(local), Some(base), Some(result)) => {
-                    // Three-way merge
-                    match diff::three_way_merge(base, local, result) {
-                        Ok(merged) => {
-                            repo.save_snapshot(resource_id, &merged)?;
-                            println!(
-                                "    {} -> merged automatically",
-                                resource_id
-                            );
+                    let conflict = match (&current_snapshot, &patch.parent_snapshot, &patch.result_snapshot) {
+                        (Some(local), Some(base), Some(result)) => {
+                            // Three-way merge
+                            diff::three_way_merge(base, local, result)
+                                .map(|merged| {
+                                    repo.save_snapshot(resource_id, &merged)
+                                        .map(|()| {
+                                            println!("    {} -> merged automatically", resource_id);
+                                            false
+                                        })
+                                })
+                                .unwrap_or_else(|mut merge_conflicts| {
+                                    merge_conflicts
+                                        .iter_mut()
+                                        .for_each(|c| c.resource_id = resource_id.clone());
+                                    repo.save_conflicts(resource_id, &merge_conflicts)
+                                        .map(|()| {
+                                            println!(
+                                                "    {} -> CONFLICT ({} conflict(s))",
+                                                resource_id,
+                                                merge_conflicts.len()
+                                            );
+                                            true
+                                        })
+                                })?
                         }
-                        Err(mut merge_conflicts) => {
-                            for c in &mut merge_conflicts {
-                                c.resource_id = resource_id.clone();
-                            }
-                            repo.save_conflicts(resource_id, &merge_conflicts)?;
-                            conflicts_found = true;
-                            println!(
-                                "    {} -> CONFLICT ({} conflict(s))",
-                                resource_id,
-                                merge_conflicts.len()
-                            );
+                        (None, _, Some(result)) => {
+                            repo.save_snapshot(resource_id, result)?;
+                            println!("    {} -> new resource", resource_id);
+                            false
                         }
-                    }
-                }
-                (None, _, Some(result)) => {
-                    // New resource from remote
-                    repo.save_snapshot(resource_id, result)?;
-                    println!("    {} -> new resource", resource_id);
-                }
-                _ => {
-                    // Apply operations to current snapshot
-                    if let Some(mut current) = current_snapshot {
-                        match diff::apply_patch(&mut current, &patch.operations) {
-                            Ok(()) => {
-                                repo.save_snapshot(resource_id, &current)?;
-                                println!("    {} -> applied", resource_id);
-                            }
-                            Err(e) => {
-                                println!("    {} -> FAILED: {}", resource_id, e);
-                            }
+                        _ => {
+                            current_snapshot
+                                .map(|mut current| {
+                                    diff::apply_patch(&mut current, &patch.operations)
+                                        .map(|()| {
+                                            let _ = repo.save_snapshot(resource_id, &current);
+                                            println!("    {} -> applied", resource_id);
+                                        })
+                                        .unwrap_or_else(|e| {
+                                            println!("    {} -> FAILED: {}", resource_id, e);
+                                        });
+                                })
+                                .unwrap_or_else(|| {
+                                    println!("    {} -> skipped (no local snapshot)", resource_id);
+                                });
+                            false
                         }
-                    } else {
-                        println!("    {} -> skipped (no local snapshot)", resource_id);
-                    }
-                }
-            }
-        }
+                    };
 
-        // Append changeset to channel if not already present
-        if !channel.changesets.contains(&cs.change_id) {
-            channel.append_changeset(cs.change_id.clone());
-        }
-    }
+                    Ok(patch_conflicts || conflict)
+                })?;
+
+            // Append changeset to channel if not already present
+            (!channel.changesets.contains(&cs.change_id))
+                .then(|| channel.append_changeset(cs.change_id.clone()));
+
+            Ok(has_conflicts || changeset_has_conflicts)
+        })?;
 
     // Save updated channel
     repo.save_channel(&channel)?;
 
     // Update sync state
-    let mut sync_state = repo.load_sync_state()?;
-    if let Some(head) = &response.current_head {
-        sync_state
-            .remote_heads
-            .insert(channel_name.clone(), head.clone());
-    }
-    repo.save_sync_state(&sync_state)?;
+    response
+        .current_head
+        .as_ref()
+        .map(|head| -> Result<()> {
+            let mut sync_state = repo.load_sync_state()?;
+            sync_state
+                .remote_heads
+                .insert(channel_name.clone(), head.clone());
+            repo.save_sync_state(&sync_state)
+        })
+        .transpose()?;
 
-    // Write updated snapshots to working directory
-    let snapshots = repo.load_all_snapshots()?;
-    for (resource_id, value) in &snapshots {
-        let resource_path = repo.work_dir.join(format!("{}.json", resource_id));
-        let json = serde_json::to_string_pretty(value)?;
-        std::fs::write(resource_path, json)?;
-    }
+    // Write updated snapshots to working directory via try_for_each
+    repo.load_all_snapshots()?
+        .iter()
+        .try_for_each(|(resource_id, value)| -> Result<()> {
+            serde_json::to_string_pretty(value)
+                .map_err(Into::into)
+                .and_then(|json| {
+                    std::fs::write(
+                        repo.work_dir.join(format!("{}.json", resource_id)),
+                        json,
+                    )
+                    .map_err(Into::into)
+                })
+        })?;
 
-    if conflicts_found {
-        println!("\nConflicts detected! Use 'dyna resolve <file>' to resolve them.");
-    } else {
-        println!("\nPull complete. All changesets merged successfully.");
-    }
+    conflicts_found
+        .then(|| println!("\nConflicts detected! Use 'dyna resolve <file>' to resolve them."))
+        .unwrap_or_else(|| println!("\nPull complete. All changesets merged successfully."));
 
     Ok(())
 }
