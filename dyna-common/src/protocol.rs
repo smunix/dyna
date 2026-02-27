@@ -1,7 +1,16 @@
 //! HTTP API protocol types shared between the CLI client and the remote server.
 //!
 //! These types define the request and response bodies for the REST API.
-//! The API is now changeset-centric: push/pull operate on changesets.
+//! The API is **changeset-centric**: all push, pull, clone, and promote
+//! operations exchange [`crate::models::Changeset`] objects rather than
+//! individual patches.
+//!
+//! Key endpoints:
+//! - `POST /api/v1/push` — Push `Vec<Changeset>` to a channel.
+//! - `POST /api/v1/pull` — Pull changesets since a given `since_change_id`.
+//! - `POST /api/v1/clone` — Clone all channels and changesets.
+//! - `POST /api/v1/promote` — Promote changesets between channels.
+//! - `GET /api/v1/changesets/:change_id` — Fetch a single changeset by ID.
 
 use crate::models::{Changeset, Channel};
 use serde::{Deserialize, Serialize};

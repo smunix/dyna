@@ -1,8 +1,9 @@
 //! Content-addressable hashing utilities.
 //!
-//! All patches and snapshots in Dyna are identified by the SHA-256 hash of their
-//! serialized content. This module provides the hashing functions used throughout
-//! the system.
+//! All patches, changesets, and snapshots in Dyna are identified by the SHA-256
+//! hash of their serialized content. This module provides the hashing functions
+//! used throughout the system for computing `commit_hash` values on changesets
+//! and `hash` values on patches.
 
 use sha2::{Sha256, Digest};
 

@@ -1,10 +1,21 @@
-//! API Gateway Actor.
+//! API Gateway Actor — HTTP bridge between CLI clients and the elfo actor system.
 //!
-//! This actor bridges the HTTP layer (axum) with the elfo actor system.
-//! It receives HTTP requests via axum, translates them into elfo messages,
-//! sends them to the Changeset Manager actor, and returns the responses.
+//! This actor bridges the HTTP layer (axum) with the elfo message-passing
+//! system. It exposes the following REST endpoints:
 //!
-//! The protocol is now changeset-centric.
+//! | Method | Path | Description |
+//! |--------|------|-------------|
+//! | `POST` | `/api/v1/push` | Push changesets to a channel |
+//! | `POST` | `/api/v1/pull` | Pull changesets since a given ID |
+//! | `POST` | `/api/v1/clone` | Clone all channels and changesets |
+//! | `POST` | `/api/v1/promote` | Promote changesets between channels |
+//! | `POST` | `/api/v1/channels` | Create a new channel |
+//! | `GET`  | `/api/v1/channels` | List all channels |
+//! | `GET`  | `/api/v1/changesets/:id` | Fetch a single changeset |
+//!
+//! Requests are translated into elfo messages sent to the Changeset Manager
+//! actor via `tokio::sync::mpsc` channels, and responses are awaited via
+//! `tokio::sync::oneshot`.
 
 use axum::{
     extract::{Path, State},

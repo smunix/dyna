@@ -1,20 +1,32 @@
 //! Local repository state management.
 //!
-//! Manages the `.dyna/` directory structure: configuration, channels,
-//! changesets, patches, staging area, snapshots, conflicts, and sync state.
+//! Manages the `.dyna/` directory structure, which serves as the local
+//! repository for the Dyna distributed CRUD system. The storage layout is
+//! **changeset-centric**, inspired by Jujutsu:
 //!
-//! The storage layout is now changeset-centric:
-//!   .dyna/
-//!     config.toml
-//!     HEAD                  -- current channel name
-//!     WORKING_CHANGE        -- change_id of the working-copy changeset
-//!     channels/<name>.json  -- channel metadata
-//!     changesets/<id>.json  -- changeset objects (keyed by change_id)
-//!     patches/<hash>.json   -- individual patch objects
-//!     staging/<res>.json    -- staged changes
-//!     snapshots/<res>.json  -- resource snapshots
-//!     conflicts/<res>.json  -- conflict records
-//!     sync_state.json       -- remote sync state
+//! ```text
+//! .dyna/
+//!   config.toml              -- Repository configuration (remote URL, user)
+//!   HEAD                     -- Current channel name
+//!   WORKING_CHANGE           -- change_id of the working-copy changeset (@)
+//!   channels/<name>.json     -- Channel metadata (ordered changeset list)
+//!   changesets/<id>.json     -- Changeset objects (keyed by change_id)
+//!   patches/<hash>.json      -- Individual patch objects (content-addressed)
+//!   staging/<resource>.json  -- Staged changes awaiting commit
+//!   snapshots/<resource>.json-- Resource snapshots for diff computation
+//!   conflicts/<resource>.json-- Conflict records for unresolved merges
+//!   sync/remote_head         -- Last known remote HEAD for push/pull
+//! ```
+//!
+//! Key operations:
+//! - **Staging**: `stage_change()` records a diff between the working file and
+//!   its snapshot, storing it in `staging/`.
+//! - **Committing**: `commit_changeset()` creates a new [`Changeset`] from all
+//!   staged changes, assigns a stable `change_id`, computes a `commit_hash`,
+//!   and appends it to the current channel.
+//! - **Channel switching**: `switch_channel()` checks for uncommitted staged
+//!   files, cleans the working directory, and restores files from the target
+//!   channel's changeset history.
 
 use anyhow::{Context, Result, bail};
 use dyna_common::error::DynaError;

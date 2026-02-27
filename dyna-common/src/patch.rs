@@ -1,7 +1,15 @@
-//! Patch engine for creating, serializing, and managing patches.
+//! Patch building, serialization, and analysis.
 //!
-//! Patches are now purely about resource-level operations. Author, message,
-//! and dependency information live on the Changeset level.
+//! In the changeset-centric model, a [`Patch`] is a purely resource-level
+//! object: it captures the JSON Patch (RFC 6902) operations applied to a
+//! single resource, along with optional before/after snapshots. All metadata
+//! such as author, message, and dependency information is managed by the
+//! parent [`Changeset`].
+//!
+//! This module provides utilities for:
+//! - Building patches from staged changes.
+//! - Computing content-addressed hashes for patches.
+//! - Analyzing commutativity between patches (Pijul-inspired).
 
 use crate::diff;
 use crate::models::{Patch, PatchOperation, StagedChange};

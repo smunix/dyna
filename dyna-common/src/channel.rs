@@ -1,8 +1,12 @@
-//! Channel management logic.
+//! Channel management and promotion logic.
 //!
-//! Channels are now bookmarks pointing into the changeset DAG, similar to
-//! Jujutsu bookmarks. Promotion moves changesets from one channel lineage
-//! into another.
+//! In the Jujutsu-inspired model, channels serve as named bookmarks pointing
+//! into the changeset DAG. Each channel maintains an ordered list of changeset
+//! IDs and a `head_change_id` pointing to the latest changeset.
+//!
+//! **Promotion** is the process of merging changesets from a source channel
+//! (e.g., a feature branch) into a target channel (e.g., `main`). Promoted
+//! changesets are marked as immutable to prevent history rewriting after sharing.
 
 use crate::error::{DynaError, DynaResult};
 use crate::models::{Changeset, Channel};

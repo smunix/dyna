@@ -1,4 +1,15 @@
-//! CLI command implementations.
+//! CLI command implementations for the Dyna distributed CRUD tool.
+//!
+//! Each submodule implements a single CLI command. The commands are
+//! **changeset-centric**, operating on [`Changeset`] objects as the
+//! primary unit of work:
+//!
+//! - [`init`], [`clone`]: Repository lifecycle.
+//! - [`add`], [`commit`], [`describe`]: Staging and changeset creation.
+//! - [`push`], [`pull`], [`promote`]: Remote synchronization.
+//! - [`status`], [`log`], [`diff`]: Inspection and history.
+//! - [`channel`]: Channel (bookmark) management.
+//! - [`resolve`]: Interactive conflict resolution.
 
 pub mod init;
 pub mod clone;

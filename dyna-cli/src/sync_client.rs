@@ -1,8 +1,11 @@
-//! HTTP client for communicating with the Dyna remote server.
+//! HTTP sync client for communicating with the remote Dyna server.
 //!
 //! This module encapsulates all network interactions between the CLI and the
-//! remote server, providing a clean async API for push, pull, clone, and
-//! channel management operations.
+//! remote server, providing a clean async API for changeset-based push, pull,
+//! clone, promote, and channel management operations.
+//!
+//! All operations exchange [`Changeset`] objects (not individual patches),
+//! consistent with the Jujutsu-inspired changeset-centric model.
 
 use anyhow::{Context, Result, bail};
 use dyna_common::protocol::*;

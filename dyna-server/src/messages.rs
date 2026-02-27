@@ -1,10 +1,14 @@
 //! Elfo message definitions for inter-actor communication.
 //!
-//! These messages define the protocol between the API Gateway actor,
-//! the Changeset Manager actor, and the S3 Storage actor.
+//! These messages define the typed protocol between the three actor groups:
+//! - **API Gateway → Changeset Manager**: `HandlePush`, `HandlePull`,
+//!   `HandleClone`, `HandlePromote`, `HandleGetChangeset`, `HandleListChannels`.
+//! - **Changeset Manager → S3 Storage**: `StoreChangeset`, `LoadChangeset`,
+//!   `StoreChannel`, `LoadChannel`, `ListChannels`.
 //!
-//! The protocol is now changeset-centric: push/pull/clone operate on
-//! changesets rather than individual patches.
+//! All messages use elfo's `#[message]` macro for automatic serialization
+//! and routing. The protocol is **changeset-centric**: push, pull, clone,
+//! and promote operations exchange [`Changeset`] objects.
 
 use dyna_common::models::{Changeset, Channel};
 use dyna_common::protocol::{

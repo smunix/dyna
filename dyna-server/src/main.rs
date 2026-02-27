@@ -1,12 +1,17 @@
-//! Dyna Server - Remote server for the Dyna distributed CRUD system.
+//! Dyna remote server — changeset-centric distributed CRUD backend.
 //!
-//! This server uses the elfo-rs actor framework to manage:
-//! - **API Gateway Actor**: Handles HTTP requests from CLI clients via axum.
-//! - **Changeset Manager Actor**: Core business logic for patch management.
-//! - **S3 Storage Actor**: Persistent storage via the `object_store` crate.
+//! This server uses the elfo-rs actor framework to manage three actor groups:
 //!
-//! The actors communicate via elfo's message-passing system, providing
-//! fault isolation and clean separation of concerns.
+//! - **API Gateway Actor**: Bridges HTTP (axum) with elfo message-passing.
+//!   Exposes endpoints for push, pull, clone, promote, and changeset retrieval.
+//! - **Changeset Manager Actor**: Core business logic for validating, storing,
+//!   and retrieving changesets. Handles channel management and promotion.
+//! - **S3 Storage Actor**: Encapsulates all S3 I/O via the `object_store` crate.
+//!   Stores changesets, patches, channels, and snapshots.
+//!
+//! The actors communicate via elfo's typed message-passing system, providing
+//! fault isolation and clean separation of concerns. The topology is:
+//! `API Gateway → Changeset Manager → S3 Storage`.
 
 mod actors;
 mod messages;

@@ -1,4 +1,11 @@
 //! CLI argument definitions using clap's Derive API.
+//!
+//! Defines the `dyna` command-line interface with a changeset-centric command
+//! set inspired by Jujutsu. Commands operate on **changesets** (groups of
+//! patches) rather than individual patches.
+//!
+//! Commands: `init`, `clone`, `add`, `commit`, `describe`, `push`, `pull`,
+//! `status`, `diff`, `log`, `resolve`, `channel`, `promote`.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;

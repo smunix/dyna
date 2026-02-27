@@ -1,7 +1,11 @@
-//! JSON diff engine for computing patch operations between two JSON values.
+//! JSON diff engine and three-way merge.
 //!
 //! This module implements a recursive diff algorithm that produces RFC 6902-style
 //! JSON Patch operations. It handles objects, arrays, and scalar values.
+//!
+//! The diff engine is used by the CLI to compute patches when staging changes,
+//! and by the server to detect conflicts during merge operations. The
+//! [`apply_patch`] function applies a list of [`PatchOperation`] to a JSON value.
 
 use crate::models::PatchOperation;
 use serde_json::Value;

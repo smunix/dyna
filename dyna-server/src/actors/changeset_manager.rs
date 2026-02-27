@@ -1,11 +1,16 @@
-//! Changeset Manager Actor.
+//! Changeset Manager Actor — core business logic for the Dyna server.
 //!
-//! This actor is the core business logic actor. It manages channels, validates
-//! changesets, handles push/pull operations, and orchestrates conflict resolution.
-//! It delegates all S3 I/O to the Storage actor.
+//! This elfo actor is the central coordinator for all changeset operations:
+//! - **Push**: Validates incoming changesets, appends them to the target channel,
+//!   and delegates storage to the S3 Storage Actor.
+//! - **Pull**: Retrieves changesets from a channel since a given `since_change_id`.
+//! - **Clone**: Returns all channels and their complete changeset history.
+//! - **Promote**: Moves changesets from a source channel to `main`, marking
+//!   them as immutable using [`promote_changesets`].
+//! - **Get Changeset**: Retrieves a single changeset by its `change_id`.
 //!
-//! The protocol is now changeset-centric: all push/pull/clone/promote operations
-//! work with changesets (groups of patches) rather than individual patches.
+//! The actor maintains an in-memory cache of channels and changesets, backed
+//! by the S3 Storage Actor for persistence.
 
 use dyna_common::channel::promote_changesets;
 use dyna_common::diff;

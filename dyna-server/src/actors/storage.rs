@@ -1,8 +1,13 @@
-//! S3 Storage Actor.
+//! S3 Storage Actor — persistent object storage for the Dyna server.
 //!
-//! This actor encapsulates all interactions with the S3-compatible object store.
-//! It handles storing and retrieving changesets, channels, and resource snapshots.
-//! Uses the `object_store` crate for S3 interactions.
+//! This elfo actor encapsulates all interactions with the S3-compatible object
+//! store via the `object_store` crate. It handles storing and retrieving:
+//! - **Changesets** under `changesets/<commit_hash>.json`
+//! - **Channels** under `channels/<name>.json`
+//! - **Snapshots** under `snapshots/<resource_id>.json`
+//!
+//! In development mode, an in-memory store is used. In production, configure
+//! `AmazonS3Builder::from_env()` for real S3 access.
 
 use bytes::Bytes;
 use elfo::prelude::*;

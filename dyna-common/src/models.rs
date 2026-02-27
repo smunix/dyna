@@ -1,13 +1,19 @@
-//! Core data model types for the Dyna system.
+//! Core data model for the Dyna distributed CRUD system.
 //!
-//! This module defines the fundamental data structures:
-//! - **Resource**: A JSON document managed by Dyna.
-//! - **PatchOperation**: A single JSON Patch (RFC 6902) operation.
-//! - **Patch**: An atomic change to a single resource.
-//! - **Changeset**: A Jujutsu-inspired group of patches committed together,
-//!   forming a DAG with parent relationships.
-//! - **Channel**: A named bookmark pointing to a changeset (like jj bookmarks).
-//! - Supporting types: staging, conflicts, sync state, config.
+//! This module defines the fundamental data structures for the changeset-centric
+//! version control model inspired by Jujutsu:
+//!
+//! - [`PatchOperation`]: A single JSON Patch (RFC 6902) operation (add, remove,
+//!   replace, move, copy, test).
+//! - [`Patch`]: An atomic, content-addressed set of operations targeting a single
+//!   JSON resource. Patches are grouped into changesets.
+//! - [`Changeset`]: The primary unit of work. Groups one or more patches committed
+//!   together, with a stable `change_id`, a content-derived `commit_hash`, parent
+//!   references forming a DAG, and optional bookmarks. Changesets are mutable
+//!   locally until promoted, at which point they become immutable.
+//! - [`Channel`]: A named bookmark pointing to an ordered sequence of changeset
+//!   IDs, analogous to a branch in Git or a bookmark in Jujutsu.
+//! - Supporting types: [`StagedChange`], [`Conflict`], [`SyncState`], [`RepoConfig`].
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
