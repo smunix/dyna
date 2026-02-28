@@ -4,8 +4,11 @@
 //! - `dyna add <file.json>` — stage a single JSON file
 //! - `dyna add <directory>` — recursively stage all `.json` files in a directory
 //! - `dyna add <directory> --recursive` — explicit recursive flag (implied for dirs)
-//! - `dyna add --delete <file.json>` — stage the removal of a tracked file that
-//!   has been deleted from the filesystem
+//! - `dyna add --delete <file.json>` — stage the removal of a single tracked file
+//! - `dyna add --delete <directory>` — stage the removal of all deleted tracked
+//!   files whose paths fall under the given directory
+//! - `dyna add --delete "glob/pattern"` — stage the removal of all deleted tracked
+//!   files matching a glob pattern (e.g. `"data/**/*.json"`, `"users/*.json"`)
 
 use anyhow::{Context, Result, bail};
 use colored::Colorize;
@@ -16,18 +19,26 @@ use std::path::{Path, PathBuf};
 
 use crate::repository::Repository;
 
-pub async fn execute(path: PathBuf, delete: bool) -> Result<()> {
+/// Detect whether a string contains glob meta-characters (`*`, `?`, `[`, `{`).
+fn is_glob_pattern(s: &str) -> bool {
+    s.contains('*') || s.contains('?') || s.contains('[') || s.contains('{')
+}
+
+pub async fn execute(pattern: String, delete: bool) -> Result<()> {
     let repo = Repository::find_current()?;
 
+    // --delete mode: stage the removal of files that no longer exist on disk.
+    // Supports single files, directories, and glob patterns.
+    if delete {
+        return execute_delete(&repo, &pattern);
+    }
+
+    // Normal (non-delete) mode: stage additions/modifications.
+    let path = PathBuf::from(&pattern);
     let abs_path = path
         .is_absolute()
         .then(|| path.clone())
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(&path));
-
-    // --delete mode: stage the removal of a file that no longer exists on disk
-    if delete {
-        return stage_deletion(&repo, &abs_path, &path);
-    }
 
     if !abs_path.exists() {
         // If the file doesn't exist, check whether it's a tracked resource that
@@ -38,8 +49,8 @@ pub async fn execute(path: PathBuf, delete: bool) -> Result<()> {
                 bail!(
                     "File '{}' has been deleted from disk.\n\
                      Use 'dyna add --delete {}' to stage the removal.",
-                    path.display(),
-                    path.display()
+                    pattern,
+                    pattern
                 )
             })
             .unwrap_or_else(|| bail!("Path not found: {}", abs_path.display()))
@@ -47,14 +58,14 @@ pub async fn execute(path: PathBuf, delete: bool) -> Result<()> {
         let json_files = collect_json_files_recursive(&abs_path, &repo.dyna_dir)?;
 
         if json_files.is_empty() {
-            println!("No .json files found in {}", path.display());
+            println!("No .json files found in {}", pattern);
             return Ok(());
         }
 
         println!(
             "Adding {} JSON file(s) from {}...\n",
             json_files.len(),
-            path.display()
+            pattern
         );
 
         // Process all files via fold, accumulating (staged, skipped, errors) counts
@@ -83,14 +94,58 @@ pub async fn execute(path: PathBuf, delete: bool) -> Result<()> {
         );
         Ok(())
     } else {
-        stage_single_file_verbose(&repo, &abs_path, &path)
+        stage_single_file_verbose(&repo, &abs_path, &PathBuf::from(&pattern))
     }
 }
 
-/// Stage the removal of a tracked file that has been deleted from the
+// ---------------------------------------------------------------------------
+// Delete mode: single file, directory, or glob
+// ---------------------------------------------------------------------------
+
+/// Entry point for `--delete` mode. Dispatches to the appropriate handler
+/// based on whether the pattern is a glob, a directory path, or a single file.
+fn execute_delete(repo: &Repository, pattern: &str) -> Result<()> {
+    if is_glob_pattern(pattern) {
+        stage_deletions_by_glob(repo, pattern)
+    } else {
+        let path = PathBuf::from(pattern);
+        let abs_path = path
+            .is_absolute()
+            .then(|| path.clone())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(&path));
+
+        // If the path points to a directory that still exists, or if the path
+        // *would be* a directory (ends with '/' or matches a known directory
+        // prefix in snapshots), treat it as a directory deletion.
+        if abs_path.is_dir() || pattern.ends_with('/') {
+            stage_deletions_in_directory(repo, &abs_path, pattern)
+        } else {
+            // Check if this path is a prefix of any snapshot resource IDs,
+            // which would indicate it was a directory that has been fully deleted.
+            let resource_prefix = repo.resource_id_from_path(&abs_path);
+            let snapshots = repo.load_all_snapshots()?;
+            let has_children = izip!(snapshots.keys())
+                .any(|rid| rid.starts_with(&format!("{}.", resource_prefix)) || *rid == resource_prefix);
+
+            // If the path doesn't exist on disk and has snapshot children, treat
+            // it as a deleted directory.
+            let is_deleted_dir = !abs_path.exists()
+                && !snapshots.contains_key(&resource_prefix)
+                && has_children;
+
+            if is_deleted_dir {
+                stage_deletions_in_directory(repo, &abs_path, pattern)
+            } else {
+                stage_single_deletion(repo, &abs_path, &path)
+            }
+        }
+    }
+}
+
+/// Stage the removal of a single tracked file that has been deleted from the
 /// filesystem. Creates a `StagedChange` with a `null` current value and a
 /// single `Remove` operation at the root path.
-fn stage_deletion(repo: &Repository, abs_path: &Path, display_path: &Path) -> Result<()> {
+fn stage_single_deletion(repo: &Repository, abs_path: &Path, display_path: &Path) -> Result<()> {
     let resource_id = repo.resource_id_from_path(abs_path);
 
     let previous = repo
@@ -110,10 +165,6 @@ fn stage_deletion(repo: &Repository, abs_path: &Path, display_path: &Path) -> Re
         );
     }
 
-    let operations = vec![PatchOperation::Remove {
-        path: "/".to_string(),
-    }];
-
     let relative_path = abs_path
         .strip_prefix(&repo.work_dir)
         .unwrap_or(abs_path)
@@ -125,7 +176,9 @@ fn stage_deletion(repo: &Repository, abs_path: &Path, display_path: &Path) -> Re
         file_path: relative_path.clone(),
         previous: Some(previous),
         current: serde_json::Value::Null,
-        operations,
+        operations: vec![PatchOperation::Remove {
+            path: "/".to_string(),
+        }],
     };
 
     repo.stage_change(&staged)?;
@@ -138,6 +191,180 @@ fn stage_deletion(repo: &Repository, abs_path: &Path, display_path: &Path) -> Re
 
     Ok(())
 }
+
+/// Stage the removal of all deleted tracked files whose resource IDs fall
+/// under the given directory path. Walks all snapshots and filters those
+/// whose reconstructed file path starts with the directory prefix.
+fn stage_deletions_in_directory(repo: &Repository, abs_dir: &Path, display_dir: &str) -> Result<()> {
+    let snapshots = repo.load_all_snapshots()?;
+
+    // Compute the resource ID prefix for the directory. For a directory path
+    // like `<work_dir>/data/users`, the prefix is `data.users`.
+    let dir_resource_prefix = repo.resource_id_from_path(abs_dir);
+
+    println!(
+        "Scanning for deleted tracked files under {}...\n",
+        display_dir
+    );
+
+    // Find all snapshot resource IDs that fall under this directory and whose
+    // file no longer exists on disk.
+    let (staged_count, skipped_count, error_count) = izip!(snapshots.keys().sorted())
+        .filter(|resource_id| {
+            resource_id.starts_with(&dir_resource_prefix)
+                && (resource_id.len() == dir_resource_prefix.len()
+                    || resource_id[dir_resource_prefix.len()..].starts_with('.'))
+        })
+        .fold(
+            (0usize, 0usize, 0usize),
+            |(staged, skipped, errors), resource_id| {
+                let file_path = repo.path_for_resource_id(resource_id);
+                if file_path.exists() {
+                    // File still exists — skip (not deleted)
+                    (staged, skipped + 1, errors)
+                } else {
+                    match stage_deletion_by_resource_id(repo, resource_id, snapshots.get(resource_id).unwrap()) {
+                        Ok(()) => {
+                            let relative = file_path
+                                .strip_prefix(&repo.work_dir)
+                                .unwrap_or(&file_path)
+                                .display()
+                                .to_string();
+                            println!("  {} {}", "staged".green(), relative.red());
+                            (staged + 1, skipped, errors)
+                        }
+                        Err(e) => {
+                            eprintln!("  {} {} — {}", "error".red(), resource_id, e);
+                            (staged, skipped, errors + 1)
+                        }
+                    }
+                }
+            },
+        );
+
+    (staged_count == 0 && error_count == 0)
+        .then(|| {
+            println!(
+                "No deleted tracked files found under {}",
+                display_dir.dimmed()
+            );
+        })
+        .unwrap_or_else(|| {
+            println!(
+                "\nSummary: {} deletion(s) staged, {} still present, {} error(s)",
+                staged_count, skipped_count, error_count
+            );
+        });
+
+    Ok(())
+}
+
+/// Stage the removal of all deleted tracked files matching a glob pattern.
+/// The glob is resolved relative to the working directory. Snapshot resource
+/// IDs are converted back to file paths for matching.
+fn stage_deletions_by_glob(repo: &Repository, pattern: &str) -> Result<()> {
+    let snapshots = repo.load_all_snapshots()?;
+
+    // Resolve the glob pattern relative to the working directory
+    let abs_pattern = PathBuf::from(pattern)
+        .is_absolute()
+        .then(|| pattern.to_string())
+        .unwrap_or_else(|| {
+            repo.work_dir
+                .join(pattern)
+                .display()
+                .to_string()
+        });
+
+    let glob_pattern = glob::Pattern::new(&abs_pattern)
+        .map_err(|e| anyhow::anyhow!("Invalid glob pattern '{}': {}", pattern, e))?;
+
+    println!(
+        "Scanning for deleted tracked files matching '{}'...\n",
+        pattern
+    );
+
+    // Walk all snapshots, convert resource IDs to file paths, and match
+    // against the glob pattern.
+    let (staged_count, skipped_count, error_count) = izip!(snapshots.keys().sorted())
+        .map(|resource_id| {
+            let file_path = repo.path_for_resource_id(resource_id);
+            (resource_id, file_path)
+        })
+        .filter(|(_, file_path)| glob_pattern.matches_path(file_path))
+        .fold(
+            (0usize, 0usize, 0usize),
+            |(staged, skipped, errors), (resource_id, file_path)| {
+                if file_path.exists() {
+                    // File still exists — skip
+                    (staged, skipped + 1, errors)
+                } else {
+                    match stage_deletion_by_resource_id(repo, resource_id, snapshots.get(resource_id).unwrap()) {
+                        Ok(()) => {
+                            let relative = file_path
+                                .strip_prefix(&repo.work_dir)
+                                .unwrap_or(&file_path)
+                                .display()
+                                .to_string();
+                            println!("  {} {}", "staged".green(), relative.red());
+                            (staged + 1, skipped, errors)
+                        }
+                        Err(e) => {
+                            eprintln!("  {} {} — {}", "error".red(), resource_id, e);
+                            (staged, skipped, errors + 1)
+                        }
+                    }
+                }
+            },
+        );
+
+    (staged_count == 0 && error_count == 0)
+        .then(|| {
+            println!(
+                "No deleted tracked files matching '{}'",
+                pattern.dimmed()
+            );
+        })
+        .unwrap_or_else(|| {
+            println!(
+                "\nSummary: {} deletion(s) staged, {} still present, {} error(s)",
+                staged_count, skipped_count, error_count
+            );
+        });
+
+    Ok(())
+}
+
+/// Stage a deletion for a resource given its resource_id and snapshot value.
+/// Used by the directory and glob deletion handlers.
+fn stage_deletion_by_resource_id(
+    repo: &Repository,
+    resource_id: &str,
+    previous: &serde_json::Value,
+) -> Result<()> {
+    let file_path = repo.path_for_resource_id(resource_id);
+    let relative_path = file_path
+        .strip_prefix(&repo.work_dir)
+        .unwrap_or(&file_path)
+        .display()
+        .to_string();
+
+    let staged = StagedChange {
+        resource_id: resource_id.to_string(),
+        file_path: relative_path,
+        previous: Some(previous.clone()),
+        current: serde_json::Value::Null,
+        operations: vec![PatchOperation::Remove {
+            path: "/".to_string(),
+        }],
+    };
+
+    repo.stage_change(&staged)
+}
+
+// ---------------------------------------------------------------------------
+// Normal (non-delete) staging helpers
+// ---------------------------------------------------------------------------
 
 /// Stage a single file and print verbose output. Used for the single-file case.
 fn stage_single_file_verbose(repo: &Repository, abs_path: &Path, display_path: &Path) -> Result<()> {

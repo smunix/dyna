@@ -28,10 +28,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::Init => commands::init::execute().await,
         Commands::Clone { url, directory } => commands::clone::execute(url, directory).await,
         Commands::Add {
-            path,
+            pattern,
             recursive: _,
             delete,
-        } => commands::add::execute(path, delete).await,
+        } => commands::add::execute(pattern, delete).await,
         Commands::Commit { message } => commands::commit::execute(message).await,
         Commands::Push { channel } => commands::push::execute(channel).await,
         Commands::Pull { channel } => commands::pull::execute(channel).await,

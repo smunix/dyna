@@ -39,18 +39,22 @@ pub enum Commands {
 
     /// Stage JSON resource file(s) for the next changeset.
     ///
-    /// Accepts a single JSON file or a directory. When a directory is given,
-    /// all `.json` files within it are staged recursively.
+    /// Accepts a single JSON file, a directory, or a glob pattern.
+    /// When a directory is given, all `.json` files within it are staged
+    /// recursively.
     ///
-    /// Use `--delete` to stage the removal of a tracked file that has been
-    /// deleted from the filesystem.
+    /// Use `--delete` to stage the removal of tracked files that have been
+    /// deleted from the filesystem. Supports:
+    /// - Single file:  `dyna add --delete data/users/config.json`
+    /// - Directory:     `dyna add --delete data/users/`
+    /// - Glob pattern:  `dyna add --delete "data/**/*.json"`
     Add {
-        /// Path to a JSON file or directory to stage.
-        path: PathBuf,
+        /// Path or glob pattern for JSON file(s) / directory to stage.
+        pattern: String,
         /// Recursively add all `.json` files in the given directory.
         #[arg(short, long)]
         recursive: bool,
-        /// Stage the removal of a deleted tracked file.
+        /// Stage the removal of deleted tracked file(s), directory, or glob.
         #[arg(short, long)]
         delete: bool,
     },
