@@ -45,6 +45,9 @@ anyhow = "1"
 # Bytes
 bytes = "1"
 
+# Compression
+flate2 = "1.0"
+
 # Itertools
 itertools = "0.13"
 

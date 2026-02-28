@@ -33,6 +33,7 @@
 //!   channel's changeset history.
 
 use anyhow::{Context, Result, bail};
+use dyna_core::compression;
 use dyna_core::error::DynaError;
 use dyna_core::models::*;
 use itertools::{izip, Itertools};
@@ -83,16 +84,36 @@ fn collect_vfs_json_stems(dir: &VfsPath) -> Result<Vec<String>> {
     })
 }
 
-/// Write a string to a VfsPath, creating the file (and overwriting if it exists).
-fn vfs_write(path: &VfsPath, content: &str) -> Result<()> {
+/// Write raw bytes to a VfsPath, creating the file (and overwriting if it exists).
+fn vfs_write_bytes(path: &VfsPath, data: &[u8]) -> Result<()> {
     path.create_file()
         .map_err(anyhow::Error::from)
-        .and_then(|mut writer| writer.write_all(content.as_bytes()).map_err(Into::into))
+        .and_then(|mut writer| writer.write_all(data).map_err(Into::into))
 }
 
-/// Read a VfsPath to a string.
+/// Write a string to a VfsPath as gzip-compressed data.
+fn vfs_write(path: &VfsPath, content: &str) -> Result<()> {
+    compression::compress_str(content)
+        .map_err(anyhow::Error::from)
+        .and_then(|compressed| vfs_write_bytes(path, &compressed))
+}
+
+/// Read raw bytes from a VfsPath.
+fn vfs_read_bytes(path: &VfsPath) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    path.open_file()
+        .map_err(anyhow::Error::from)
+        .and_then(|mut reader| {
+            std::io::Read::read_to_end(&mut reader, &mut buf).map_err(Into::into)
+        })
+        .map(|_| buf)
+}
+
+/// Read a VfsPath to a string, transparently decompressing gzip if needed.
 fn vfs_read(path: &VfsPath) -> Result<String> {
-    path.read_to_string().map_err(Into::into)
+    vfs_read_bytes(path).and_then(|data| {
+        compression::read_transparent_str(&data).map_err(Into::into)
+    })
 }
 
 /// Check if a VfsPath exists (maps VfsError to anyhow).

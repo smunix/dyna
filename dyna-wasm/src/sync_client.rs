@@ -3,9 +3,15 @@
 //! Uses the browser's `fetch()` API via `web-sys` and `wasm-bindgen-futures`
 //! instead of `reqwest`. The public API mirrors `dyna-cli/src/sync_client.rs`
 //! so command logic can be shared.
+//!
+//! All request bodies are gzip-compressed and sent with `Content-Encoding: gzip`.
+//! The client also sends `Accept-Encoding: gzip` to request compressed responses.
+//! Response bodies are transparently decompressed using `dyna_core::compression`.
 
 use anyhow::{Context, Result};
+use dyna_core::compression;
 use dyna_core::protocol::*;
+use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Headers, Request, RequestInit, RequestMode, Response};
@@ -27,26 +33,56 @@ impl SyncClient {
         web_sys::window().ok_or_else(|| anyhow::anyhow!("No global window object"))
     }
 
-    /// Generic POST JSON helper using the Fetch API.
-    async fn post_json<Req, Resp>(&self, endpoint: &str, request: &Req, operation: &str) -> Result<Resp>
+    /// Read response body as bytes, transparently decompressing gzip if needed.
+    async fn read_response_bytes(resp: &Response, operation: &str) -> Result<Vec<u8>> {
+        let array_buffer_promise = resp
+            .array_buffer()
+            .map_err(|e| anyhow::anyhow!("{}: failed to get response body: {:?}", operation, e))?;
+        let array_buffer = JsFuture::from(array_buffer_promise)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}: failed to read response body: {:?}", operation, e))?;
+        let uint8_array = Uint8Array::new(&array_buffer);
+        let bytes = uint8_array.to_vec();
+        compression::read_transparent(&bytes)
+            .map_err(|e| anyhow::anyhow!("{}: decompression failed: {}", operation, e))
+    }
+
+    /// Generic POST JSON helper using the Fetch API with gzip compression.
+    async fn post_json<Req, Resp>(
+        &self,
+        endpoint: &str,
+        request: &Req,
+        operation: &str,
+    ) -> Result<Resp>
     where
         Req: serde::Serialize,
         Resp: serde::de::DeserializeOwned,
     {
         let url = format!("{}{}", self.base_url, endpoint);
-        let body = serde_json::to_string(request)
-            .context(format!("Failed to serialize {} request", operation))?;
+
+        // Serialize to JSON and gzip-compress
+        let compressed_body = compression::compress_json(request)
+            .map_err(|e| anyhow::anyhow!("Failed to compress {} request: {}", operation, e))?;
 
         let headers = Headers::new()
             .map_err(|e| anyhow::anyhow!("Failed to create headers: {:?}", e))?;
         headers
             .set("Content-Type", "application/json")
             .map_err(|e| anyhow::anyhow!("Failed to set Content-Type: {:?}", e))?;
+        headers
+            .set("Content-Encoding", "gzip")
+            .map_err(|e| anyhow::anyhow!("Failed to set Content-Encoding: {:?}", e))?;
+        headers
+            .set("Accept-Encoding", "gzip")
+            .map_err(|e| anyhow::anyhow!("Failed to set Accept-Encoding: {:?}", e))?;
+
+        // Convert compressed bytes to Uint8Array for fetch body
+        let body_array = Uint8Array::from(compressed_body.as_slice());
 
         let opts = RequestInit::new();
         opts.set_method("POST");
         opts.set_headers(&headers);
-        opts.set_body(&JsValue::from_str(&body));
+        opts.set_body(&body_array.into());
         opts.set_mode(RequestMode::Cors);
 
         let request = Request::new_with_str_and_init(&url, &opts)
@@ -66,29 +102,27 @@ impl SyncClient {
             return Err(anyhow::anyhow!("{} failed with status {}", operation, status));
         }
 
-        let json_promise = resp
-            .text()
-            .map_err(|e| anyhow::anyhow!("{}: failed to get response text: {:?}", operation, e))?;
-        let text_value = JsFuture::from(json_promise)
-            .await
-            .map_err(|e| anyhow::anyhow!("{}: failed to read response body: {:?}", operation, e))?;
-        let text = text_value
-            .as_string()
-            .ok_or_else(|| anyhow::anyhow!("{}: response body is not a string", operation))?;
-
-        serde_json::from_str(&text)
+        let bytes = Self::read_response_bytes(&resp, operation).await?;
+        serde_json::from_slice(&bytes)
             .context(format!("Failed to parse {} response", operation))
     }
 
-    /// Generic GET JSON helper using the Fetch API.
+    /// Generic GET JSON helper using the Fetch API with Accept-Encoding: gzip.
     async fn get_json<Resp>(&self, endpoint: &str, operation: &str) -> Result<Resp>
     where
         Resp: serde::de::DeserializeOwned,
     {
         let url = format!("{}{}", self.base_url, endpoint);
 
+        let headers = Headers::new()
+            .map_err(|e| anyhow::anyhow!("Failed to create headers: {:?}", e))?;
+        headers
+            .set("Accept-Encoding", "gzip")
+            .map_err(|e| anyhow::anyhow!("Failed to set Accept-Encoding: {:?}", e))?;
+
         let opts = RequestInit::new();
         opts.set_method("GET");
+        opts.set_headers(&headers);
         opts.set_mode(RequestMode::Cors);
 
         let request = Request::new_with_str_and_init(&url, &opts)
@@ -108,17 +142,8 @@ impl SyncClient {
             return Err(anyhow::anyhow!("{} failed with status {}", operation, status));
         }
 
-        let json_promise = resp
-            .text()
-            .map_err(|e| anyhow::anyhow!("{}: failed to get response text: {:?}", operation, e))?;
-        let text_value = JsFuture::from(json_promise)
-            .await
-            .map_err(|e| anyhow::anyhow!("{}: failed to read response body: {:?}", operation, e))?;
-        let text = text_value
-            .as_string()
-            .ok_or_else(|| anyhow::anyhow!("{}: response body is not a string", operation))?;
-
-        serde_json::from_str(&text)
+        let bytes = Self::read_response_bytes(&resp, operation).await?;
+        serde_json::from_slice(&bytes)
             .context(format!("Failed to parse {} response", operation))
     }
 
@@ -153,8 +178,12 @@ impl SyncClient {
         self.get_json("/api/v1/channels", "List channels").await
     }
 
-    pub async fn create_channel(&self, request: &CreateChannelRequest) -> Result<CreateChannelResponse> {
-        self.post_json("/api/v1/channels", request, "Create channel").await
+    pub async fn create_channel(
+        &self,
+        request: &CreateChannelRequest,
+    ) -> Result<CreateChannelResponse> {
+        self.post_json("/api/v1/channels", request, "Create channel")
+            .await
     }
 
     pub async fn promote(&self, request: &PromoteRequest) -> Result<PromoteResponse> {

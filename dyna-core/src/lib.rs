@@ -24,3 +24,4 @@ pub mod protocol;
 pub mod error;
 pub mod channel;
 pub mod diff;
+pub mod compression;

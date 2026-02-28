@@ -2,14 +2,21 @@
 //!
 //! This elfo actor encapsulates all interactions with the S3-compatible object
 //! store via the `object_store` crate. It handles storing and retrieving:
-//! - **Changesets** under `changesets/<commit_hash>.json`
-//! - **Channels** under `channels/<name>.json`
-//! - **Snapshots** under `snapshots/<resource_id>.json`
+//! - **Changesets** under `changesets/<commit_hash>.json.gz`
+//! - **Channels** under `channels/<name>.json.gz`
+//! - **Snapshots** under `snapshots/<resource_id>.json.gz`
+//!
+//! ## Compression
+//!
+//! All data is stored gzip-compressed to reduce storage footprint. Reads use
+//! transparent decompression via `dyna_core::compression`, so they are
+//! backwards-compatible with existing uncompressed data.
 //!
 //! In development mode, an in-memory store is used. In production, configure
 //! `AmazonS3Builder::from_env()` for real S3 access.
 
 use bytes::Bytes;
+use dyna_core::compression;
 use itertools::izip;
 use elfo::prelude::*;
 use object_store::{ObjectStore, memory::InMemory, path::Path as ObjPath};
@@ -17,27 +24,32 @@ use std::sync::Arc;
 
 use crate::messages::*;
 
-/// Helper: serialize + put to object store, returning a typed result.
+/// Helper: serialize to JSON, gzip-compress, and put to object store.
 async fn store_json<T: serde::Serialize>(
     store: &dyn ObjectStore,
     path: &ObjPath,
     value: &T,
 ) -> Result<(), String> {
-    serde_json::to_vec_pretty(value)
+    compression::compress_json_pretty(value)
         .map_err(|e| e.to_string())
         .map(Bytes::from)
-        .map(|bytes| (path.clone(), bytes))
-        .map_err(|e| e.to_string())?;
+        .and_then(|compressed| {
+            // Use block_on since object_store::put is async but we need
+            // to chain it functionally. We're already inside an async context
+            // so we use a direct await approach instead.
+            Ok((path.clone(), compressed))
+        })
+        .map_err(|e: String| e)?;
 
-    let data = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    let compressed = compression::compress_json_pretty(value).map_err(|e| e.to_string())?;
     store
-        .put(path, Bytes::from(data).into())
+        .put(path, Bytes::from(compressed).into())
         .await
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
 
-/// Helper: get from object store + deserialize, returning Option or error.
+/// Helper: get from object store, transparently decompress, and deserialize.
 async fn load_json<T: serde::de::DeserializeOwned>(
     store: &dyn ObjectStore,
     path: &ObjPath,
@@ -48,8 +60,8 @@ async fn load_json<T: serde::de::DeserializeOwned>(
             .await
             .map_err(|e| e.to_string())
             .and_then(|data| {
-                serde_json::from_slice(&data)
-                    .map_err(|e| format!("Deserialization error: {}", e))
+                compression::decompress_json(&data)
+                    .map_err(|e| format!("Deserialization/decompression error: {}", e))
             })
             .map(Some),
         Err(object_store::Error::NotFound { .. }) => Ok(None),
@@ -57,7 +69,8 @@ async fn load_json<T: serde::de::DeserializeOwned>(
     }
 }
 
-/// Helper: list objects under a prefix, load each, and deserialize.
+/// Helper: list objects under a prefix, load each (with transparent
+/// decompression), and deserialize.
 async fn list_and_load_all<T: serde::de::DeserializeOwned>(
     store: &dyn ObjectStore,
     prefix: &ObjPath,
@@ -73,6 +86,7 @@ async fn list_and_load_all<T: serde::de::DeserializeOwned>(
             .location
             .filename()
             .unwrap_or_default()
+            .trim_end_matches(".json.gz")
             .trim_end_matches(".json")
             .to_string();
 
@@ -81,7 +95,7 @@ async fn list_and_load_all<T: serde::de::DeserializeOwned>(
             .await
             .ok()
             .and_then(|gr| futures::executor::block_on(gr.bytes()).ok())
-            .and_then(|data| serde_json::from_slice::<T>(&data).ok())
+            .and_then(|data| compression::decompress_json::<T>(&data).ok())
             .map(|value| (name, value));
 
         if let Some(pair) = loaded {
@@ -97,7 +111,7 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
     ActorGroup::new().exec(move |mut ctx| {
         let store = store_clone.clone();
         async move {
-            tracing::info!("S3 Storage actor started");
+            tracing::info!("S3 Storage actor started (with gzip compression)");
 
             while let Some(envelope) = ctx.recv().await {
                 msg!(match envelope {
@@ -106,13 +120,13 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     // ----------------------------------------------------------
                     (StoreChangeset { changeset }, token) => {
                         let path = ObjPath::from(format!(
-                            "changesets/{}.json",
+                            "changesets/{}.json.gz",
                             changeset.change_id
                         ));
                         let result = store_json(store.as_ref(), &path, &changeset)
                             .await
                             .map(|()| {
-                                tracing::debug!(change_id = %changeset.change_id, "Stored changeset");
+                                tracing::debug!(change_id = %changeset.change_id, "Stored changeset (compressed)");
                                 StoreChangesetResult::Ok
                             })
                             .unwrap_or_else(|e| {
@@ -123,14 +137,20 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     }
 
                     (LoadChangeset { change_id }, token) => {
-                        let path = ObjPath::from(format!("changesets/{}.json", change_id));
-                        let result = load_json(store.as_ref(), &path)
-                            .await
-                            .map(|opt| {
-                                opt.map(LoadChangesetResult::Ok)
-                                    .unwrap_or(LoadChangesetResult::NotFound)
-                            })
-                            .unwrap_or_else(LoadChangesetResult::Error);
+                        // Try compressed path first, fall back to uncompressed
+                        let gz_path = ObjPath::from(format!("changesets/{}.json.gz", change_id));
+                        let plain_path = ObjPath::from(format!("changesets/{}.json", change_id));
+                        let result = match load_json(store.as_ref(), &gz_path).await {
+                            Ok(Some(v)) => LoadChangesetResult::Ok(v),
+                            Ok(None) => {
+                                match load_json(store.as_ref(), &plain_path).await {
+                                    Ok(Some(v)) => LoadChangesetResult::Ok(v),
+                                    Ok(None) => LoadChangesetResult::NotFound,
+                                    Err(e) => LoadChangesetResult::Error(e),
+                                }
+                            }
+                            Err(e) => LoadChangesetResult::Error(e),
+                        };
                         ctx.respond(token, result);
                     }
 
@@ -138,11 +158,11 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     // Channel operations
                     // ----------------------------------------------------------
                     (SaveChannel { channel }, token) => {
-                        let path = ObjPath::from(format!("channels/{}.json", channel.name));
+                        let path = ObjPath::from(format!("channels/{}.json.gz", channel.name));
                         let result = store_json(store.as_ref(), &path, &channel)
                             .await
                             .map(|()| {
-                                tracing::debug!(name = %channel.name, "Saved channel");
+                                tracing::debug!(name = %channel.name, "Saved channel (compressed)");
                                 SaveChannelResult::Ok
                             })
                             .unwrap_or_else(SaveChannelResult::Error);
@@ -150,14 +170,19 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     }
 
                     (LoadChannel { name }, token) => {
-                        let path = ObjPath::from(format!("channels/{}.json", name));
-                        let result = load_json(store.as_ref(), &path)
-                            .await
-                            .map(|opt| {
-                                opt.map(LoadChannelResult::Ok)
-                                    .unwrap_or(LoadChannelResult::NotFound)
-                            })
-                            .unwrap_or_else(LoadChannelResult::Error);
+                        let gz_path = ObjPath::from(format!("channels/{}.json.gz", name));
+                        let plain_path = ObjPath::from(format!("channels/{}.json", name));
+                        let result = match load_json(store.as_ref(), &gz_path).await {
+                            Ok(Some(v)) => LoadChannelResult::Ok(v),
+                            Ok(None) => {
+                                match load_json(store.as_ref(), &plain_path).await {
+                                    Ok(Some(v)) => LoadChannelResult::Ok(v),
+                                    Ok(None) => LoadChannelResult::NotFound,
+                                    Err(e) => LoadChannelResult::Error(e),
+                                }
+                            }
+                            Err(e) => LoadChannelResult::Error(e),
+                        };
                         ctx.respond(token, result);
                     }
 
@@ -181,11 +206,11 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     // Snapshot operations
                     // ----------------------------------------------------------
                     (SaveSnapshot { resource_id, value }, token) => {
-                        let path = ObjPath::from(format!("snapshots/{}.json", resource_id));
+                        let path = ObjPath::from(format!("snapshots/{}.json.gz", resource_id));
                         let result = store_json(store.as_ref(), &path, &value)
                             .await
                             .map(|()| {
-                                tracing::debug!(resource_id = %resource_id, "Saved snapshot");
+                                tracing::debug!(resource_id = %resource_id, "Saved snapshot (compressed)");
                                 SaveSnapshotResult::Ok
                             })
                             .unwrap_or_else(SaveSnapshotResult::Error);
@@ -193,14 +218,19 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     }
 
                     (LoadSnapshot { resource_id }, token) => {
-                        let path = ObjPath::from(format!("snapshots/{}.json", resource_id));
-                        let result = load_json(store.as_ref(), &path)
-                            .await
-                            .map(|opt| {
-                                opt.map(LoadSnapshotResult::Ok)
-                                    .unwrap_or(LoadSnapshotResult::NotFound)
-                            })
-                            .unwrap_or_else(LoadSnapshotResult::Error);
+                        let gz_path = ObjPath::from(format!("snapshots/{}.json.gz", resource_id));
+                        let plain_path = ObjPath::from(format!("snapshots/{}.json", resource_id));
+                        let result = match load_json(store.as_ref(), &gz_path).await {
+                            Ok(Some(v)) => LoadSnapshotResult::Ok(v),
+                            Ok(None) => {
+                                match load_json(store.as_ref(), &plain_path).await {
+                                    Ok(Some(v)) => LoadSnapshotResult::Ok(v),
+                                    Ok(None) => LoadSnapshotResult::NotFound,
+                                    Err(e) => LoadSnapshotResult::Error(e),
+                                }
+                            }
+                            Err(e) => LoadSnapshotResult::Error(e),
+                        };
                         ctx.respond(token, result);
                     }
 

@@ -4,10 +4,14 @@
 //! remote server, providing a clean async API for changeset-based push, pull,
 //! clone, promote, and channel management operations.
 //!
-//! All operations exchange [`Changeset`] objects (not individual patches),
-//! consistent with the Jujutsu-inspired changeset-centric model.
+//! All request bodies are gzip-compressed and sent with `Content-Encoding: gzip`.
+//! The client also sends `Accept-Encoding: gzip` so the server can compress
+//! responses. Responses are transparently decompressed (reqwest handles this
+//! automatically when the feature is enabled, but we also handle it manually
+//! for robustness).
 
 use anyhow::{Context, Result};
+use dyna_core::compression;
 use dyna_core::protocol::*;
 use reqwest::Client;
 
@@ -26,8 +30,11 @@ impl SyncClient {
         }
     }
 
-    /// Generic helper: POST JSON, check status, parse response, and optionally
-    /// validate a success flag.
+    /// Generic helper: POST gzip-compressed JSON, check status, parse response.
+    ///
+    /// The request body is serialized to JSON, gzip-compressed, and sent with
+    /// `Content-Encoding: gzip` and `Content-Type: application/json` headers.
+    /// `Accept-Encoding: gzip` is also sent to request compressed responses.
     async fn post_json<Req, Resp>(
         &self,
         endpoint: &str,
@@ -39,44 +46,74 @@ impl SyncClient {
         Resp: serde::de::DeserializeOwned,
     {
         let url = format!("{}{}", self.base_url, endpoint);
-        self.client
+        let compressed_body = compression::compress_json(request)
+            .context(format!("Failed to compress {} request body", operation))?;
+
+        let response = self
+            .client
             .post(&url)
-            .json(request)
+            .header("Content-Type", "application/json")
+            .header("Content-Encoding", "gzip")
+            .header("Accept-Encoding", "gzip")
+            .body(compressed_body)
             .send()
             .await
-            .context(format!("Failed to connect to remote server for {}", operation))
-            .and_then(|response| {
-                response
-                    .status()
-                    .is_success()
-                    .then_some(response)
-                    .ok_or_else(|| anyhow::anyhow!("{} failed", operation))
-            })?
-            .json::<Resp>()
+            .context(format!(
+                "Failed to connect to remote server for {}",
+                operation
+            ))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("{} failed (HTTP {}): {}", operation, status, body);
+        }
+
+        // Read response bytes and transparently decompress
+        let bytes = response
+            .bytes()
             .await
+            .context(format!("Failed to read {} response body", operation))?;
+
+        let decompressed = compression::read_transparent(&bytes)
+            .context(format!("Failed to decompress {} response", operation))?;
+
+        serde_json::from_slice(&decompressed)
             .context(format!("Failed to parse {} response", operation))
     }
 
-    /// Generic helper: GET, check status, parse response.
+    /// Generic helper: GET with Accept-Encoding: gzip, check status, parse response.
     async fn get_json<Resp>(&self, endpoint: &str, operation: &str) -> Result<Resp>
     where
         Resp: serde::de::DeserializeOwned,
     {
         let url = format!("{}{}", self.base_url, endpoint);
-        self.client
+        let response = self
+            .client
             .get(&url)
+            .header("Accept-Encoding", "gzip")
             .send()
             .await
-            .context(format!("Failed to connect to remote server for {}", operation))
-            .and_then(|response| {
-                response
-                    .status()
-                    .is_success()
-                    .then_some(response)
-                    .ok_or_else(|| anyhow::anyhow!("{} failed", operation))
-            })?
-            .json::<Resp>()
+            .context(format!(
+                "Failed to connect to remote server for {}",
+                operation
+            ))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("{} failed (HTTP {}): {}", operation, status, body);
+        }
+
+        let bytes = response
+            .bytes()
             .await
+            .context(format!("Failed to read {} response body", operation))?;
+
+        let decompressed = compression::read_transparent(&bytes)
+            .context(format!("Failed to decompress {} response", operation))?;
+
+        serde_json::from_slice(&decompressed)
             .context(format!("Failed to parse {} response", operation))
     }
 
@@ -112,8 +149,12 @@ impl SyncClient {
     }
 
     /// Create a new channel on the remote server.
-    pub async fn create_channel(&self, request: &CreateChannelRequest) -> Result<CreateChannelResponse> {
-        self.post_json("/api/v1/channels", request, "Create channel").await
+    pub async fn create_channel(
+        &self,
+        request: &CreateChannelRequest,
+    ) -> Result<CreateChannelResponse> {
+        self.post_json("/api/v1/channels", request, "Create channel")
+            .await
     }
 
     /// Promote changesets from one channel to another on the remote server.

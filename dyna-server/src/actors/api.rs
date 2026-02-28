@@ -13,20 +13,29 @@
 //! | `GET`  | `/api/v1/channels` | List all channels |
 //! | `GET`  | `/api/v1/changesets/:id` | Fetch a single changeset |
 //!
-//! Requests are translated into elfo messages sent to the Changeset
-//! actor via `tokio::sync::mpsc` channels, and responses are awaited via
-//! `tokio::sync::oneshot`.
+//! ## Compression
+//!
+//! - **Requests**: Clients may send gzip-compressed bodies with
+//!   `Content-Encoding: gzip`. The server transparently decompresses them
+//!   via a custom middleware layer before JSON parsing.
+//! - **Responses**: The server compresses all responses with gzip via
+//!   `tower-http`'s `CompressionLayer` when the client sends
+//!   `Accept-Encoding: gzip`.
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
-    http::StatusCode,
-    response::IntoResponse,
+    body::Body,
+    extract::{DefaultBodyLimit, Path, Request, State},
+    http::{header, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use dyna_core::compression;
 use dyna_core::protocol::*;
 use elfo::prelude::*;
 use tokio::sync::{mpsc, oneshot};
+use tower_http::compression::CompressionLayer;
 
 use crate::messages::*;
 
@@ -239,7 +248,67 @@ async fn dispatch_request(ctx: &Context, request: ApiRequest) {
 /// needed via `DefaultBodyLimit::max()` on individual route layers.
 const MAX_BODY_SIZE: usize = 256 * 1024 * 1024;
 
+/// Middleware that transparently decompresses gzip-encoded request bodies.
+///
+/// If the incoming request has `Content-Encoding: gzip`, the body is read,
+/// decompressed, and replaced before passing to the next handler. This allows
+/// axum's `Json<T>` extractor to work normally on the decompressed data.
+async fn decompress_request_body(request: Request, next: Next) -> Response {
+    let has_gzip = request
+        .headers()
+        .get(header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.contains("gzip"))
+        .unwrap_or(false);
+
+    if !has_gzip {
+        return next.run(request).await;
+    }
+
+    let (mut parts, body) = request.into_parts();
+
+    // Read the full body using axum's body-to-bytes
+    let body_bytes = match axum::body::to_bytes(body, MAX_BODY_SIZE).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to read compressed request body");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Failed to read request body"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Decompress
+    let decompressed = match compression::decompress(&body_bytes) {
+        Ok(data) => data,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to decompress gzip request body");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Failed to decompress gzip body"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Remove Content-Encoding header and update Content-Length
+    parts.headers.remove(header::CONTENT_ENCODING);
+    parts
+        .headers
+        .insert(header::CONTENT_LENGTH, decompressed.len().into());
+
+    let new_request = Request::from_parts(parts, Body::from(decompressed));
+    next.run(new_request).await
+}
+
 /// Build the axum router with all API routes.
+///
+/// The router includes:
+/// - `decompress_request_body` middleware for transparent gzip request decompression
+/// - `CompressionLayer` from tower-http for automatic gzip response compression
+/// - `DefaultBodyLimit` of 256 MiB for large payloads
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/v1/health", get(health_handler))
@@ -250,6 +319,8 @@ fn build_router(state: AppState) -> Router {
         .route("/api/v1/channels", get(list_channels_handler))
         .route("/api/v1/channels", post(create_channel_handler))
         .route("/api/v1/changesets/:change_id", get(get_changeset_handler))
+        .layer(middleware::from_fn(decompress_request_body))
+        .layer(CompressionLayer::new().gzip(true))
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
         .with_state(state)
 }

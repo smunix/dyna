@@ -27,5 +27,6 @@ bytes = { workspace = true }
 axum = { workspace = true }
 object_store = { workspace = true }
 elfo = { version = "0.2.0-alpha.20", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "decompression-gzip"] }
+flate2 = { workspace = true }
 itertools = { workspace = true }
