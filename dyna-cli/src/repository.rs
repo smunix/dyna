@@ -519,4 +519,21 @@ impl Repository {
             .to_string_lossy()
             .replace('/', ".")
     }
+
+    /// Reverse of [`resource_id_from_path`]: converts a dotted resource ID back
+    /// into a filesystem path relative to `work_dir`, appending `.json`.
+    ///
+    /// For example, `"data.users.config"` becomes `<work_dir>/data/users/config.json`.
+    ///
+    /// Also creates all intermediate directories so the file can be written
+    /// immediately.
+    pub fn path_from_resource_id(&self, resource_id: &str) -> Result<PathBuf> {
+        let relative = resource_id.replace('.', "/");
+        let file_path = self.work_dir.join(format!("{}.json", relative));
+        file_path
+            .parent()
+            .map(|parent| fs::create_dir_all(parent).map_err(Into::into))
+            .transpose()
+            .map(|_| file_path)
+    }
 }

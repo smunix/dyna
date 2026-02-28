@@ -139,17 +139,15 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
         })
         .transpose()?;
 
-    // Write updated snapshots to working directory via try_for_each
+    // Write updated snapshots to working directory, recreating the full
+    // filesystem hierarchy from dotted resource IDs via path_from_resource_id.
     izip!(&repo.load_all_snapshots()?)
         .try_for_each(|(resource_id, value)| -> Result<()> {
-            serde_json::to_string_pretty(value)
-                .map_err(Into::into)
-                .and_then(|json| {
-                    std::fs::write(
-                        repo.work_dir.join(format!("{}.json", resource_id)),
-                        json,
-                    )
-                    .map_err(Into::into)
+            repo.path_from_resource_id(resource_id)
+                .and_then(|file_path| {
+                    serde_json::to_string_pretty(value)
+                        .map_err(Into::into)
+                        .and_then(|json| std::fs::write(&file_path, json).map_err(Into::into))
                 })
         })?;
 
