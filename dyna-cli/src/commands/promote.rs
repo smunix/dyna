@@ -1,6 +1,9 @@
 //! `dyna promote` command implementation.
 //!
-//! Promotes changesets from the current channel to the main channel.
+//! Promotes changesets from a source channel to the main channel.
+//! By default, promotes from the current channel. Use `--channel` to
+//! specify a different source channel.
+//!
 //! Promoted changesets are marked as immutable.
 
 use anyhow::{Result, bail};
@@ -10,20 +13,26 @@ use dyna_core::channel::promote_changesets;
 
 use crate::repository::Repository;
 
-pub async fn execute() -> Result<()> {
+pub async fn execute(channel: Option<String>) -> Result<()> {
     let repo = Repository::find_current()?;
     let current_name = repo.current_channel_name()?;
 
-    if current_name == "main" {
-        bail!("Already on 'main'. Switch to a feature channel first, then promote.");
+    // Use the specified channel or fall back to the current channel
+    let source_name = channel.unwrap_or_else(|| current_name.clone());
+
+    if source_name == "main" {
+        bail!(
+            "Cannot promote from 'main' to itself. Specify a feature channel with --channel, \
+             or switch to one first."
+        );
     }
 
-    let source = repo.load_channel(&current_name)?;
+    let source = repo.load_channel(&source_name)?;
     let mut target = repo.load_channel("main")?;
 
     println!(
         "Promoting changesets from '{}' to 'main'...",
-        current_name.bold().cyan()
+        source_name.bold().cyan()
     );
 
     promote_changesets(&source, &mut target)
@@ -79,7 +88,7 @@ pub async fn execute() -> Result<()> {
                     println!("\nPushing promoted changesets to remote...");
                     let client = crate::sync_client::SyncClient::new(&remote_url);
                     let request = dyna_core::protocol::PromoteRequest {
-                        source_channel: current_name.clone(),
+                        source_channel: source_name.clone(),
                         target_channel: "main".to_string(),
                     };
                     client

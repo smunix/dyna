@@ -100,6 +100,32 @@ pub async fn execute() -> Result<()> {
             });
         });
 
+    // Detect unstaged modifications on already-staged files: compare the
+    // staged `current` value against what is now on disk. If the file has
+    // been further edited since staging, show a warning.
+    let unstaged_on_staged: Vec<&dyna_core::models::StagedChange> = izip!(&staged)
+        .filter(|change| {
+            // Skip deletion-staged files (no file on disk to compare)
+            if change.current.is_null() {
+                return false;
+            }
+            let abs_path = repo.work_dir.join(&change.file_path);
+            std::fs::read_to_string(&abs_path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+                .map_or(false, |disk_value| disk_value != change.current)
+        })
+        .collect_vec();
+
+    (!unstaged_on_staged.is_empty()).then(|| {
+        println!(
+            "\n{} (use \"dyna add <file>\" to update the staged version):",
+            "Staged files with unstaged modifications".yellow().bold()
+        );
+        izip!(&unstaged_on_staged)
+            .for_each(|change| println!("  {} {}", "modified".yellow(), change.file_path));
+    });
+
     // Non-staged files — partition into modified and untracked via fold
     let json_files = find_json_files(&repo.work_dir, &repo.dyna_dir)?;
     let snapshots = repo.load_all_snapshots()?;

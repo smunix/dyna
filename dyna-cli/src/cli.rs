@@ -166,10 +166,17 @@ pub enum Commands {
         local: bool,
     },
 
-    /// Promote changesets from the current channel to the main channel.
+    /// Promote changesets from a channel to the main channel.
+    ///
+    /// By default, promotes from the current channel. Use `--channel` to
+    /// specify a different source channel without switching to it first.
     ///
     /// Promoted changesets are marked as immutable.
-    Promote,
+    Promote {
+        /// The source channel to promote from (defaults to current channel).
+        #[arg(short, long)]
+        channel: Option<String>,
+    },
 
     /// Squash a changeset into its parent (analogous to `jj squash`).
     ///
