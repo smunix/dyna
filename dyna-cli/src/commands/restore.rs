@@ -9,8 +9,7 @@
 //! - `--changeset <id>`: the result snapshot from a specific changeset's patch
 //!   targeting the resource, searched across all local and remote channels.
 //!
-//! The restored file is written to its proper filesystem location (using
-//! `path_from_resource_id`) and the local snapshot is updated accordingly.
+//! All filesystem I/O goes through the Repository's VFS abstraction.
 
 use anyhow::{Result, bail};
 use colored::Colorize;
@@ -65,20 +64,14 @@ pub async fn execute(
         }
     };
 
-    // Write the restored file to the filesystem
-    let file_path = repo.path_from_resource_id(&resource_id)?;
-    serde_json::to_string_pretty(&snapshot_value)
-        .map_err(anyhow::Error::from)
-        .and_then(|json| std::fs::write(&file_path, json).map_err(anyhow::Error::from))?;
+    // Write the restored file to the filesystem via VFS
+    let json = serde_json::to_string_pretty(&snapshot_value)?;
+    repo.write_resource_file(&resource_id, &json)?;
 
     // Update the local snapshot to match the restored content
     repo.save_snapshot(&resource_id, &snapshot_value)?;
 
-    let relative = file_path
-        .strip_prefix(&repo.work_dir)
-        .unwrap_or(&file_path)
-        .display()
-        .to_string();
+    let relative = repo.relative_path_for_resource_id(&resource_id);
 
     println!(
         "Restored {} from {}",

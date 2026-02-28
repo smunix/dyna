@@ -4,15 +4,17 @@
 //! - Current channel, working changeset, and HEAD info
 //! - Remote sync status
 //! - Staged changes (including deletions)
+//! - Staged files with unstaged modifications
 //! - Non-staged (untracked or modified) JSON files in the working directory
 //! - Deleted tracked files (snapshots whose filesystem files are missing)
 //! - Unresolved conflicts
+//!
+//! All filesystem I/O goes through the Repository's VFS abstraction.
 
 use anyhow::Result;
 use colored::Colorize;
 use itertools::{izip, Itertools};
 use std::collections::HashSet;
-use std::path::Path;
 
 use crate::repository::Repository;
 
@@ -88,7 +90,6 @@ pub async fn execute() -> Result<()> {
                     .previous
                     .as_ref()
                     .map(|_| {
-                        // If current is null, this is a deletion; otherwise a modification
                         change
                             .current
                             .is_null()
@@ -101,16 +102,13 @@ pub async fn execute() -> Result<()> {
         });
 
     // Detect unstaged modifications on already-staged files: compare the
-    // staged `current` value against what is now on disk. If the file has
-    // been further edited since staging, show a warning.
+    // staged `current` value against what is now on disk via VFS.
     let unstaged_on_staged: Vec<&dyna_core::models::StagedChange> = izip!(&staged)
         .filter(|change| {
-            // Skip deletion-staged files (no file on disk to compare)
             if change.current.is_null() {
                 return false;
             }
-            let abs_path = repo.work_dir.join(&change.file_path);
-            std::fs::read_to_string(&abs_path)
+            repo.read_work_file(&change.file_path)
                 .ok()
                 .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
                 .map_or(false, |disk_value| disk_value != change.current)
@@ -126,34 +124,29 @@ pub async fn execute() -> Result<()> {
             .for_each(|change| println!("  {} {}", "modified".yellow(), change.file_path));
     });
 
-    // Non-staged files — partition into modified and untracked via fold
-    let json_files = find_json_files(&repo.work_dir, &repo.dyna_dir)?;
+    // Non-staged files — use repo.list_work_json_files() via VFS
+    let json_files = repo.list_work_json_files()?;
     let snapshots = repo.load_all_snapshots()?;
 
     // Collect all filesystem resource IDs for later deletion detection
     let filesystem_resource_ids: HashSet<String> = izip!(&json_files)
-        .map(|json_path| {
-            let abs_path = repo.work_dir.join(json_path);
-            repo.resource_id_from_path(&abs_path)
-        })
+        .map(|json_path| repo.resource_id_from_relative(json_path))
         .collect();
 
     let (modified_unstaged, untracked): (Vec<String>, Vec<String>) = izip!(json_files)
         .filter(|json_path| {
-            let abs_path = repo.work_dir.join(json_path);
-            let resource_id = repo.resource_id_from_path(&abs_path);
+            let resource_id = repo.resource_id_from_relative(json_path);
             !staged_resource_ids.contains(&resource_id) && !staged_file_paths.contains(json_path)
         })
         .fold(
             (Vec::new(), Vec::new()),
             |(mut modified, mut untracked), json_path| {
-                let abs_path = repo.work_dir.join(&json_path);
-                let resource_id = repo.resource_id_from_path(&abs_path);
+                let resource_id = repo.resource_id_from_relative(&json_path);
 
                 snapshots
                     .get(&resource_id)
                     .map(|snapshot| {
-                        std::fs::read_to_string(&abs_path)
+                        repo.read_work_file(&json_path)
                             .ok()
                             .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
                             .filter(|current_value| current_value != snapshot)
@@ -175,12 +168,7 @@ pub async fn execute() -> Result<()> {
                 && !staged_resource_ids.contains(*resource_id)
         })
         .map(|resource_id| {
-            let file_path = repo.path_for_resource_id(resource_id);
-            let relative = file_path
-                .strip_prefix(&repo.work_dir)
-                .unwrap_or(&file_path)
-                .display()
-                .to_string();
+            let relative = repo.relative_path_for_resource_id(resource_id);
             (resource_id.clone(), relative)
         })
         .collect_vec();
@@ -252,44 +240,4 @@ pub async fn execute() -> Result<()> {
     });
 
     Ok(())
-}
-
-/// Recursively find all `.json` files in the working directory, excluding the
-/// `.dyna/` metadata directory. Returns paths relative to `work_dir`.
-fn find_json_files(work_dir: &Path, dyna_dir: &Path) -> Result<Vec<String>> {
-    let mut results = Vec::new();
-    collect_json_files(work_dir, work_dir, dyna_dir, &mut results)?;
-    results.sort();
-    Ok(results)
-}
-
-fn collect_json_files(
-    base: &Path,
-    dir: &Path,
-    dyna_dir: &Path,
-    results: &mut Vec<String>,
-) -> Result<()> {
-    if !dir.is_dir() || dir.starts_with(dyna_dir) {
-        return Ok(());
-    }
-
-    std::fs::read_dir(dir)?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .sorted()
-        .try_for_each(|path| {
-            if path.is_dir() {
-                path.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .filter(|name| !name.starts_with('.'))
-                    .map(|_| collect_json_files(base, &path, dyna_dir, results))
-                    .unwrap_or(Ok(()))
-            } else {
-                path.extension()
-                    .filter(|ext| *ext == "json")
-                    .and_then(|_| path.strip_prefix(base).ok())
-                    .map(|relative| results.push(relative.display().to_string()));
-                Ok(())
-            }
-        })
 }

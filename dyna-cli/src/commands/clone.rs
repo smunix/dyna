@@ -1,6 +1,7 @@
 //! `dyna clone` command implementation.
 //!
 //! Clones a repository from a remote server, fetching all changesets.
+//! All filesystem I/O goes through the Repository's VFS abstraction.
 
 use anyhow::{Context, Result};
 use dyna_core::protocol::CloneRequest;
@@ -53,17 +54,14 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
     izip!(&clone_response.channels)
         .try_for_each(|channel| repo.save_channel(channel))?;
 
-    // Store resource snapshots and write working directory files, recreating
-    // the full filesystem hierarchy from dotted resource IDs via path_from_resource_id.
+    // Store resource snapshots and write working directory files via VFS,
+    // recreating the full filesystem hierarchy from dotted resource IDs.
     izip!(&clone_response.snapshots)
         .try_for_each(|(resource_id, snapshot)| -> Result<()> {
             repo.save_snapshot(resource_id, snapshot)?;
-            repo.path_from_resource_id(resource_id)
-                .and_then(|file_path| {
-                    serde_json::to_string_pretty(snapshot)
-                        .map_err(Into::into)
-                        .and_then(|json| std::fs::write(&file_path, json).map_err(Into::into))
-                })
+            serde_json::to_string_pretty(snapshot)
+                .map_err(Into::into)
+                .and_then(|json| repo.write_resource_file(resource_id, &json))
         })?;
 
     // Update sync state: fold channel heads into sync_state

@@ -91,16 +91,10 @@ pub async fn execute(path: PathBuf) -> Result<()> {
     // Save the resolved snapshot
     repo.save_snapshot(&resource_id, &snapshot)?;
 
-    // Write to working directory
+    // Write to working directory via VFS
     serde_json::to_string_pretty(&snapshot)
         .map_err(anyhow::Error::from)
-        .and_then(|json| {
-            std::fs::write(
-                repo.work_dir.join(format!("{}.json", resource_id)),
-                &json,
-            )
-            .map_err(anyhow::Error::from)
-        })?;
+        .and_then(|json| repo.write_resource_file(&resource_id, &json))?;
 
     // Clear conflicts
     repo.clear_conflicts(&resource_id)?;

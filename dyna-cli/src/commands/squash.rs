@@ -316,14 +316,9 @@ fn merge_two_patches(target: &Patch, child: &Patch) -> Patch {
     )
 }
 
-/// Remove a changeset file from the local store.
+/// Remove a changeset file from the local store via VFS.
 fn remove_changeset_file(repo: &Repository, change_id: &str) -> Result<()> {
-    let path = repo
-        .dyna_dir
-        .join(format!("changesets/{}.json", change_id));
-    path.exists()
-        .then(|| std::fs::remove_file(&path).map_err(Into::into))
-        .unwrap_or(Ok(()))
+    repo.remove_changeset_file(change_id)
 }
 
 /// Reparent any changesets that had `old_parent` as a parent to point to

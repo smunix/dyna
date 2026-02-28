@@ -11,6 +11,8 @@
 //! Switching is blocked if there are staged uncommitted files.
 //! On switch, the working directory is cleaned and repopulated from
 //! the target channel's committed changeset state.
+//!
+//! All filesystem I/O goes through the Repository's VFS abstraction.
 
 use anyhow::{Result, bail};
 use colored::Colorize;
@@ -66,26 +68,35 @@ pub async fn execute(
     }
 
     // --- Clean working directory ---
-    // Remove tracked files (those with a snapshot) via fold to count removals
+    // Remove tracked files (those with a snapshot) via VFS
     let snapshots = repo.load_all_snapshots()?;
     let removed = izip!(snapshots.keys())
-        .map(|resource_id| repo.work_dir.join(format!("{}.json", resource_id)))
-        .filter(|file_path| file_path.exists())
-        .try_fold(0usize, |count, file_path| {
-            std::fs::remove_file(&file_path).map(|()| count + 1).map_err(anyhow::Error::from)
+        .map(|resource_id| repo.relative_path_for_resource_id(resource_id))
+        .filter(|rel| repo.work_file_exists(rel).unwrap_or(false))
+        .try_fold(0usize, |count, rel| {
+            repo.remove_work_file(&rel).map(|()| count + 1)
         })?;
 
     (removed > 0).then(|| {
         println!("  {} tracked file(s) removed from working directory.", removed);
     });
 
-    // Clear all snapshots
-    let snapshots_dir = repo.dyna_dir.join("snapshots");
-    snapshots_dir.exists().then(|| -> Result<()> {
-        std::fs::read_dir(&snapshots_dir)?
-            .filter_map(|entry| entry.ok())
-            .try_for_each(|entry| std::fs::remove_file(entry.path()).map_err(Into::into))
-    }).transpose()?;
+    // Clear all snapshots via VFS
+    let snapshots_dir = repo.vfs_dyna.join("snapshots")?;
+    snapshots_dir.exists()
+        .map_err(anyhow::Error::from)
+        .and_then(|exists| {
+            exists
+                .then(|| {
+                    snapshots_dir
+                        .read_dir()
+                        .map_err(anyhow::Error::from)
+                        .and_then(|mut entries| {
+                            entries.try_for_each(|entry| entry.remove_file().map_err(Into::into))
+                        })
+                })
+                .unwrap_or(Ok(()))
+        })?;
 
     // --- Restore target channel state ---
     // Replay all changesets via fold to compute final resource state
@@ -108,13 +119,12 @@ pub async fn execute(
             state
         });
 
-    // Write resource files and snapshots, counting via try_fold
+    // Write resource files and snapshots via VFS, counting via try_fold
     let restored = izip!(&resource_state)
         .try_fold(0usize, |count, (resource_id, value)| -> Result<usize> {
-            let file_path = repo.work_dir.join(format!("{}.json", resource_id));
             serde_json::to_string_pretty(value)
                 .map_err(Into::into)
-                .and_then(|json| std::fs::write(&file_path, json).map_err(Into::into))
+                .and_then(|json| repo.write_resource_file(resource_id, &json))
                 .and_then(|()| repo.save_snapshot(resource_id, value))
                 .map(|()| count + 1)
         })?;
