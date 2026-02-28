@@ -4,6 +4,7 @@ members = [
     "dyna-core",
     "dyna-cli",
     "dyna-server",
+    "dyna-wasm",
 ]
 
 [workspace.package]
