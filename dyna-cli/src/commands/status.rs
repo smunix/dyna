@@ -148,17 +148,14 @@ pub async fn execute() -> Result<()> {
             !filesystem_resource_ids.contains(*resource_id)
                 && !staged_resource_ids.contains(*resource_id)
         })
-        .filter_map(|resource_id| {
-            repo.path_from_resource_id(resource_id)
-                .ok()
-                .map(|file_path| {
-                    let relative = file_path
-                        .strip_prefix(&repo.work_dir)
-                        .unwrap_or(&file_path)
-                        .display()
-                        .to_string();
-                    (resource_id.clone(), relative)
-                })
+        .map(|resource_id| {
+            let file_path = repo.path_for_resource_id(resource_id);
+            let relative = file_path
+                .strip_prefix(&repo.work_dir)
+                .unwrap_or(&file_path)
+                .display()
+                .to_string();
+            (resource_id.clone(), relative)
         })
         .collect_vec();
 

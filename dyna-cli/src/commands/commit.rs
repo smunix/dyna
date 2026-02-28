@@ -56,9 +56,17 @@ pub async fn execute(message: String) -> Result<()> {
     // Store the changeset (also stores its patches)
     repo.store_changeset(&cs)?;
 
-    // Update snapshots for each resource via try_for_each
+    // Update snapshots for each resource via try_for_each.
+    // For deletions (current is null), remove the snapshot so that status
+    // no longer considers the resource as tracked.
     izip!(&staged_changes)
-        .try_for_each(|staged| repo.save_snapshot(&staged.resource_id, &staged.current))?;
+        .try_for_each(|staged| {
+            staged
+                .current
+                .is_null()
+                .then(|| repo.remove_snapshot(&staged.resource_id))
+                .unwrap_or_else(|| repo.save_snapshot(&staged.resource_id, &staged.current))
+        })?;
 
     // Append to the channel
     repo.load_channel(&channel_name)

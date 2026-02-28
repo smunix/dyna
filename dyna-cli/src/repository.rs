@@ -525,11 +525,16 @@ impl Repository {
     ///
     /// For example, `"data.users.config"` becomes `<work_dir>/data/users/config.json`.
     ///
-    /// Also creates all intermediate directories so the file can be written
-    /// immediately.
-    pub fn path_from_resource_id(&self, resource_id: &str) -> Result<PathBuf> {
+    /// This is a pure path computation with **no filesystem side-effects**.
+    pub fn path_for_resource_id(&self, resource_id: &str) -> PathBuf {
         let relative = resource_id.replace('.', "/");
-        let file_path = self.work_dir.join(format!("{}.json", relative));
+        self.work_dir.join(format!("{}.json", relative))
+    }
+
+    /// Like [`path_for_resource_id`], but also creates all intermediate
+    /// directories so the file can be written immediately.
+    pub fn path_from_resource_id(&self, resource_id: &str) -> Result<PathBuf> {
+        let file_path = self.path_for_resource_id(resource_id);
         file_path
             .parent()
             .map(|parent| fs::create_dir_all(parent).map_err(Into::into))
