@@ -5,7 +5,7 @@
 //! patches) rather than individual patches.
 //!
 //! Commands: `init`, `clone`, `add`, `commit`, `describe`, `push`, `pull`,
-//! `status`, `diff`, `log`, `resolve`, `channel`, `promote`.
+//! `status`, `diff`, `log`, `resolve`, `restore`, `channel`, `promote`.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -41,12 +41,18 @@ pub enum Commands {
     ///
     /// Accepts a single JSON file or a directory. When a directory is given,
     /// all `.json` files within it are staged recursively.
+    ///
+    /// Use `--delete` to stage the removal of a tracked file that has been
+    /// deleted from the filesystem.
     Add {
         /// Path to a JSON file or directory to stage.
         path: PathBuf,
         /// Recursively add all `.json` files in the given directory.
         #[arg(short, long)]
         recursive: bool,
+        /// Stage the removal of a deleted tracked file.
+        #[arg(short, long)]
+        delete: bool,
     },
 
     /// Record staged changes as a new changeset.
@@ -116,6 +122,22 @@ pub enum Commands {
     Resolve {
         /// Path to the resource file with conflicts.
         path: PathBuf,
+    },
+
+    /// Restore a file to its snapshot state (analogous to `jj restore`).
+    ///
+    /// Without flags, restores from the current channel's latest snapshot.
+    /// Use `--channel` to restore from a specific channel's head, or
+    /// `--changeset` to restore from a specific changeset in any channel.
+    Restore {
+        /// Path to the file to restore.
+        path: PathBuf,
+        /// Restore from the head of a specific channel.
+        #[arg(short = 'C', long)]
+        channel: Option<String>,
+        /// Restore from a specific changeset (change_id or prefix).
+        #[arg(short = 's', long)]
+        changeset: Option<String>,
     },
 
     /// Manage channels (bookmarks into the changeset DAG).

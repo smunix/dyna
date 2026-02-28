@@ -4,17 +4,19 @@
 //! - `dyna add <file.json>` — stage a single JSON file
 //! - `dyna add <directory>` — recursively stage all `.json` files in a directory
 //! - `dyna add <directory> --recursive` — explicit recursive flag (implied for dirs)
+//! - `dyna add --delete <file.json>` — stage the removal of a tracked file that
+//!   has been deleted from the filesystem
 
 use anyhow::{Context, Result, bail};
 use colored::Colorize;
 use dyna_core::diff;
-use dyna_core::models::StagedChange;
+use dyna_core::models::{PatchOperation, StagedChange};
 use itertools::{izip, Itertools};
 use std::path::{Path, PathBuf};
 
 use crate::repository::Repository;
 
-pub async fn execute(path: PathBuf) -> Result<()> {
+pub async fn execute(path: PathBuf, delete: bool) -> Result<()> {
     let repo = Repository::find_current()?;
 
     let abs_path = path
@@ -22,11 +24,26 @@ pub async fn execute(path: PathBuf) -> Result<()> {
         .then(|| path.clone())
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(&path));
 
-    if !abs_path.exists() {
-        bail!("Path not found: {}", abs_path.display());
+    // --delete mode: stage the removal of a file that no longer exists on disk
+    if delete {
+        return stage_deletion(&repo, &abs_path, &path);
     }
 
-    if abs_path.is_dir() {
+    if !abs_path.exists() {
+        // If the file doesn't exist, check whether it's a tracked resource that
+        // was deleted — suggest using --delete.
+        let resource_id = repo.resource_id_from_path(&abs_path);
+        repo.load_snapshot(&resource_id)?
+            .map(|_| {
+                bail!(
+                    "File '{}' has been deleted from disk.\n\
+                     Use 'dyna add --delete {}' to stage the removal.",
+                    path.display(),
+                    path.display()
+                )
+            })
+            .unwrap_or_else(|| bail!("Path not found: {}", abs_path.display()))
+    } else if abs_path.is_dir() {
         let json_files = collect_json_files_recursive(&abs_path, &repo.dyna_dir)?;
 
         if json_files.is_empty() {
@@ -64,9 +81,60 @@ pub async fn execute(path: PathBuf) -> Result<()> {
             "Summary: {} staged, {} unchanged, {} error(s)",
             staged_count, skipped_count, error_count
         );
+        Ok(())
     } else {
-        stage_single_file_verbose(&repo, &abs_path, &path)?;
+        stage_single_file_verbose(&repo, &abs_path, &path)
     }
+}
+
+/// Stage the removal of a tracked file that has been deleted from the
+/// filesystem. Creates a `StagedChange` with a `null` current value and a
+/// single `Remove` operation at the root path.
+fn stage_deletion(repo: &Repository, abs_path: &Path, display_path: &Path) -> Result<()> {
+    let resource_id = repo.resource_id_from_path(abs_path);
+
+    let previous = repo
+        .load_snapshot(&resource_id)?
+        .ok_or_else(|| anyhow::anyhow!(
+            "Cannot stage deletion: '{}' is not tracked (no snapshot found for resource '{}')",
+            display_path.display(),
+            resource_id
+        ))?;
+
+    // If the file still exists on disk, warn the user
+    if abs_path.exists() {
+        bail!(
+            "File '{}' still exists on disk. Delete it first, or use 'dyna add {}' to stage modifications.",
+            display_path.display(),
+            display_path.display()
+        );
+    }
+
+    let operations = vec![PatchOperation::Remove {
+        path: "/".to_string(),
+    }];
+
+    let relative_path = abs_path
+        .strip_prefix(&repo.work_dir)
+        .unwrap_or(abs_path)
+        .display()
+        .to_string();
+
+    let staged = StagedChange {
+        resource_id: resource_id.clone(),
+        file_path: relative_path.clone(),
+        previous: Some(previous),
+        current: serde_json::Value::Null,
+        operations,
+    };
+
+    repo.stage_change(&staged)?;
+
+    println!(
+        "Staged deletion: {} (resource: {})",
+        relative_path.red(),
+        resource_id
+    );
 
     Ok(())
 }
@@ -84,7 +152,7 @@ fn stage_single_file_verbose(repo: &Repository, abs_path: &Path, display_path: &
         .as_ref()
         .map(|prev| diff::diff(prev, &current))
         .unwrap_or_else(|| {
-            vec![dyna_core::models::PatchOperation::Add {
+            vec![PatchOperation::Add {
                 path: "/".to_string(),
                 value: current.clone(),
             }]
@@ -126,7 +194,7 @@ fn stage_single_file(repo: &Repository, abs_path: &Path) -> Result<bool> {
         .as_ref()
         .map(|prev| diff::diff(prev, &current))
         .unwrap_or_else(|| {
-            vec![dyna_core::models::PatchOperation::Add {
+            vec![PatchOperation::Add {
                 path: "/".to_string(),
                 value: current.clone(),
             }]

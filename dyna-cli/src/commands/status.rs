@@ -3,8 +3,9 @@
 //! Shows:
 //! - Current channel, working changeset, and HEAD info
 //! - Remote sync status
-//! - Staged changes
+//! - Staged changes (including deletions)
 //! - Non-staged (untracked or modified) JSON files in the working directory
+//! - Deleted tracked files (snapshots whose filesystem files are missing)
 //! - Unresolved conflicts
 
 use anyhow::Result;
@@ -85,9 +86,16 @@ pub async fn execute() -> Result<()> {
             izip!(&staged).for_each(|change| {
                 let status = change
                     .previous
-                    .is_none()
-                    .then(|| "new     ".green())
-                    .unwrap_or_else(|| "modified".yellow());
+                    .as_ref()
+                    .map(|_| {
+                        // If current is null, this is a deletion; otherwise a modification
+                        change
+                            .current
+                            .is_null()
+                            .then(|| "deleted ".red())
+                            .unwrap_or_else(|| "modified".yellow())
+                    })
+                    .unwrap_or_else(|| "new     ".green());
                 println!("  {} {} ({} ops)", status, change.file_path, change.operations.len());
             });
         });
@@ -95,6 +103,14 @@ pub async fn execute() -> Result<()> {
     // Non-staged files — partition into modified and untracked via fold
     let json_files = find_json_files(&repo.work_dir, &repo.dyna_dir)?;
     let snapshots = repo.load_all_snapshots()?;
+
+    // Collect all filesystem resource IDs for later deletion detection
+    let filesystem_resource_ids: HashSet<String> = izip!(&json_files)
+        .map(|json_path| {
+            let abs_path = repo.work_dir.join(json_path);
+            repo.resource_id_from_path(&abs_path)
+        })
+        .collect();
 
     let (modified_unstaged, untracked): (Vec<String>, Vec<String>) = izip!(json_files)
         .filter(|json_path| {
@@ -125,6 +141,27 @@ pub async fn execute() -> Result<()> {
             },
         );
 
+    // Detect deleted tracked files: snapshots whose resource IDs have no
+    // corresponding file on the filesystem and are not already staged.
+    let deleted_tracked: Vec<(String, String)> = izip!(snapshots.keys().sorted())
+        .filter(|resource_id| {
+            !filesystem_resource_ids.contains(*resource_id)
+                && !staged_resource_ids.contains(*resource_id)
+        })
+        .filter_map(|resource_id| {
+            repo.path_from_resource_id(resource_id)
+                .ok()
+                .map(|file_path| {
+                    let relative = file_path
+                        .strip_prefix(&repo.work_dir)
+                        .unwrap_or(&file_path)
+                        .display()
+                        .to_string();
+                    (resource_id.clone(), relative)
+                })
+        })
+        .collect_vec();
+
     (!modified_unstaged.is_empty()).then(|| {
         println!(
             "\n{} (use \"dyna add <file>\" to stage):",
@@ -132,6 +169,15 @@ pub async fn execute() -> Result<()> {
         );
         izip!(&modified_unstaged)
             .for_each(|path| println!("  {} {}", "modified".yellow(), path));
+    });
+
+    (!deleted_tracked.is_empty()).then(|| {
+        println!(
+            "\n{} (use \"dyna add --delete <file>\" to stage removal, or \"dyna restore <file>\" to recover):",
+            "Deleted tracked files".red().bold()
+        );
+        izip!(&deleted_tracked)
+            .for_each(|(_, path)| println!("  {} {}", "deleted ".red(), path));
     });
 
     (!untracked.is_empty()).then(|| {
@@ -143,8 +189,11 @@ pub async fn execute() -> Result<()> {
             .for_each(|path| println!("  {} {}", "untracked".red(), path));
     });
 
-    (modified_unstaged.is_empty() && untracked.is_empty() && staged.is_empty())
-        .then(|| println!("\n{}", "Working directory clean.".green()));
+    (modified_unstaged.is_empty()
+        && untracked.is_empty()
+        && staged.is_empty()
+        && deleted_tracked.is_empty())
+    .then(|| println!("\n{}", "Working directory clean.".green()));
 
     // Conflicts
     let conflicted = repo.list_conflicted_resources()?;
@@ -167,7 +216,11 @@ pub async fn execute() -> Result<()> {
         Ok(())
     }).transpose()?;
 
-    (channel.changesets.is_empty() && staged.is_empty() && untracked.is_empty()).then(|| {
+    (channel.changesets.is_empty()
+        && staged.is_empty()
+        && untracked.is_empty()
+        && deleted_tracked.is_empty())
+    .then(|| {
         println!(
             "\n{}",
             "Hint: Place .json files in this directory, then use 'dyna add <file>' to stage them."

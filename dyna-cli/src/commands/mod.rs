@@ -10,6 +10,7 @@
 //! - [`status`], [`log`], [`diff`]: Inspection and history.
 //! - [`channel`]: Channel (bookmark) management.
 //! - [`resolve`]: Interactive conflict resolution.
+//! - [`restore`]: Revert files to snapshot state from channels or changesets.
 
 pub mod init;
 pub mod clone;
@@ -20,6 +21,7 @@ pub mod pull;
 pub mod status;
 pub mod log;
 pub mod resolve;
+pub mod restore;
 pub mod channel;
 pub mod diff;
 pub mod promote;

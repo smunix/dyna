@@ -27,7 +27,11 @@ async fn main() -> anyhow::Result<()> {
     let result = match cli.command {
         Commands::Init => commands::init::execute().await,
         Commands::Clone { url, directory } => commands::clone::execute(url, directory).await,
-        Commands::Add { path, recursive: _ } => commands::add::execute(path).await,
+        Commands::Add {
+            path,
+            recursive: _,
+            delete,
+        } => commands::add::execute(path, delete).await,
         Commands::Commit { message } => commands::commit::execute(message).await,
         Commands::Push { channel } => commands::push::execute(channel).await,
         Commands::Pull { channel } => commands::pull::execute(channel).await,
@@ -40,6 +44,11 @@ async fn main() -> anyhow::Result<()> {
             patches,
         } => commands::log::execute(count, verbose, changeset, patches).await,
         Commands::Resolve { path } => commands::resolve::execute(path).await,
+        Commands::Restore {
+            path,
+            channel,
+            changeset,
+        } => commands::restore::execute(path, channel, changeset).await,
         Commands::Channel {
             name,
             create,
