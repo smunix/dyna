@@ -18,7 +18,7 @@
 //! `tokio::sync::oneshot`.
 
 use axum::{
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -231,6 +231,14 @@ async fn dispatch_request(ctx: &Context, request: ApiRequest) {
     }
 }
 
+/// Maximum request body size: 256 MiB.
+///
+/// Axum's default body limit is 2 MiB, which is too small for push requests
+/// that contain large JSON resources with embedded snapshots. We raise it to
+/// 256 MiB to accommodate bulk pushes. This can be overridden per-route if
+/// needed via `DefaultBodyLimit::max()` on individual route layers.
+const MAX_BODY_SIZE: usize = 256 * 1024 * 1024;
+
 /// Build the axum router with all API routes.
 fn build_router(state: AppState) -> Router {
     Router::new()
@@ -242,6 +250,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/v1/channels", get(list_channels_handler))
         .route("/api/v1/channels", post(create_channel_handler))
         .route("/api/v1/changesets/:change_id", get(get_changeset_handler))
+        .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
         .with_state(state)
 }
 
