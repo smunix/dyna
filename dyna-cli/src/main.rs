@@ -57,6 +57,11 @@ async fn main() -> anyhow::Result<()> {
             local,
         } => commands::channel::execute(name, create, list, remote, local).await,
         Commands::Promote => commands::promote::execute().await,
+        Commands::Squash {
+            revision,
+            into,
+            message,
+        } => commands::squash::execute(revision, into, message).await,
         Commands::Describe { change_id, message } => {
             commands::describe::execute(change_id, message).await
         }

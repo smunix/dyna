@@ -5,7 +5,7 @@
 //! primary unit of work:
 //!
 //! - [`init`], [`clone`]: Repository lifecycle.
-//! - [`add`], [`commit`], [`describe`]: Staging and changeset creation.
+//! - [`add`], [`commit`], [`describe`], [`squash`]: Staging and changeset creation.
 //! - [`push`], [`pull`], [`promote`]: Remote synchronization.
 //! - [`status`], [`log`], [`diff`]: Inspection and history.
 //! - [`channel`]: Channel (bookmark) management.
@@ -25,4 +25,5 @@ pub mod restore;
 pub mod channel;
 pub mod diff;
 pub mod promote;
+pub mod squash;
 pub mod describe;

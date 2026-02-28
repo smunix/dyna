@@ -4,8 +4,8 @@
 //! set inspired by Jujutsu. Commands operate on **changesets** (groups of
 //! patches) rather than individual patches.
 //!
-//! Commands: `init`, `clone`, `add`, `commit`, `describe`, `push`, `pull`,
-//! `status`, `diff`, `log`, `resolve`, `restore`, `channel`, `promote`.
+//! Commands: `init`, `clone`, `add`, `commit`, `describe`, `squash`, `push`,
+//! `pull`, `status`, `diff`, `log`, `resolve`, `restore`, `channel`, `promote`.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -170,6 +170,30 @@ pub enum Commands {
     ///
     /// Promoted changesets are marked as immutable.
     Promote,
+
+    /// Squash a changeset into its parent (analogous to `jj squash`).
+    ///
+    /// Merges the child changeset's patches into the parent: patches targeting
+    /// the same resource are combined (parent_snapshot from target, result_snapshot
+    /// from child, operations recomputed); patches targeting new resources are
+    /// appended. The child changeset is then removed from the channel history.
+    ///
+    /// Without flags, squashes the working changeset (or channel head) into its
+    /// parent. Use `--revision` to pick a specific changeset, `--into` to squash
+    /// into a non-parent ancestor, and `--message` to override the resulting
+    /// message.
+    Squash {
+        /// The changeset to squash (change_id or prefix). Defaults to working
+        /// changeset or channel head.
+        #[arg(short, long)]
+        revision: Option<String>,
+        /// Squash into this changeset instead of the immediate parent.
+        #[arg(short, long)]
+        into: Option<String>,
+        /// Override the resulting changeset's message.
+        #[arg(short, long)]
+        message: Option<String>,
+    },
 
     /// Describe (amend the message of) a changeset.
     ///
