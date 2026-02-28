@@ -2,8 +2,9 @@
 //!
 //! Manages channels (bookmarks into the changeset DAG).
 //!
-//! - `dyna channel --list` — list local channels with changeset counts
-//! - `dyna channel --list --remote` — also show remote channels
+//! - `dyna channel --list` — list all channels (local + remote)
+//! - `dyna channel --list --local` — list only local channels
+//! - `dyna channel --list --remote` — list only remote channels
 //! - `dyna channel <name>` — switch to a channel
 //! - `dyna channel <name> --create` — create and switch
 //!
@@ -25,11 +26,12 @@ pub async fn execute(
     create: bool,
     list: bool,
     remote: bool,
+    local: bool,
 ) -> Result<()> {
     let repo = Repository::find_current()?;
 
     if list {
-        return list_channels(&repo, remote).await;
+        return list_channels(&repo, remote, local).await;
     }
 
     let name = name.ok_or_else(|| {
@@ -141,38 +143,49 @@ pub async fn execute(
     Ok(())
 }
 
-/// List local channels (and optionally remote channels).
-async fn list_channels(repo: &Repository, include_remote: bool) -> Result<()> {
+/// List channels with filtering: `--local` for local only, `--remote` for
+/// remote only, or both/neither to show all.
+async fn list_channels(repo: &Repository, remote_only: bool, local_only: bool) -> Result<()> {
     let current = repo.current_channel_name()?;
     let local_channels = repo.list_channels()?;
 
-    println!("{}", "Local channels:".bold());
-    izip!(&local_channels).for_each(|ch| {
-        let marker = (ch.name == current).then(|| "* ").unwrap_or("  ");
-        let head_str = ch
-            .head_change_id
-            .as_deref()
-            .map(|id| &id[..std::cmp::min(id.len(), 8)])
-            .unwrap_or("(empty)");
+    let show_local = !remote_only;
+    let show_remote = !local_only;
 
-        let name_display = (ch.name == current)
-            .then(|| ch.name.green().bold().to_string())
-            .unwrap_or_else(|| ch.name.clone());
+    // --- Local channels ---
+    show_local.then(|| {
+        println!("{}", "Local channels:".bold());
+        izip!(&local_channels).for_each(|ch| {
+            let marker = (ch.name == current).then(|| "* ").unwrap_or("  ");
+            let head_str = ch
+                .head_change_id
+                .as_deref()
+                .map(|id| &id[..std::cmp::min(id.len(), 8)])
+                .unwrap_or("(empty)");
 
-        println!(
-            "{}{} ({} changesets, HEAD: {})",
-            marker, name_display, ch.changesets.len(), head_str
-        );
+            let name_display = (ch.name == current)
+                .then(|| ch.name.green().bold().to_string())
+                .unwrap_or_else(|| ch.name.clone());
+
+            println!(
+                "{}{} ({} changesets, HEAD: {})",
+                marker, name_display, ch.changesets.len(), head_str
+            );
+        });
     });
 
-    if include_remote {
+    // --- Remote channels ---
+    if show_remote {
         let config = repo.load_config()?;
         match config.remote_url.as_ref() {
             Some(url) => {
                 let client = SyncClient::new(url);
                 match client.list_channels().await {
                     Ok(response) => {
-                        println!("\n{}", "Remote channels:".bold());
+                        // Add separator if we also showed local
+                        show_local.then(|| println!());
+
+                        println!("{}", "Remote channels:".bold());
                         let local_names: HashSet<String> =
                             izip!(&local_channels).map(|c| c.name.clone()).collect();
 
@@ -188,8 +201,8 @@ async fn list_channels(repo: &Repository, include_remote: bool) -> Result<()> {
                                 .then(|| {
                                     izip!(&local_channels)
                                         .find(|c| c.name == rch.name)
-                                        .and_then(|local| {
-                                            (local.head_change_id == rch.head_change_id)
+                                        .and_then(|local_ch| {
+                                            (local_ch.head_change_id == rch.head_change_id)
                                                 .then(|| "synced".green().to_string())
                                         })
                                         .unwrap_or_else(|| "diverged".yellow().to_string())
@@ -202,19 +215,21 @@ async fn list_channels(repo: &Repository, include_remote: bool) -> Result<()> {
                             );
                         });
 
-                        // Show local-only channels
-                        let remote_names: HashSet<String> =
-                            izip!(&response.channels).map(|c| c.name.clone()).collect();
-                        izip!(&local_channels)
-                            .filter(|lch| !remote_names.contains(&lch.name))
-                            .for_each(|lch| {
-                                println!(
-                                    "  {} ({} changesets) [{}]",
-                                    lch.name,
-                                    lch.changesets.len(),
-                                    "local only".blue()
-                                );
-                            });
+                        // Show local-only channels (when showing both)
+                        show_local.then(|| {
+                            let remote_names: HashSet<String> =
+                                izip!(&response.channels).map(|c| c.name.clone()).collect();
+                            izip!(&local_channels)
+                                .filter(|lch| !remote_names.contains(&lch.name))
+                                .for_each(|lch| {
+                                    println!(
+                                        "  {} ({} changesets) [{}]",
+                                        lch.name,
+                                        lch.changesets.len(),
+                                        "local only".blue()
+                                    );
+                                });
+                        });
                     }
                     Err(e) => {
                         println!(

@@ -61,10 +61,22 @@ pub enum Commands {
     },
 
     /// Push local changesets to the remote server.
-    Push,
+    ///
+    /// Defaults to the current channel if no channel name is given.
+    Push {
+        /// Optional: the channel to push (defaults to current channel).
+        #[arg(short, long)]
+        channel: Option<String>,
+    },
 
     /// Fetch and merge remote changesets into the local state.
-    Pull,
+    ///
+    /// Defaults to the current channel if no channel name is given.
+    Pull {
+        /// Optional: the channel to pull (defaults to current channel).
+        #[arg(short, long)]
+        channel: Option<String>,
+    },
 
     /// Show the working directory and staging area status.
     Status,
@@ -120,9 +132,12 @@ pub enum Commands {
         /// List all channels instead of switching.
         #[arg(short, long)]
         list: bool,
-        /// When used with --list, also fetch and display remote channels.
+        /// When used with --list, show only remote channels.
         #[arg(short, long)]
         remote: bool,
+        /// When used with --list, show only local channels.
+        #[arg(long)]
+        local: bool,
     },
 
     /// Promote changesets from the current channel to the main channel.

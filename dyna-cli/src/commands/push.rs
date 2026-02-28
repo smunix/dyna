@@ -1,6 +1,7 @@
 //! `dyna push` command implementation.
 //!
 //! Pushes local changesets to the remote server.
+//! Accepts an optional `--channel` argument; defaults to the current channel.
 
 use anyhow::Result;
 use dyna_core::protocol::PushRequest;
@@ -9,7 +10,7 @@ use itertools::{izip, Itertools};
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;
 
-pub async fn execute() -> Result<()> {
+pub async fn execute(channel: Option<String>) -> Result<()> {
     let repo = Repository::find_current()?;
     let config = repo.load_config()?;
 
@@ -18,8 +19,11 @@ pub async fn execute() -> Result<()> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No remote URL configured. Set 'remote_url' in .dyna/config.toml"))?;
 
-    let channel_name = repo.current_channel_name()?;
-    let channel = repo.load_channel(&channel_name)?;
+    let channel_name = channel
+        .map(Ok)
+        .unwrap_or_else(|| repo.current_channel_name())?;
+
+    let channel_data = repo.load_channel(&channel_name)?;
 
     let sync_state = repo.load_sync_state()?;
     let remote_head = sync_state.remote_heads.get(&channel_name).cloned();
@@ -28,13 +32,13 @@ pub async fn execute() -> Result<()> {
     let unpushed_ids: Vec<String> = remote_head
         .as_ref()
         .map(|head| {
-            izip!(&channel.changesets)
+            izip!(&channel_data.changesets)
                 .skip_while(|id| *id != head)
                 .skip(1) // skip the head itself
                 .cloned()
                 .collect_vec()
         })
-        .unwrap_or_else(|| channel.changesets.clone());
+        .unwrap_or_else(|| channel_data.changesets.clone());
 
     if unpushed_ids.is_empty() {
         println!("Everything up-to-date on channel '{}'.", channel_name);

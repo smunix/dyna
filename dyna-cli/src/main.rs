@@ -29,8 +29,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Clone { url, directory } => commands::clone::execute(url, directory).await,
         Commands::Add { path, recursive: _ } => commands::add::execute(path).await,
         Commands::Commit { message } => commands::commit::execute(message).await,
-        Commands::Push => commands::push::execute().await,
-        Commands::Pull => commands::pull::execute().await,
+        Commands::Push { channel } => commands::push::execute(channel).await,
+        Commands::Pull { channel } => commands::pull::execute(channel).await,
         Commands::Status => commands::status::execute().await,
         Commands::Diff { path } => commands::diff::execute(path).await,
         Commands::Log {
@@ -45,7 +45,8 @@ async fn main() -> anyhow::Result<()> {
             create,
             list,
             remote,
-        } => commands::channel::execute(name, create, list, remote).await,
+            local,
+        } => commands::channel::execute(name, create, list, remote, local).await,
         Commands::Promote => commands::promote::execute().await,
         Commands::Describe { change_id, message } => {
             commands::describe::execute(change_id, message).await

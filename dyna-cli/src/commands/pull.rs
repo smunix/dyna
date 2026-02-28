@@ -1,6 +1,7 @@
 //! `dyna pull` command implementation.
 //!
 //! Fetches remote changesets and merges them into the local state.
+//! Accepts an optional `--channel` argument; defaults to the current channel.
 
 use anyhow::Result;
 use dyna_core::diff;
@@ -10,7 +11,7 @@ use itertools::izip;
 use crate::repository::Repository;
 use crate::sync_client::SyncClient;
 
-pub async fn execute() -> Result<()> {
+pub async fn execute(channel: Option<String>) -> Result<()> {
     let repo = Repository::find_current()?;
     let config = repo.load_config()?;
 
@@ -19,7 +20,10 @@ pub async fn execute() -> Result<()> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No remote URL configured. Set 'remote_url' in .dyna/config.toml"))?;
 
-    let channel_name = repo.current_channel_name()?;
+    let channel_name = channel
+        .map(Ok)
+        .unwrap_or_else(|| repo.current_channel_name())?;
+
     let sync_state = repo.load_sync_state()?;
     let local_remote_head = sync_state.remote_heads.get(&channel_name).cloned();
 
@@ -40,7 +44,7 @@ pub async fn execute() -> Result<()> {
 
     println!("Fetched {} new changeset(s).", response.changesets.len());
 
-    let mut channel = repo.load_channel(&channel_name)?;
+    let mut channel_data = repo.load_channel(&channel_name)?;
 
     // Process each changeset, accumulating whether conflicts were found via fold
     let conflicts_found = izip!(&response.changesets)
@@ -113,14 +117,14 @@ pub async fn execute() -> Result<()> {
                 })?;
 
             // Append changeset to channel if not already present
-            (!channel.changesets.contains(&cs.change_id))
-                .then(|| channel.append_changeset(cs.change_id.clone()));
+            (!channel_data.changesets.contains(&cs.change_id))
+                .then(|| channel_data.append_changeset(cs.change_id.clone()));
 
             Ok(has_conflicts || changeset_has_conflicts)
         })?;
 
     // Save updated channel
-    repo.save_channel(&channel)?;
+    repo.save_channel(&channel_data)?;
 
     // Update sync state
     response
