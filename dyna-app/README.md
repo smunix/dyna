@@ -1,8 +1,8 @@
-# dyna-elm
+# dyna-app
 
 **Browser-based collaborative JSON editor for the Dyna distributed CRUD system.**
 
-`dyna-elm` is an [Elm](https://elm-lang.org/) application that uses `dyna-wasm` (via JavaScript ports) to provide a full-featured UI for editing, versioning, and collaborating on JSON resources.
+`dyna-app` is an [Elm](https://elm-lang.org/) application that uses `dyna-wasm` (via JavaScript ports) to provide a full-featured UI for editing, versioning, and collaborating on JSON resources.
 
 ## Features
 
@@ -91,10 +91,10 @@ The Elm app communicates with `dyna-wasm` through ports defined in `src/Ports.el
 cd .. && wasm-pack build dyna-wasm --target web --out-dir ../pkg
 
 # 2. Copy WASM artifacts into the Elm public directory
-cp -r ../pkg dyna-elm/public/pkg/
+cp -r ../pkg dyna-app/public/pkg/
 
 # 3. Compile the Elm application
-cd dyna-elm && elm make src/Main.elm --output=public/elm.js
+cd dyna-app && elm make src/Main.elm --output=public/elm.js
 
 # 4. Serve the public/ directory
 # Use any static file server, e.g.:
@@ -127,7 +127,7 @@ elm make src/Main.elm --output=public/elm.js --optimize
 ## File Structure
 
 ```
-dyna-elm/
+dyna-app/
 ├── elm.json              # Elm project configuration
 ├── public/
 │   ├── index.html        # HTML shell with WASM glue JS

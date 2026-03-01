@@ -3,8 +3,8 @@
 *.pdb
 .dyna/
 .env
-dyna-elm/elm-stuff/
-dyna-elm/public/elm.js
+dyna-app/elm-stuff/
+dyna-app/public/elm.js
 
 # Nix
 result

@@ -132,10 +132,10 @@
           };
 
           # ── Elm package ────────────────────────────────────────────────
-          dyna-elm = pkgs.stdenv.mkDerivation {
-            pname = "dyna-elm";
+          dyna-app = pkgs.stdenv.mkDerivation {
+            pname = "dyna-app";
             version = "0.1.0";
-            src = ./dyna-elm;
+            src = ./dyna-app;
             nativeBuildInputs = [ pkgs.elmPackages.elm ];
 
             # Elm needs a writable home for its cache
@@ -171,34 +171,34 @@
             };
           };
 
-          dyna-elm-image = pkgs.dockerTools.buildLayeredImage {
-            name = "dyna-elm";
+          dyna-app-image = pkgs.dockerTools.buildLayeredImage {
+            name = "dyna-app";
             tag = "latest";
-            contents = [ dyna-elm pkgs.static-web-server ];
+            contents = [ dyna-app pkgs.static-web-server ];
             config = {
               Cmd = [
                 "${pkgs.static-web-server}/bin/static-web-server"
-                "--root" "${dyna-elm}"
+                "--root" "${dyna-app}"
                 "--port" "8080"
               ];
               ExposedPorts = { "8080/tcp" = {}; };
             };
           };
 
-          # ── dyna-elm-serve script ─────────────────────────────────
+          # ── dyna-app-serve script ─────────────────────────────────
           #
           # A convenience wrapper that builds the Elm app (if needed),
           # bundles the WASM package, and serves the result locally.
-          dyna-elm-serve = pkgs.writeShellScriptBin "dyna-elm-serve" ''
+          dyna-app-serve = pkgs.writeShellScriptBin "dyna-app-serve" ''
             set -euo pipefail
 
             PORT="''${1:-8080}"
             SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-            # Locate the dyna-elm source directory
-            ELM_SRC="''${DYNA_ELM_SRC:-$(pwd)/dyna-elm}"
+            # Locate the dyna-app source directory
+            ELM_SRC="''${DYNA_ELM_SRC:-$(pwd)/dyna-app}"
             if [ ! -f "$ELM_SRC/elm.json" ]; then
-              echo "Error: Cannot find dyna-elm/elm.json"
+              echo "Error: Cannot find dyna-app/elm.json"
               echo "Run this from the workspace root, or set DYNA_ELM_SRC."
               exit 1
             fi
@@ -220,7 +220,7 @@
 
             # Serve the Elm app
             echo ""
-            echo "  Serving dyna-elm on http://localhost:$PORT"
+            echo "  Serving dyna-app on http://localhost:$PORT"
             echo "  Press Ctrl+C to stop."
             echo ""
             ${pkgs.python3}/bin/python3 -m http.server "$PORT" --directory "$ELM_SRC/public"
@@ -230,7 +230,7 @@
         {
           # ── Checks ───────────────────────────────────────────────────
           checks = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-elm;
+            inherit dyna-cli dyna-server dyna-wasm dyna-app;
 
             dyna-workspace-clippy = craneLib.cargoClippy (commonArgs // {
               inherit cargoArtifacts;
@@ -250,8 +250,8 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-elm dyna-elm-serve;
-            inherit dyna-server-image dyna-elm-image;
+            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-app-serve;
+            inherit dyna-server-image dyna-app-image;
             default = dyna-cli;
           };
 
@@ -265,9 +265,9 @@
               type = "app";
               program = "${dyna-server}/bin/dyna-server";
             };
-            dyna-elm-serve = {
+            dyna-app-serve = {
               type = "app";
-              program = "${dyna-elm-serve}/bin/dyna-elm-serve";
+              program = "${dyna-app-serve}/bin/dyna-app-serve";
             };
             default = {
               type = "app";
@@ -301,7 +301,7 @@
               # Pre-built Dyna binaries on PATH
               dyna-cli
               dyna-server
-              dyna-elm-serve
+              dyna-app-serve
 
               # WASM tooling
               pkgs.wasm-pack
@@ -331,7 +331,7 @@
               echo "  ║  Pre-built binaries (on PATH):                           ║"
               echo "  ║    dyna             — CLI client                         ║"
               echo "  ║    dyna-server      — start the server                   ║"
-              echo "  ║    dyna-elm-serve   — build & serve the Elm UI           ║"
+              echo "  ║    dyna-app-serve   — build & serve the Elm UI           ║"
               echo "  ║                                                          ║"
               echo "  ║  Development commands:                                   ║"
               echo "  ║    cargo build      — build native crates from source    ║"
