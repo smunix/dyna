@@ -15,6 +15,7 @@
 
 mod actors;
 mod messages;
+mod ws;
 
 use elfo::config::AnyConfig;
 use std::sync::Arc;

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dyna — Collaborative JSON Editor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="elm-root"></div>
+
+    <!-- Elm application -->
+    <script src="elm.js"></script>
+
+    <!-- dyna-wasm bindings -->
+    <script type="module">
+        import init, { DynaClient } from './pkg/dyna_wasm.js';
+
+        async function boot() {
+            // Initialise WASM
+            await init();
+
+            // Create the Dyna client
+            const client = new DynaClient();
+
+            // Start Elm app
+            const app = Elm.Main.init({
+                node: document.getElementById('elm-root'),
+                flags: {
+                    serverUrl: window.DYNA_SERVER_URL || 'http://localhost:8080'
+                }
+            });
+
+            // ------------------------------------------------------------------
+            // Elm → JS ports (commands)
+            // ------------------------------------------------------------------
+
+            app.ports.initRepo.subscribe(function(url) {
+                try {
+                    client.init_repo(url);
+                    app.ports.onInitResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onInitResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.cloneRepo.subscribe(async function(url) {
+                try {
+                    await client.clone_repo(url);
+                    app.ports.onCloneResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onCloneResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.writeFile.subscribe(function(args) {
+                try {
+                    client.write_file(args.path, args.content);
+                    app.ports.onWriteResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onWriteResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.readFile.subscribe(function(resourceId) {
+                try {
+                    const path = resourceId.replace(/\./g, '/') + '.json';
+                    const content = client.read_file(path);
+                    app.ports.onReadResult.send({ resourceId: resourceId, content: content, error: null });
+                } catch (e) {
+                    app.ports.onReadResult.send({ resourceId: resourceId, content: null, error: e.message });
+                }
+            });
+
+            app.ports.deleteFile.subscribe(function(resourceId) {
+                try {
+                    const path = resourceId.replace(/\./g, '/') + '.json';
+                    client.delete_file(path);
+                    app.ports.onDeleteResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onDeleteResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.addFile.subscribe(function(resourceId) {
+                try {
+                    const path = resourceId.replace(/\./g, '/') + '.json';
+                    client.add(path);
+                    app.ports.onAddResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onAddResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.addDelete.subscribe(function(resourceId) {
+                try {
+                    const path = resourceId.replace(/\./g, '/') + '.json';
+                    client.add_delete(path);
+                    app.ports.onAddResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onAddResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.requestStatus.subscribe(function(_) {
+                try {
+                    const status = JSON.parse(client.status());
+                    app.ports.onStatusResult.send(status);
+                } catch (e) {
+                    app.ports.onStatusResult.send({
+                        channel: 'unknown',
+                        staged: [],
+                        modified: [],
+                        deleted: [],
+                        unstaged_on_staged: [],
+                        conflicts: []
+                    });
+                }
+            });
+
+            app.ports.commitChanges.subscribe(function(message) {
+                try {
+                    const changeId = client.commit(message);
+                    app.ports.onCommitResult.send({ success: true, changeId: changeId, error: null });
+                } catch (e) {
+                    app.ports.onCommitResult.send({ success: false, changeId: null, error: e.message });
+                }
+            });
+
+            app.ports.pushChanges.subscribe(async function(_) {
+                try {
+                    await client.push();
+                    app.ports.onPushResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onPushResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.promoteChanges.subscribe(async function(channel) {
+                try {
+                    await client.promote(channel || undefined);
+                    app.ports.onPromoteResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onPromoteResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.requestChannels.subscribe(function(_) {
+                try {
+                    const channels = JSON.parse(client.channels());
+                    app.ports.onChannelsResult.send(channels);
+                } catch (e) {
+                    app.ports.onChannelsResult.send([]);
+                }
+            });
+
+            app.ports.createChannel.subscribe(function(name) {
+                try {
+                    client.create_channel(name);
+                    app.ports.onCreateChannelResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onCreateChannelResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.switchChannel.subscribe(function(name) {
+                try {
+                    client.switch_channel(name);
+                    app.ports.onSwitchChannelResult.send({ success: true, error: null });
+                } catch (e) {
+                    app.ports.onSwitchChannelResult.send({ success: false, error: e.message });
+                }
+            });
+
+            app.ports.requestLog.subscribe(function(limit) {
+                try {
+                    const log = JSON.parse(client.log(limit || undefined));
+                    app.ports.onLogResult.send(log);
+                } catch (e) {
+                    app.ports.onLogResult.send([]);
+                }
+            });
+
+            app.ports.requestHistory.subscribe(async function(resourceId) {
+                try {
+                    const history = JSON.parse(await client.resource_history(resourceId));
+                    app.ports.onHistoryResult.send(history);
+                } catch (e) {
+                    app.ports.onHistoryResult.send({ resource_id: resourceId, entries: [], error: e.message });
+                }
+            });
+
+            app.ports.listFiles.subscribe(function(_) {
+                try {
+                    const files = JSON.parse(client.list_files());
+                    app.ports.onListFilesResult.send(files);
+                } catch (e) {
+                    app.ports.onListFilesResult.send([]);
+                }
+            });
+
+            app.ports.listSnapshots.subscribe(function(_) {
+                try {
+                    const snapshots = JSON.parse(client.list_snapshots());
+                    app.ports.onListSnapshotsResult.send(snapshots);
+                } catch (e) {
+                    app.ports.onListSnapshotsResult.send([]);
+                }
+            });
+
+            // ------------------------------------------------------------------
+            // WebSocket notifications
+            // ------------------------------------------------------------------
+            let ws = null;
+            app.ports.connectNotifications.subscribe(function(_) {
+                try {
+                    ws = client.subscribe_notifications(function(json) {
+                        app.ports.onNotification.send(json);
+                    });
+                } catch (e) {
+                    console.error('WebSocket connect failed:', e);
+                }
+            });
+
+            app.ports.disconnectNotifications.subscribe(function(_) {
+                if (ws) {
+                    ws.close();
+                    ws = null;
+                }
+            });
+        }
+
+        boot().catch(console.error);
+    </script>
+</body>
+</html>

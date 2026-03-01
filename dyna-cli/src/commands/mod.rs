@@ -27,3 +27,4 @@ pub mod diff;
 pub mod promote;
 pub mod squash;
 pub mod describe;
+pub mod history;

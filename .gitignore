@@ -3,3 +3,5 @@
 *.pdb
 .dyna/
 .env
+dyna-elm/elm-stuff/
+dyna-elm/public/elm.js

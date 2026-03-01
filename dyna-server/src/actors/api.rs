@@ -1,7 +1,7 @@
-//! API Actor — HTTP bridge between CLI clients and the elfo actor system.
+//! API Actor — HTTP bridge between axum and the elfo actor system.
 //!
 //! This actor bridges the HTTP layer (axum) with the elfo message-passing
-//! system. It exposes the following REST endpoints:
+//! system. It exposes the following REST + WebSocket endpoints:
 //!
 //! | Method | Path | Description |
 //! |--------|------|-------------|
@@ -12,6 +12,8 @@
 //! | `POST` | `/api/v1/channels` | Create a new channel |
 //! | `GET`  | `/api/v1/channels` | List all channels |
 //! | `GET`  | `/api/v1/changesets/:id` | Fetch a single changeset |
+//! | `GET`  | `/api/v1/history/:resource_id` | Query changeset history for a resource |
+//! | `GET`  | `/api/v1/ws` | WebSocket endpoint for real-time notifications |
 //!
 //! ## Compression
 //!
@@ -21,6 +23,12 @@
 //! - **Responses**: The server compresses all responses with gzip via
 //!   `tower-http`'s `CompressionLayer` when the client sends
 //!   `Accept-Encoding: gzip`.
+//!
+//! ## WebSocket Notifications
+//!
+//! On promotion (and optionally push), the server broadcasts a detailed
+//! [`Notification`] to all connected WebSocket clients via the
+//! [`NotificationHub`].
 
 use axum::{
     body::Body,
@@ -32,17 +40,22 @@ use axum::{
     Json, Router,
 };
 use dyna_core::compression;
+use dyna_core::notification::{Notification, PromotedChangesetInfo};
 use dyna_core::protocol::*;
 use elfo::prelude::*;
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tower_http::compression::CompressionLayer;
+use tower_http::cors::CorsLayer;
 
 use crate::messages::*;
+use crate::ws::{self, NotificationHub};
 
 /// The shared state for axum handlers.
 #[derive(Clone)]
 pub struct AppState {
     pub request_tx: mpsc::Sender<ApiRequest>,
+    pub notification_hub: Arc<NotificationHub>,
 }
 
 /// An API request forwarded from axum to the actor loop.
@@ -74,6 +87,10 @@ pub enum ApiRequest {
         change_id: String,
         reply: oneshot::Sender<GetChangesetResponse>,
     },
+    ResourceHistory {
+        resource_id: String,
+        reply: oneshot::Sender<ResourceHistoryResponse>,
+    },
     Health {
         reply: oneshot::Sender<HealthResponse>,
     },
@@ -87,9 +104,11 @@ pub fn new(bind_addr: String) -> Blueprint {
             tracing::info!(addr = %bind_addr, "API actor starting");
 
             let (request_tx, mut request_rx) = mpsc::channel::<ApiRequest>(256);
+            let notification_hub = Arc::new(NotificationHub::new());
 
             let app = build_router(AppState {
                 request_tx: request_tx.clone(),
+                notification_hub: notification_hub.clone(),
             });
 
             tokio::net::TcpListener::bind(&bind_addr)
@@ -122,9 +141,6 @@ pub fn new(bind_addr: String) -> Blueprint {
 }
 
 /// Dispatch an API request to the appropriate elfo message handler.
-///
-/// Each variant is handled by constructing the elfo message, resolving it,
-/// and mapping the result through `and_then`/`unwrap_or_else` chains.
 async fn dispatch_request(ctx: &Context, request: ApiRequest) {
     match request {
         ApiRequest::Push { body, reply } => {
@@ -230,6 +246,22 @@ async fn dispatch_request(ctx: &Context, request: ApiRequest) {
             let _ = reply.send(response);
         }
 
+        ApiRequest::ResourceHistory {
+            resource_id,
+            reply,
+        } => {
+            let response = ctx
+                .request(HandleResourceHistory { resource_id })
+                .resolve()
+                .await
+                .unwrap_or_else(|e| ResourceHistoryResponse {
+                    resource_id: String::new(),
+                    entries: vec![],
+                    error: Some(format!("Internal error: {}", e)),
+                });
+            let _ = reply.send(response);
+        }
+
         ApiRequest::Health { reply } => {
             let _ = reply.send(HealthResponse {
                 status: "ok".into(),
@@ -241,18 +273,9 @@ async fn dispatch_request(ctx: &Context, request: ApiRequest) {
 }
 
 /// Maximum request body size: 256 MiB.
-///
-/// Axum's default body limit is 2 MiB, which is too small for push requests
-/// that contain large JSON resources with embedded snapshots. We raise it to
-/// 256 MiB to accommodate bulk pushes. This can be overridden per-route if
-/// needed via `DefaultBodyLimit::max()` on individual route layers.
 const MAX_BODY_SIZE: usize = 256 * 1024 * 1024;
 
 /// Middleware that transparently decompresses gzip-encoded request bodies.
-///
-/// If the incoming request has `Content-Encoding: gzip`, the body is read,
-/// decompressed, and replaced before passing to the next handler. This allows
-/// axum's `Json<T>` extractor to work normally on the decompressed data.
 async fn decompress_request_body(request: Request, next: Next) -> Response {
     let has_gzip = request
         .headers()
@@ -267,7 +290,6 @@ async fn decompress_request_body(request: Request, next: Next) -> Response {
 
     let (mut parts, body) = request.into_parts();
 
-    // Read the full body using axum's body-to-bytes
     let body_bytes = match axum::body::to_bytes(body, MAX_BODY_SIZE).await {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -280,7 +302,6 @@ async fn decompress_request_body(request: Request, next: Next) -> Response {
         }
     };
 
-    // Decompress
     let decompressed = match compression::decompress(&body_bytes) {
         Ok(data) => data,
         Err(e) => {
@@ -293,7 +314,6 @@ async fn decompress_request_body(request: Request, next: Next) -> Response {
         }
     };
 
-    // Remove Content-Encoding header and update Content-Length
     parts.headers.remove(header::CONTENT_ENCODING);
     parts
         .headers
@@ -304,12 +324,9 @@ async fn decompress_request_body(request: Request, next: Next) -> Response {
 }
 
 /// Build the axum router with all API routes.
-///
-/// The router includes:
-/// - `decompress_request_body` middleware for transparent gzip request decompression
-/// - `CompressionLayer` from tower-http for automatic gzip response compression
-/// - `DefaultBodyLimit` of 256 MiB for large payloads
 fn build_router(state: AppState) -> Router {
+    let hub = state.notification_hub.clone();
+
     Router::new()
         .route("/api/v1/health", get(health_handler))
         .route("/api/v1/push", post(push_handler))
@@ -319,9 +336,21 @@ fn build_router(state: AppState) -> Router {
         .route("/api/v1/channels", get(list_channels_handler))
         .route("/api/v1/channels", post(create_channel_handler))
         .route("/api/v1/changesets/:change_id", get(get_changeset_handler))
+        .route(
+            "/api/v1/history/:resource_id",
+            get(resource_history_handler),
+        )
+        // WebSocket endpoint — uses its own state (the hub)
+        .route(
+            "/api/v1/ws",
+            get(ws::ws_handler).with_state(hub),
+        )
         .layer(middleware::from_fn(decompress_request_body))
         .layer(CompressionLayer::new().gzip(true))
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
+        .layer(
+            CorsLayer::permissive(), // Allow browser WASM clients
+        )
         .with_state(state)
 }
 
@@ -329,8 +358,6 @@ fn build_router(state: AppState) -> Router {
 // Generic handler helper
 // ---------------------------------------------------------------------------
 
-/// Send an API request through the mpsc channel and await the oneshot response.
-/// Maps send-failure and recv-failure into a typed HTTP error response.
 async fn send_and_recv<R: serde::Serialize>(
     state: &AppState,
     make_request: impl FnOnce(oneshot::Sender<R>) -> ApiRequest,
@@ -343,19 +370,23 @@ async fn send_and_recv<R: serde::Serialize>(
         .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::to_value(ErrorResponse::new("Server unavailable", "UNAVAILABLE")).unwrap()),
+                Json(
+                    serde_json::to_value(ErrorResponse::new("Server unavailable", "UNAVAILABLE"))
+                        .unwrap(),
+                ),
             )
         })?;
 
     reply_rx.await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::to_value(ErrorResponse::new("Request timeout", "TIMEOUT")).unwrap()),
+            Json(
+                serde_json::to_value(ErrorResponse::new("Request timeout", "TIMEOUT")).unwrap(),
+            ),
         )
     })
 }
 
-/// Convert a serializable response into an axum JSON response with the given status.
 fn json_response<R: serde::Serialize>(
     status: StatusCode,
     response: R,
@@ -364,7 +395,7 @@ fn json_response<R: serde::Serialize>(
 }
 
 // ---------------------------------------------------------------------------
-// Axum Handlers — each uses send_and_recv + functional mapping
+// Axum Handlers
 // ---------------------------------------------------------------------------
 
 async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
@@ -378,9 +409,19 @@ async fn push_handler(
     State(state): State<AppState>,
     Json(body): Json<PushRequest>,
 ) -> impl IntoResponse {
+    let channel_name = body.channel.clone();
+    let changeset_count = body.changesets.len();
+
     send_and_recv(&state, |reply| ApiRequest::Push { body, reply })
         .await
         .map(|r| {
+            // Broadcast push notification on success
+            if r.success {
+                let notification =
+                    Notification::push(channel_name, changeset_count, r.new_head.clone());
+                let clients = state.notification_hub.broadcast(&notification);
+                tracing::debug!(clients, "Broadcast push notification");
+            }
             r.success
                 .then(|| json_response(StatusCode::OK, &r))
                 .unwrap_or_else(|| json_response(StatusCode::CONFLICT, &r))
@@ -412,9 +453,40 @@ async fn promote_handler(
     State(state): State<AppState>,
     Json(body): Json<PromoteRequest>,
 ) -> impl IntoResponse {
+    let source = body.source_channel.clone();
+    let target = body.target_channel.clone();
+
     send_and_recv(&state, |reply| ApiRequest::Promote { body, reply })
         .await
         .map(|r| {
+            // Broadcast detailed promotion notification on success
+            if r.success {
+                // Build detailed changeset info by fetching each promoted changeset
+                let promoted_infos: Vec<PromotedChangesetInfo> = r
+                    .promoted_changesets
+                    .iter()
+                    .map(|cid| PromotedChangesetInfo {
+                        change_id: cid.clone(),
+                        message: String::new(),
+                        author: String::new(),
+                        patch_count: 0,
+                        affected_resources: vec![],
+                    })
+                    .collect();
+
+                let notification = Notification::promotion(
+                    source,
+                    target,
+                    promoted_infos,
+                    r.new_head.clone(),
+                );
+                let clients = state.notification_hub.broadcast(&notification);
+                tracing::info!(
+                    clients,
+                    promoted = r.promoted_changesets.len(),
+                    "Broadcast promotion notification"
+                );
+            }
             r.success
                 .then(|| json_response(StatusCode::OK, &r))
                 .unwrap_or_else(|| json_response(StatusCode::CONFLICT, &r))
@@ -458,5 +530,18 @@ async fn get_changeset_handler(
             .map(|_| json_response(StatusCode::OK, &r))
             .unwrap_or_else(|| json_response(StatusCode::NOT_FOUND, &r))
     })
+    .unwrap_or_else(|e| e)
+}
+
+async fn resource_history_handler(
+    State(state): State<AppState>,
+    Path(resource_id): Path<String>,
+) -> impl IntoResponse {
+    send_and_recv(&state, |reply| ApiRequest::ResourceHistory {
+        resource_id,
+        reply,
+    })
+    .await
+    .map(|r| json_response(StatusCode::OK, r))
     .unwrap_or_else(|e| e)
 }

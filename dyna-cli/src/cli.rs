@@ -202,6 +202,18 @@ pub enum Commands {
         message: Option<String>,
     },
 
+    /// Query the change history of a specific resource.
+    ///
+    /// Fetches the history of all changes to a given resource_id from the
+    /// remote server, showing changesets across all channels.
+    History {
+        /// The resource_id to query (e.g. acme.entity.User).
+        resource_id: String,
+        /// Show detailed operations for each changeset.
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
     /// Describe (amend the message of) a changeset.
     ///
     /// Defaults to the current working changeset if no change_id is given.

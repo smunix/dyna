@@ -13,7 +13,7 @@
 use dyna_core::models::{Changeset, Channel};
 use dyna_core::protocol::{
     CloneResponse, CreateChannelResponse, ListChannelsResponse, PromoteResponse, PullResponse,
-    PushResponse,
+    PushResponse, ResourceHistoryResponse,
 };
 use elfo::prelude::*;
 
@@ -164,4 +164,10 @@ pub struct HandleListChannels;
 #[message(ret = dyna_core::protocol::GetChangesetResponse)]
 pub struct HandleGetChangeset {
     pub change_id: String,
+}
+
+/// Handle a resource history query.
+#[message(ret = ResourceHistoryResponse)]
+pub struct HandleResourceHistory {
+    pub resource_id: String,
 }

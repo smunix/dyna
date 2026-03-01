@@ -152,6 +152,40 @@ pub struct GetChangesetResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Resource History
+// ---------------------------------------------------------------------------
+
+/// Response from a resource history query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceHistoryResponse {
+    /// The resource_id that was queried.
+    pub resource_id: String,
+    /// History entries in reverse chronological order.
+    pub entries: Vec<ResourceHistoryEntry>,
+    /// Error message if the query failed.
+    pub error: Option<String>,
+}
+
+/// A single entry in a resource's change history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceHistoryEntry {
+    /// The changeset's change_id.
+    pub change_id: String,
+    /// The changeset's commit_hash.
+    pub commit_hash: String,
+    /// The commit message.
+    pub message: String,
+    /// The author.
+    pub author: String,
+    /// ISO 8601 timestamp.
+    pub timestamp: String,
+    /// The channel this changeset belongs to.
+    pub channel: String,
+    /// The operations applied to this resource in this changeset.
+    pub operations: Vec<serde_json::Value>,
+}
+
+// ---------------------------------------------------------------------------
 // Status / Health
 // ---------------------------------------------------------------------------
 

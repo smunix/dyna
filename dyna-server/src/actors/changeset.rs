@@ -61,6 +61,10 @@ async fn changeset_actor(mut ctx: Context) {
                 let response = handle_get_changeset(&ctx, change_id).await;
                 ctx.respond(token, response);
             }
+            (HandleResourceHistory { resource_id }, token) => {
+                let response = handle_resource_history(&ctx, resource_id).await;
+                ctx.respond(token, response);
+            }
         });
     }
 
@@ -523,6 +527,72 @@ async fn handle_list_channels(ctx: &Context) -> ListChannelsResponse {
         .unwrap_or_else(|| ListChannelsResponse {
             channels: vec![],
         })
+}
+
+/// Handle a resource history query.
+///
+/// Walks all channels and their changesets to find every changeset that
+/// contains a patch targeting the given resource_id. Returns entries in
+/// reverse chronological order.
+async fn handle_resource_history(
+    ctx: &Context,
+    resource_id: String,
+) -> ResourceHistoryResponse {
+    let channels = ctx
+        .request(ListAllChannels)
+        .resolve()
+        .await
+        .ok()
+        .and_then(|r| match r {
+            ListChannelsResult::Ok(chs) => Some(chs),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    let mut entries = Vec::new();
+
+    for channel in &channels {
+        for cs_id in &channel.changesets {
+            if let Some(cs) = load_changeset(ctx, cs_id).await {
+                // Check if any patch targets this resource
+                let matching_patches: Vec<_> = cs
+                    .patches
+                    .iter()
+                    .filter(|p| p.target_resource == resource_id)
+                    .collect();
+
+                if !matching_patches.is_empty() {
+                    let operations: Vec<serde_json::Value> = matching_patches
+                        .iter()
+                        .flat_map(|p| {
+                            p.operations.iter().map(|op| {
+                                serde_json::to_value(op).unwrap_or(serde_json::json!(null))
+                            })
+                        })
+                        .collect();
+
+                    entries.push(ResourceHistoryEntry {
+                        change_id: cs.change_id.clone(),
+                        commit_hash: cs.commit_hash.clone(),
+                        message: cs.message.clone(),
+                        author: cs.author.clone(),
+                        timestamp: cs.created_at.to_rfc3339(),
+                        channel: channel.name.clone(),
+                        operations,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by timestamp descending (most recent first)
+    entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    ResourceHistoryResponse {
+        resource_id,
+        entries,
+        error: None,
+    }
 }
 
 /// Handle a get changeset detail request.

@@ -173,6 +173,18 @@ impl SyncClient {
             })
     }
 
+    /// Query the change history of a specific resource.
+    pub async fn resource_history(
+        &self,
+        resource_id: &str,
+    ) -> Result<ResourceHistoryResponse> {
+        self.get_json(
+            &format!("/api/v1/resources/{}/history", resource_id),
+            "Resource history",
+        )
+        .await
+    }
+
     /// Check the health of the remote server.
     pub async fn health(&self) -> Result<HealthResponse> {
         self.get_json("/api/v1/health", "Health check").await

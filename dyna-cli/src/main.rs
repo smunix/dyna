@@ -62,6 +62,10 @@ async fn main() -> anyhow::Result<()> {
             into,
             message,
         } => commands::squash::execute(revision, into, message).await,
+        Commands::History {
+            resource_id,
+            verbose,
+        } => commands::history::execute(resource_id, verbose).await,
         Commands::Describe { change_id, message } => {
             commands::describe::execute(change_id, message).await
         }

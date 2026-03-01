@@ -926,6 +926,124 @@ impl DynaClient {
             .map_err(to_js_error)
             .and_then(|cs| serde_json::to_string(&cs).map_err(|e| JsError::new(&e.to_string())))
     }
+
+    // -----------------------------------------------------------------------
+    // Resource History (remote query)
+    // -----------------------------------------------------------------------
+
+    /// Query the change history of a resource from the remote server.
+    /// Returns a JSON-encoded `ResourceHistoryResponse`.
+    #[wasm_bindgen]
+    pub async fn resource_history(&self, resource_id: &str) -> Result<String, JsError> {
+        let remote_url = self
+            .remote_url
+            .as_deref()
+            .ok_or_else(|| JsError::new("No remote URL configured."))?;
+        let url = format!("{}/api/v1/resources/{}/history", remote_url, resource_id);
+
+        let headers = web_sys::Headers::new()
+            .map_err(|e| JsError::new(&format!("Headers: {:?}", e)))?;
+        headers
+            .set("Accept-Encoding", "gzip")
+            .map_err(|e| JsError::new(&format!("Header: {:?}", e)))?;
+
+        let opts = web_sys::RequestInit::new();
+        opts.set_method("GET");
+        opts.set_headers(&headers);
+        opts.set_mode(web_sys::RequestMode::Cors);
+
+        let request = web_sys::Request::new_with_str_and_init(&url, &opts)
+            .map_err(|e| JsError::new(&format!("Request: {:?}", e)))?;
+
+        let window = web_sys::window()
+            .ok_or_else(|| JsError::new("No global window"))?;
+        let resp_value =
+            wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&request))
+                .await
+                .map_err(|e| JsError::new(&format!("Fetch: {:?}", e)))?;
+
+        let resp: web_sys::Response = resp_value
+            .dyn_into()
+            .map_err(|_| JsError::new("Not a Response"))?;
+
+        let ab = wasm_bindgen_futures::JsFuture::from(
+            resp.array_buffer()
+                .map_err(|e| JsError::new(&format!("Body: {:?}", e)))?,
+        )
+        .await
+        .map_err(|e| JsError::new(&format!("Read body: {:?}", e)))?;
+
+        let bytes = js_sys::Uint8Array::new(&ab).to_vec();
+        let decompressed = dyna_core::compression::read_transparent(&bytes)
+            .map_err(|e| JsError::new(&format!("Decompress: {}", e)))?;
+
+        Ok(String::from_utf8(decompressed)
+            .map_err(|e| JsError::new(&format!("UTF-8: {}", e)))?)
+    }
+
+    // -----------------------------------------------------------------------
+    // WebSocket Notifications
+    // -----------------------------------------------------------------------
+
+    /// Connect to the server's WebSocket endpoint and register a JS callback
+    /// that will be called with each notification JSON string.
+    ///
+    /// Returns a handle (the WebSocket object) that can be closed later.
+    ///
+    /// ```js
+    /// const ws = client.subscribe_notifications((json) => {
+    ///     const notification = JSON.parse(json);
+    ///     console.log("Notification:", notification);
+    /// });
+    /// ```
+    #[wasm_bindgen]
+    pub fn subscribe_notifications(
+        &self,
+        callback: &js_sys::Function,
+    ) -> Result<web_sys::WebSocket, JsError> {
+        let remote = self
+            .remote_url
+            .as_ref()
+            .ok_or_else(|| JsError::new("No remote URL configured"))?;
+
+        // Convert http(s):// to ws(s)://
+        let ws_url = remote
+            .replace("https://", "wss://")
+            .replace("http://", "ws://");
+        let ws_url = format!("{}/api/v1/ws", ws_url);
+
+        let ws = web_sys::WebSocket::new(&ws_url)
+            .map_err(|e| JsError::new(&format!("WebSocket connect: {:?}", e)))?;
+
+        // Set binary type to arraybuffer (we only expect text, but just in case)
+        ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
+
+        // On message: call the JS callback with the message data (string)
+        let cb = callback.clone();
+        let onmessage = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
+            move |event: web_sys::MessageEvent| {
+                if let Some(text) = event.data().as_string() {
+                    let this = JsValue::null();
+                    let _ = cb.call1(&this, &JsValue::from_str(&text));
+                }
+            },
+        );
+        ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+        onmessage.forget(); // prevent GC
+
+        // On error: log to console
+        let onerror = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::ErrorEvent)>::new(
+            move |event: web_sys::ErrorEvent| {
+                web_sys::console::error_1(
+                    &JsValue::from_str(&format!("WebSocket error: {:?}", event.message())),
+                );
+            },
+        );
+        ws.set_onerror(Some(onerror.as_ref().unchecked_ref()));
+        onerror.forget();
+
+        Ok(ws)
+    }
 }
 
 // ---------------------------------------------------------------------------
