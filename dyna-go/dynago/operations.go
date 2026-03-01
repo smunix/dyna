@@ -130,7 +130,7 @@ func (r *Repository) Commit(message string) (string, error) {
 	// Build patches from staged changes
 	var patches []Patch
 	for _, sc := range staged {
-		p := NewPatch(sc.ResourceID, sc.Operations, nil, nil)
+		p := NewPatch(sc.ResourceID, sc.Operations, nil, nil, sc.Previous, sc.Current)
 		patches = append(patches, p)
 	}
 
@@ -534,7 +534,8 @@ func (r *Repository) Revert(changeID string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to invert patch for %s: %w", p.TargetResource, err)
 		}
-		invertedPatches = append(invertedPatches, NewPatch(p.TargetResource, invOps, nil, nil))
+		// For revert, parent is the current snapshot, result will be computed after apply
+		invertedPatches = append(invertedPatches, NewPatch(p.TargetResource, invOps, nil, nil, p.ResultSnapshot, p.ParentSnapshot))
 	}
 
 	revertCS := NewChangeset(
@@ -630,7 +631,7 @@ func (r *Repository) CherryPick(changeID string) (string, error) {
 			continue
 		}
 
-		newPatches = append(newPatches, NewPatch(p.TargetResource, ops, nil, nil))
+		newPatches = append(newPatches, NewPatch(p.TargetResource, ops, nil, nil, snap, newSnap))
 
 		// Update snapshot and working file
 		_ = r.SaveSnapshot(p.TargetResource, newSnap)

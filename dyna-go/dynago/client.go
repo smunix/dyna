@@ -361,23 +361,36 @@ func (c *Client) Pull(ctx context.Context) (*PullResponse, error) {
 		return nil, err
 	}
 
-	// Apply pulled changesets
+	// Apply pulled changesets — smart dedup: skip if already local
 	for _, cs := range resp.Changesets {
 		cs.Immutable = true
-		if err := c.Repo.SaveChangeset(&cs); err != nil {
-			continue
+
+		// Check if changeset already exists locally (e.g. from another channel)
+		existing, _ := c.Repo.LoadChangeset(cs.ChangeID)
+		if existing == nil {
+			// New changeset — save it
+			if err := c.Repo.SaveChangeset(&cs); err != nil {
+				continue
+			}
 		}
+
+		// Import into this channel regardless
 		ch.AppendChangeset(cs.ChangeID)
 
-		// Apply patches to snapshots
+		// Apply patches to per-channel snapshots
 		for _, p := range cs.Patches {
-			snap, _ := c.Repo.LoadSnapshot(p.TargetResource)
-			if snap == nil {
-				snap = json.RawMessage("{}")
-			}
-			if err := ApplyPatch(&snap, p.Operations); err == nil {
-				_ = c.Repo.SaveSnapshot(p.TargetResource, snap)
-				_ = c.Repo.WriteWorkFile(PathForResourceID(p.TargetResource), snap)
+			if p.ResultSnapshot != nil {
+				_ = c.Repo.SaveSnapshot(p.TargetResource, p.ResultSnapshot)
+				_ = c.Repo.WriteWorkFile(PathForResourceID(p.TargetResource), p.ResultSnapshot)
+			} else {
+				snap, _ := c.Repo.LoadSnapshot(p.TargetResource)
+				if snap == nil {
+					snap = json.RawMessage("{}")
+				}
+				if err := ApplyPatch(&snap, p.Operations); err == nil {
+					_ = c.Repo.SaveSnapshot(p.TargetResource, snap)
+					_ = c.Repo.WriteWorkFile(PathForResourceID(p.TargetResource), snap)
+				}
 			}
 		}
 	}

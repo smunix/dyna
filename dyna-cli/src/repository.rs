@@ -205,7 +205,7 @@ impl Repository {
             })?;
 
         // Create all subdirectories via iterator
-        izip!(&["patches", "changesets", "staging", "channels", "snapshots", "conflicts"])
+        izip!(&["patches", "changesets", "staging", "channels", "snapshots", "snapshots/main", "conflicts"])
             .try_for_each(|sub| {
                 repo.vfs_dyna
                     .join(sub)
@@ -478,19 +478,46 @@ impl Repository {
     // Snapshots
     // -----------------------------------------------------------------------
 
+    /// Return the snapshot directory for the current channel.
+    fn snapshot_dir(&self) -> Result<VfsPath> {
+        let channel = self.current_channel_name()?;
+        let dir = self.vfs_dyna.join("snapshots")?.join(&channel)?;
+        dir.create_dir_all().ok();
+        Ok(dir)
+    }
+
+    /// Return the snapshot directory for a specific channel.
+    fn snapshot_dir_for(&self, channel: &str) -> Result<VfsPath> {
+        let dir = self.vfs_dyna.join("snapshots")?.join(channel)?;
+        dir.create_dir_all().ok();
+        Ok(dir)
+    }
+
     pub fn save_snapshot(&self, resource_id: &str, value: &Value) -> Result<()> {
         serde_json::to_string_pretty(value)
             .map_err(Into::into)
             .and_then(|json| {
                 vfs_write(
-                    &self.vfs_dyna.join("snapshots")?.join(&format!("{}.json", resource_id))?,
+                    &self.snapshot_dir()?.join(&format!("{}.json", resource_id))?,
+                    &json,
+                )
+            })
+    }
+
+    /// Save a snapshot for a specific channel (used during pull/clone).
+    pub fn save_snapshot_for_channel(&self, channel: &str, resource_id: &str, value: &Value) -> Result<()> {
+        serde_json::to_string_pretty(value)
+            .map_err(Into::into)
+            .and_then(|json| {
+                vfs_write(
+                    &self.snapshot_dir_for(channel)?.join(&format!("{}.json", resource_id))?,
                     &json,
                 )
             })
     }
 
     pub fn load_snapshot(&self, resource_id: &str) -> Result<Option<Value>> {
-        let path = self.vfs_dyna.join("snapshots")?.join(&format!("{}.json", resource_id))?;
+        let path = self.snapshot_dir()?.join(&format!("{}.json", resource_id))?;
         vfs_exists(&path)?
             .then(|| {
                 vfs_read(&path)
@@ -501,7 +528,7 @@ impl Repository {
     }
 
     pub fn load_all_snapshots(&self) -> Result<HashMap<String, Value>> {
-        let snapshots_dir = self.vfs_dyna.join("snapshots")?;
+        let snapshots_dir = self.snapshot_dir()?;
         vfs_exists(&snapshots_dir)?
             .then(|| {
                 snapshots_dir
@@ -530,7 +557,7 @@ impl Repository {
 
     /// Remove a snapshot file.
     pub fn remove_snapshot(&self, resource_id: &str) -> Result<()> {
-        let path = self.vfs_dyna.join("snapshots")?.join(&format!("{}.json", resource_id))?;
+        let path = self.snapshot_dir()?.join(&format!("{}.json", resource_id))?;
         vfs_exists(&path)?
             .then(|| path.remove_file().map_err(Into::into))
             .unwrap_or(Ok(()))

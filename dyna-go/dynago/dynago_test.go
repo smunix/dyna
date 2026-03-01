@@ -60,7 +60,7 @@ func TestContentHash(t *testing.T) {
 func TestPatchVerify(t *testing.T) {
 	p := NewPatch("res.1", []PatchOperation{
 		{Op: OpReplace, Path: "/name", Value: mustJSON("Alice")},
-	}, nil, nil)
+	}, nil, nil, nil, nil)
 	if !p.Verify() {
 		t.Error("patch verification failed")
 	}
@@ -69,7 +69,7 @@ func TestPatchVerify(t *testing.T) {
 func TestChangesetVerify(t *testing.T) {
 	p := NewPatch("res.1", []PatchOperation{
 		{Op: OpReplace, Path: "/name", Value: mustJSON("Alice")},
-	}, nil, nil)
+	}, nil, nil, nil, nil)
 	cs := NewChangeset("alice", "test commit", nil, []Patch{p})
 	if !cs.Verify() {
 		t.Error("changeset verification failed")

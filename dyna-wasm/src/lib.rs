@@ -450,52 +450,52 @@ impl DynaClient {
 
         let target_channel = self.repo.load_channel(name).map_err(to_js_error)?;
 
-        // Clean working directory
+        // Clean working directory: remove files tracked by current channel's snapshots
         let snapshots = self.repo.load_all_snapshots().map_err(to_js_error)?;
         izip!(snapshots.keys()).try_for_each(|resource_id| {
             let rel = self.repo.relative_path_for_resource_id(resource_id);
             self.repo.remove_work_file(&rel)
         }).map_err(to_js_error)?;
 
-        // Clear snapshots
-        let snap_dir = self.repo.vfs_dyna.join("snapshots").map_err(|e| JsError::new(&e.to_string()))?;
-        if snap_dir.exists().unwrap_or(false) {
-            snap_dir
-                .read_dir()
-                .map_err(|e| JsError::new(&e.to_string()))?
-                .for_each(|entry| { let _ = entry.remove_file(); });
-        }
-
-        // Replay target channel to compute resource state
-        let resource_state: HashMap<String, serde_json::Value> = izip!(&target_channel.changesets)
-            .filter_map(|cid| self.repo.load_changeset(cid).ok())
-            .flat_map(|cs| cs.patches.into_iter())
-            .fold(HashMap::new(), |mut state, p| {
-                let current_val = state
-                    .entry(p.target_resource.clone())
-                    .or_insert_with(|| serde_json::json!({}));
-                p.result_snapshot
-                    .as_ref()
-                    .map(|result| *current_val = result.clone())
-                    .unwrap_or_else(|| {
-                        let _ = diff::apply_patch(current_val, &p.operations);
-                    });
-                state
-            });
-
-        // Write resource files and snapshots
-        izip!(&resource_state).try_for_each(|(resource_id, value)| {
-            serde_json::to_string_pretty(value)
-                .map_err(anyhow::Error::from)
-                .and_then(|json| self.repo.write_resource_file(resource_id, &json))
-                .and_then(|()| self.repo.save_snapshot(resource_id, value))
-        }).map_err(to_js_error)?;
-
-        // Switch HEAD
+        // Switch HEAD first so snapshot methods resolve to the target channel
         self.repo.set_current_channel(name).map_err(to_js_error)?;
         self.repo
             .set_working_change(target_channel.head_change_id.as_deref())
             .map_err(to_js_error)?;
+
+        // If the target channel has no per-channel snapshots yet, rebuild them
+        let target_snapshots = self.repo.load_all_snapshots().map_err(to_js_error)?;
+        let resource_state = if target_snapshots.is_empty() && !target_channel.changesets.is_empty() {
+            let state: HashMap<String, serde_json::Value> = izip!(&target_channel.changesets)
+                .filter_map(|cid| self.repo.load_changeset(cid).ok())
+                .flat_map(|cs| cs.patches.into_iter())
+                .fold(HashMap::new(), |mut state, p| {
+                    let current_val = state
+                        .entry(p.target_resource.clone())
+                        .or_insert_with(|| serde_json::json!({}));
+                    p.result_snapshot
+                        .as_ref()
+                        .map(|result| *current_val = result.clone())
+                        .unwrap_or_else(|| {
+                            let _ = diff::apply_patch(current_val, &p.operations);
+                        });
+                    state
+                });
+            // Persist rebuilt snapshots
+            izip!(&state).try_for_each(|(resource_id, value)| {
+                self.repo.save_snapshot(resource_id, value)
+            }).map_err(to_js_error)?;
+            state
+        } else {
+            target_snapshots
+        };
+
+        // Write resource files to working directory
+        izip!(&resource_state).try_for_each(|(resource_id, value)| {
+            serde_json::to_string_pretty(value)
+                .map_err(anyhow::Error::from)
+                .and_then(|json| self.repo.write_resource_file(resource_id, &json))
+        }).map_err(to_js_error)?;
 
         Ok(())
     }
@@ -913,13 +913,35 @@ impl DynaClient {
             self.repo.save_changeset(cs)
         }).map_err(to_js_error)?;
 
-        // Write snapshots and working directory files
-        izip!(&response.snapshots).try_for_each(|(resource_id, value)| {
-            self.repo.save_snapshot(resource_id, value)?;
-            serde_json::to_string_pretty(value)
-                .map_err(anyhow::Error::from)
-                .and_then(|json| self.repo.write_resource_file(resource_id, &json))
+        // Build per-channel snapshots by replaying each channel's changesets
+        izip!(&response.channels).try_for_each(|channel| -> anyhow::Result<()> {
+            let mut channel_snapshots: HashMap<String, serde_json::Value> = HashMap::new();
+            izip!(&channel.changesets)
+                .filter_map(|cid| self.repo.load_changeset(cid).ok())
+                .flat_map(|cs| cs.patches.into_iter())
+                .for_each(|p| {
+                    let entry = channel_snapshots
+                        .entry(p.target_resource.clone())
+                        .or_insert_with(|| serde_json::json!({}));
+                    p.result_snapshot
+                        .as_ref()
+                        .map(|result| *entry = result.clone())
+                        .unwrap_or_else(|| {
+                            let _ = diff::apply_patch(entry, &p.operations);
+                        });
+                });
+            izip!(&channel_snapshots).try_for_each(|(resource_id, value)| {
+                self.repo.save_snapshot_for_channel(&channel.name, resource_id, value)
+            })
         }).map_err(to_js_error)?;
+
+        // Write working directory files from current channel's snapshots
+        izip!(&self.repo.load_all_snapshots().map_err(to_js_error)?)
+            .try_for_each(|(resource_id, value)| -> anyhow::Result<()> {
+                serde_json::to_string_pretty(value)
+                    .map_err(anyhow::Error::from)
+                    .and_then(|json| self.repo.write_resource_file(resource_id, &json))
+            }).map_err(to_js_error)?;
 
         // Set working change to head of current channel
         let channel = self.repo.load_channel(&head_channel).map_err(to_js_error)?;
@@ -1030,9 +1052,15 @@ impl DynaClient {
             return Ok(serde_json::json!({ "pulled": 0 }).to_string());
         }
 
-        // Save new changesets
+        // Save new changesets — smart dedup: skip if already local
+        let mut imported = 0usize;
         izip!(&response.changesets).try_for_each(|cs| {
-            self.repo.save_changeset(cs)
+            if self.repo.load_changeset(&cs.change_id).is_ok() {
+                imported += 1;
+                Ok(()) // already exists locally, just import by reference
+            } else {
+                self.repo.save_changeset(cs)
+            }
         }).map_err(to_js_error)?;
 
         // Update local channel
@@ -1077,6 +1105,7 @@ impl DynaClient {
 
         serde_json::to_string(&serde_json::json!({
             "pulled": pulled_count,
+            "imported": imported,
             "current_head": response.current_head,
         }))
         .map_err(|e| JsError::new(&e.to_string()))

@@ -270,6 +270,38 @@
             pythonImportsCheck = [ "dyna_py" ];
           };
 
+          # ── Go package (dyna-go) ──────────────────────────────────────
+          #
+          # Builds the Go client library and runs its test suite.
+          dyna-go = pkgs.buildGoModule {
+            pname = "dyna-go";
+            version = "0.1.0";
+            src = ./dyna-go;
+            vendorHash = null;  # uses go.sum for dependency resolution
+            subPackages = [ "dynago" ];
+            # Build the library; tests run in checkPhase
+            buildPhase = ''
+              runHook preBuild
+              go build ./dynago/...
+              runHook postBuild
+            '';
+            checkPhase = ''
+              runHook preCheck
+              go test ./dynago/ -v -count=1
+              runHook postCheck
+            '';
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out/share/dyna-go
+              cp -r . $out/share/dyna-go/
+              runHook postInstall
+            '';
+            meta = {
+              description = "Go client library for Dyna — Distributed CRUD for Collaborative JSON Editing";
+              homepage = "https://github.com/smunix/dyna";
+            };
+          };
+
           # ── Docker / OCI images ────────────────────────────────────────
 
           dyna-server-image = pkgs.dockerTools.buildLayeredImage {
@@ -368,7 +400,7 @@
           # cargo artifacts so that clippy, fmt, and nextest can see all
           # crates at once.
           checks = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-app;
+            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-go;
 
             dyna-workspace-clippy = craneLib.cargoClippy {
               src = workspaceSrc;
@@ -394,7 +426,7 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-py dyna-app-serve;
+            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve;
             inherit dyna-server-image dyna-app-image;
             default = dyna-cli;
           };
@@ -451,6 +483,9 @@
               dyna-server
               dyna-app-serve
 
+              # Go (dyna-go)
+              pkgs.go
+
               # Python (dyna-py)
               pkgs.python3
               pkgs.maturin
@@ -487,6 +522,7 @@
               echo "  ║    dyna-server      — start the server                   ║"
               echo "  ║    dyna-app-serve   — build & serve the Elm UI           ║"
               echo "  ║    dyna-py          — Python CLI (via PyO3)               ║"
+              echo "  ║    dyna-go          — Go client library                    ║"
               echo "  ║                                                          ║"
               echo "  ║  Development commands:                                   ║"
               echo "  ║    cargo build      — build native crates from source    ║"

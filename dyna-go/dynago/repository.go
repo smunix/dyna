@@ -61,6 +61,7 @@ func (r *Repository) Init() error {
 		filepath.Join(r.dynaDir, "channels"),
 		filepath.Join(r.dynaDir, "changesets"),
 		filepath.Join(r.dynaDir, "snapshots"),
+		filepath.Join(r.dynaDir, "snapshots", "main"),
 		filepath.Join(r.dynaDir, "conflicts"),
 	} {
 		if err := r.fs.MkdirAll(dir, 0755); err != nil {
@@ -273,32 +274,71 @@ func (r *Repository) FindChangesetByPrefix(prefix string) (*Changeset, error) {
 // Snapshots
 // ---------------------------------------------------------------------------
 
-func (r *Repository) snapshotPath(resourceID string) string {
-	return filepath.Join(r.dynaDir, "snapshots", resourceID+".json")
+// snapshotDir returns the snapshot directory for the current channel.
+func (r *Repository) snapshotDir() (string, error) {
+	name, err := r.CurrentChannelName()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(r.dynaDir, "snapshots", name)
+	_ = r.fs.MkdirAll(dir, 0755)
+	return dir, nil
 }
 
-// LoadSnapshot reads the current snapshot for a resource.
+// snapshotDirFor returns the snapshot directory for a specific channel.
+func (r *Repository) snapshotDirFor(channel string) string {
+	dir := filepath.Join(r.dynaDir, "snapshots", channel)
+	_ = r.fs.MkdirAll(dir, 0755)
+	return dir
+}
+
+func (r *Repository) snapshotPath(resourceID string) (string, error) {
+	dir, err := r.snapshotDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, resourceID+".json"), nil
+}
+
+// LoadSnapshot reads the current snapshot for a resource in the current channel.
 // Returns nil, nil if the snapshot does not exist.
 func (r *Repository) LoadSnapshot(resourceID string) (json.RawMessage, error) {
-	data, err := afero.ReadFile(r.fs, r.snapshotPath(resourceID))
+	path, err := r.snapshotPath(resourceID)
+	if err != nil {
+		return nil, err
+	}
+	data, err := afero.ReadFile(r.fs, path)
 	if err != nil {
 		return nil, nil // not found is not an error
 	}
 	return json.RawMessage(data), nil
 }
 
-// SaveSnapshot persists a resource snapshot.
+// SaveSnapshot persists a resource snapshot in the current channel.
 func (r *Repository) SaveSnapshot(resourceID string, value json.RawMessage) error {
-	path := r.snapshotPath(resourceID)
+	path, err := r.snapshotPath(resourceID)
+	if err != nil {
+		return err
+	}
 	if err := r.fs.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
 	return afero.WriteFile(r.fs, path, value, 0644)
 }
 
-// RemoveSnapshot deletes a resource snapshot.
+// SaveSnapshotForChannel persists a resource snapshot in a specific channel.
+func (r *Repository) SaveSnapshotForChannel(channel, resourceID string, value json.RawMessage) error {
+	dir := r.snapshotDirFor(channel)
+	path := filepath.Join(dir, resourceID+".json")
+	return afero.WriteFile(r.fs, path, value, 0644)
+}
+
+// RemoveSnapshot deletes a resource snapshot in the current channel.
 func (r *Repository) RemoveSnapshot(resourceID string) error {
-	path := r.snapshotPath(resourceID)
+	path, err := r.snapshotPath(resourceID)
+	if err != nil {
+		return err
+	}
 	exists, _ := afero.Exists(r.fs, path)
 	if exists {
 		return r.fs.Remove(path)
@@ -306,12 +346,16 @@ func (r *Repository) RemoveSnapshot(resourceID string) error {
 	return nil
 }
 
-// ListSnapshots returns all resource IDs that have snapshots.
+// ListSnapshots returns all resource IDs that have snapshots in the current channel.
 func (r *Repository) ListSnapshots() ([]string, error) {
-	return r.listJSONStems(filepath.Join(r.dynaDir, "snapshots"))
+	dir, err := r.snapshotDir()
+	if err != nil {
+		return nil, err
+	}
+	return r.listJSONStems(dir)
 }
 
-// LoadAllSnapshots returns all snapshots as a map.
+// LoadAllSnapshots returns all snapshots as a map for the current channel.
 func (r *Repository) LoadAllSnapshots() (map[string]json.RawMessage, error) {
 	ids, err := r.ListSnapshots()
 	if err != nil {

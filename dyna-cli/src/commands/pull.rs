@@ -2,6 +2,10 @@
 //!
 //! Fetches remote changesets and merges them into the local state.
 //! Accepts an optional `--channel` argument; defaults to the current channel.
+//!
+//! **Smart dedup**: if a changeset already exists in the local changeset store
+//! (e.g. from another channel), it is imported by reference into the target
+//! channel without re-downloading or re-applying patches from scratch.
 
 use anyhow::Result;
 use dyna_core::diff;
@@ -46,9 +50,42 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
 
     let mut channel_data = repo.load_channel(&channel_name)?;
 
-    // Process each changeset, accumulating whether conflicts were found via fold
+    // Process each changeset, accumulating whether conflicts were found
     let conflicts_found = izip!(&response.changesets)
         .try_fold(false, |has_conflicts, cs| -> Result<bool> {
+            // Smart dedup: check if changeset already exists locally
+            let already_local = repo.load_changeset(&cs.change_id).is_ok();
+
+            if already_local {
+                // Changeset exists locally (from another channel) — just import
+                // by reference into this channel, no need to re-apply patches.
+                if !channel_data.changesets.contains(&cs.change_id) {
+                    channel_data.append_changeset(cs.change_id.clone());
+                    println!(
+                        "  {} ({}) — imported (already local)",
+                        cs.short_change_id(),
+                        cs.message
+                    );
+                } else {
+                    println!(
+                        "  {} ({}) — skipped (already in channel)",
+                        cs.short_change_id(),
+                        cs.message
+                    );
+                }
+
+                // Still need to rebuild snapshots for this channel from the
+                // changeset's patches
+                izip!(&cs.patches).for_each(|patch| {
+                    if let Some(ref result) = patch.result_snapshot {
+                        let _ = repo.save_snapshot(&patch.target_resource, result);
+                    }
+                });
+
+                return Ok(has_conflicts);
+            }
+
+            // New changeset — store it and apply patches
             repo.store_changeset(cs)?;
 
             println!(
@@ -58,7 +95,7 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
                 cs.patches.len()
             );
 
-            // Apply each patch, tracking conflicts via try_fold
+            // Apply each patch, tracking conflicts
             let changeset_has_conflicts = izip!(&cs.patches)
                 .try_fold(false, |patch_conflicts, patch| -> Result<bool> {
                     let resource_id = &patch.target_resource;
@@ -139,8 +176,7 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
         })
         .transpose()?;
 
-    // Write updated snapshots to working directory via VFS, recreating the
-    // full filesystem hierarchy from dotted resource IDs.
+    // Write updated snapshots to working directory
     izip!(&repo.load_all_snapshots()?)
         .try_for_each(|(resource_id, value)| -> Result<()> {
             serde_json::to_string_pretty(value)

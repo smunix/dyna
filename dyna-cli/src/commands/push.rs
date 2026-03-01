@@ -2,6 +2,10 @@
 //!
 //! Pushes local changesets to the remote server.
 //! Accepts an optional `--channel` argument; defaults to the current channel.
+//!
+//! **Smart dedup**: only sends changesets that the remote server does not
+//! already have on the target channel.  The sync state tracks the last-known
+//! remote head per channel, so we only send changesets after that head.
 
 use anyhow::{Result, bail};
 use dyna_core::protocol::PushRequest;
@@ -36,7 +40,7 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
     let sync_state = repo.load_sync_state()?;
     let remote_head = sync_state.remote_heads.get(&channel_name).cloned();
 
-    // Find changesets after the remote head using skip_while + skip
+    // Find changesets after the remote head
     let unpushed_ids: Vec<String> = remote_head
         .as_ref()
         .map(|head| {
@@ -53,7 +57,7 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    // Load changeset objects via try_collect
+    // Load changeset objects
     let changesets = izip!(&unpushed_ids)
         .map(|id| repo.load_changeset(id))
         .try_collect::<_, Vec<_>, _>()?;

@@ -54,12 +54,35 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
     izip!(&clone_response.channels)
         .try_for_each(|channel| repo.save_channel(channel))?;
 
-    // Store resource snapshots and write working directory files via VFS,
-    // recreating the full filesystem hierarchy from dotted resource IDs.
-    izip!(&clone_response.snapshots)
-        .try_for_each(|(resource_id, snapshot)| -> Result<()> {
-            repo.save_snapshot(resource_id, snapshot)?;
-            serde_json::to_string_pretty(snapshot)
+    // Build per-channel snapshots by replaying each channel's changesets.
+    izip!(&clone_response.channels)
+        .try_for_each(|channel| -> Result<()> {
+            let mut channel_snapshots: std::collections::HashMap<String, serde_json::Value> =
+                std::collections::HashMap::new();
+            izip!(&channel.changesets)
+                .filter_map(|cid| repo.load_changeset(cid).ok())
+                .flat_map(|cs| cs.patches.into_iter())
+                .for_each(|p| {
+                    let entry = channel_snapshots
+                        .entry(p.target_resource.clone())
+                        .or_insert_with(|| serde_json::json!({}));
+                    p.result_snapshot
+                        .as_ref()
+                        .map(|result| *entry = result.clone())
+                        .unwrap_or_else(|| {
+                            let _ = dyna_core::diff::apply_patch(entry, &p.operations);
+                        });
+                });
+            izip!(&channel_snapshots)
+                .try_for_each(|(resource_id, value)| {
+                    repo.save_snapshot_for_channel(&channel.name, resource_id, value)
+                })
+        })?;
+
+    // Write working directory files from the current channel's (main) snapshots.
+    izip!(&repo.load_all_snapshots()?)
+        .try_for_each(|(resource_id, value)| -> Result<()> {
+            serde_json::to_string_pretty(value)
                 .map_err(Into::into)
                 .and_then(|json| repo.write_resource_file(resource_id, &json))
         })?;
@@ -78,9 +101,9 @@ pub async fn execute(url: String, directory: Option<PathBuf>) -> Result<()> {
         .and_then(|sync_state| repo.save_sync_state(&sync_state))?;
 
     println!(
-        "Clone complete. Fetched {} changeset(s), {} resource(s).",
+        "Clone complete. Fetched {} changeset(s), {} channel(s).",
         changeset_count,
-        clone_response.snapshots.len()
+        clone_response.channels.len()
     );
 
     Ok(())

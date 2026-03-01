@@ -266,6 +266,7 @@ async fn handle_push(
                     // Load current snapshot and apply operations
                     futures::executor::block_on(
                         ctx.request(LoadSnapshot {
+                            channel: channel.name.clone(),
                             resource_id: patch.target_resource.clone(),
                         })
                         .resolve(),
@@ -286,6 +287,7 @@ async fn handle_push(
             if let Ok(value) = save_value {
                 let _ = ctx
                     .request(SaveSnapshot {
+                        channel: channel.name.clone(),
                         resource_id: patch.target_resource.clone(),
                         value,
                     })
@@ -398,9 +400,14 @@ async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse 
     }
     changesets.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-    // Load all snapshots
+    // Load per-channel snapshots for the main channel (clients rebuild per-channel on their side)
+    let main_channel_name = channels
+        .iter()
+        .find(|c| c.name == "main")
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| "main".to_string());
     let snapshots = ctx
-        .request(LoadAllSnapshots)
+        .request(LoadAllSnapshots { channel: main_channel_name })
         .resolve()
         .await
         .ok()
@@ -445,15 +452,27 @@ async fn handle_promote(
         Err(e) => return make_err(e.to_string(), None),
     };
 
-    // Mark promoted changesets as immutable
+    // Mark promoted changesets as immutable and copy snapshots to target channel
     for id in &promoted_ids {
         if let Some(mut cs) = load_changeset(ctx, id).await {
             cs.immutable = true;
             let _ = store_changeset(ctx, &cs).await;
+            // Copy affected resource snapshots from source to target channel
+            for patch in &cs.patches {
+                if let Some(ref result) = patch.result_snapshot {
+                    let _ = ctx
+                        .request(SaveSnapshot {
+                            channel: target_name.clone(),
+                            resource_id: patch.target_resource.clone(),
+                            value: result.clone(),
+                        })
+                        .resolve()
+                        .await;
+                }
+            }
         }
     }
-
-    // Save updated target channel
+    // Save updated target channell
     save_channel(ctx, &target)
         .await
         .map(|()| PromoteResponse {
@@ -548,6 +567,13 @@ async fn handle_list_channels(ctx: &Context) -> ListChannelsResponse {
 /// Walks all channels and their changesets to find every changeset that
 /// contains a patch targeting the given resource_id. Returns entries in
 /// reverse chronological order.
+///
+/// **Memory optimisation**: changesets are loaded one at a time and dropped
+/// immediately after extracting the lightweight metadata needed for the
+/// response entry. Only the RFC 6902 operations are kept — the potentially
+/// large `parent_snapshot` and `result_snapshot` blobs are never copied into
+/// the response. A dedup set prevents loading the same changeset twice when
+/// it appears in multiple channels.
 async fn handle_resource_history(
     ctx: &Context,
     resource_id: String,
@@ -564,27 +590,35 @@ async fn handle_resource_history(
         .unwrap_or_default();
 
     let mut entries = Vec::new();
+    // Dedup: avoid loading the same changeset for every channel it appears in.
+    let mut seen_changesets = std::collections::HashSet::new();
 
     for channel in &channels {
         for cs_id in &channel.changesets {
+            // Skip if we already processed this changeset from another channel
+            if !seen_changesets.insert(cs_id.clone()) {
+                continue;
+            }
+
+            // Load changeset — this is the only allocation per iteration.
+            // The `cs` binding is dropped at the end of this block, freeing
+            // the snapshot blobs immediately.
             if let Some(cs) = load_changeset(ctx, cs_id).await {
-                // Check if any patch targets this resource
-                let matching_patches: Vec<_> = cs
+                // Extract only the lightweight operation metadata for matching
+                // patches. We deliberately avoid cloning parent_snapshot /
+                // result_snapshot to keep memory bounded.
+                let operations: Vec<serde_json::Value> = cs
                     .patches
                     .iter()
                     .filter(|p| p.target_resource == resource_id)
+                    .flat_map(|p| {
+                        p.operations.iter().map(|op| {
+                            serde_json::to_value(op).unwrap_or(serde_json::json!(null))
+                        })
+                    })
                     .collect();
 
-                if !matching_patches.is_empty() {
-                    let operations: Vec<serde_json::Value> = matching_patches
-                        .iter()
-                        .flat_map(|p| {
-                            p.operations.iter().map(|op| {
-                                serde_json::to_value(op).unwrap_or(serde_json::json!(null))
-                            })
-                        })
-                        .collect();
-
+                if !operations.is_empty() {
                     entries.push(ResourceHistoryEntry {
                         change_id: cs.change_id.clone(),
                         commit_hash: cs.commit_hash.clone(),
@@ -595,6 +629,7 @@ async fn handle_resource_history(
                         operations,
                     });
                 }
+                // `cs` (and its snapshot blobs) is dropped here.
             }
         }
     }

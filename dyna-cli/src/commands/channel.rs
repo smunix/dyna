@@ -81,61 +81,52 @@ pub async fn execute(
         println!("  {} tracked file(s) removed from working directory.", removed);
     });
 
-    // Clear all snapshots via VFS
-    let snapshots_dir = repo.vfs_dyna.join("snapshots")?;
-    snapshots_dir.exists()
-        .map_err(anyhow::Error::from)
-        .and_then(|exists| {
-            exists
-                .then(|| {
-                    snapshots_dir
-                        .read_dir()
-                        .map_err(anyhow::Error::from)
-                        .and_then(|mut entries| {
-                            entries.try_for_each(|entry| entry.remove_file().map_err(Into::into))
-                        })
-                })
-                .unwrap_or(Ok(()))
-        })?;
+    // Switch HEAD first so snapshot methods resolve to the target channel
+    repo.set_current_channel(&name)?;
+    repo.set_working_change(target_channel.head_change_id.as_deref())?;
 
     // --- Restore target channel state ---
-    // Replay all changesets via fold to compute final resource state
-    let resource_state: HashMap<String, serde_json::Value> = izip!(&target_channel.changesets)
-        .filter_map(|change_id| repo.load_changeset(change_id).ok())
-        .flat_map(|cs| izip!(cs.patches))
-        .fold(HashMap::new(), |mut state, patch| {
-            let current_val = state
-                .entry(patch.target_resource.clone())
-                .or_insert_with(|| serde_json::json!({}));
+    // If the target channel has no per-channel snapshots yet, rebuild them
+    // from changesets (migration path from old global snapshot layout).
+    let target_snapshots = repo.load_all_snapshots()?;
+    let resource_state = if target_snapshots.is_empty() && !target_channel.changesets.is_empty() {
+        let state: HashMap<String, serde_json::Value> = izip!(&target_channel.changesets)
+            .filter_map(|change_id| repo.load_changeset(change_id).ok())
+            .flat_map(|cs| izip!(cs.patches))
+            .fold(HashMap::new(), |mut state, patch| {
+                let current_val = state
+                    .entry(patch.target_resource.clone())
+                    .or_insert_with(|| serde_json::json!({}));
+                patch
+                    .result_snapshot
+                    .as_ref()
+                    .map(|result| *current_val = result.clone())
+                    .unwrap_or_else(|| {
+                        let _ = diff::apply_patch(current_val, &patch.operations);
+                    });
+                state
+            });
+        // Persist rebuilt snapshots for this channel
+        izip!(&state).try_for_each(|(resource_id, value)| {
+            repo.save_snapshot(resource_id, value)
+        })?;
+        state
+    } else {
+        target_snapshots
+    };
 
-            patch
-                .result_snapshot
-                .as_ref()
-                .map(|result| *current_val = result.clone())
-                .unwrap_or_else(|| {
-                    let _ = diff::apply_patch(current_val, &patch.operations);
-                });
-
-            state
-        });
-
-    // Write resource files and snapshots via VFS, counting via try_fold
+    // Write resource files to working directory
     let restored = izip!(&resource_state)
         .try_fold(0usize, |count, (resource_id, value)| -> Result<usize> {
             serde_json::to_string_pretty(value)
                 .map_err(Into::into)
                 .and_then(|json| repo.write_resource_file(resource_id, &json))
-                .and_then(|()| repo.save_snapshot(resource_id, value))
                 .map(|()| count + 1)
         })?;
 
     (restored > 0).then(|| {
         println!("  {} resource file(s) restored from channel '{}'.", restored, name);
     });
-
-    // Switch HEAD
-    repo.set_current_channel(&name)?;
-    repo.set_working_change(target_channel.head_change_id.as_deref())?;
 
     let head_display = target_channel
         .head_change_id

@@ -47,6 +47,8 @@ type PatchContent struct {
 	Operations     []PatchOperation `json:"operations"`
 	BaseHash       *string          `json:"base_hash"`
 	ResultHash     *string          `json:"result_hash"`
+	ParentSnapshot json.RawMessage  `json:"parent_snapshot,omitempty"`
+	ResultSnapshot json.RawMessage  `json:"result_snapshot,omitempty"`
 }
 
 // Patch represents a set of JSON Patch operations targeting a single resource.
@@ -55,17 +57,21 @@ type Patch struct {
 	Operations     []PatchOperation `json:"operations"`
 	BaseHash       *string          `json:"base_hash"`
 	ResultHash     *string          `json:"result_hash"`
+	ParentSnapshot json.RawMessage  `json:"parent_snapshot,omitempty"`
+	ResultSnapshot json.RawMessage  `json:"result_snapshot,omitempty"`
 	Hash           string           `json:"hash"`
 	CreatedAt      time.Time        `json:"created_at"`
 }
 
 // NewPatch creates a Patch, computing its content hash.
-func NewPatch(targetResource string, ops []PatchOperation, baseHash, resultHash *string) Patch {
+func NewPatch(targetResource string, ops []PatchOperation, baseHash, resultHash *string, parentSnapshot, resultSnapshot json.RawMessage) Patch {
 	content := PatchContent{
 		TargetResource: targetResource,
 		Operations:     ops,
 		BaseHash:       baseHash,
 		ResultHash:     resultHash,
+		ParentSnapshot: parentSnapshot,
+		ResultSnapshot: resultSnapshot,
 	}
 	data, _ := json.Marshal(content)
 	return Patch{
@@ -73,6 +79,8 @@ func NewPatch(targetResource string, ops []PatchOperation, baseHash, resultHash 
 		Operations:     ops,
 		BaseHash:       baseHash,
 		ResultHash:     resultHash,
+		ParentSnapshot: parentSnapshot,
+		ResultSnapshot: resultSnapshot,
 		Hash:           ContentHash(data),
 		CreatedAt:      time.Now().UTC(),
 	}
@@ -85,6 +93,8 @@ func (p *Patch) Verify() bool {
 		Operations:     p.Operations,
 		BaseHash:       p.BaseHash,
 		ResultHash:     p.ResultHash,
+		ParentSnapshot: p.ParentSnapshot,
+		ResultSnapshot: p.ResultSnapshot,
 	}
 	data, _ := json.Marshal(content)
 	return ContentHash(data) == p.Hash

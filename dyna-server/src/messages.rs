@@ -84,6 +84,7 @@ pub enum ListChannelsResult {
 /// Save a resource snapshot to S3.
 #[message(ret = SaveSnapshotResult)]
 pub struct SaveSnapshot {
+    pub channel: String,
     pub resource_id: String,
     pub value: serde_json::Value,
 }
@@ -97,6 +98,7 @@ pub enum SaveSnapshotResult {
 /// Load a resource snapshot from S3.
 #[message(ret = LoadSnapshotResult)]
 pub struct LoadSnapshot {
+    pub channel: String,
     pub resource_id: String,
 }
 
@@ -109,7 +111,9 @@ pub enum LoadSnapshotResult {
 
 /// Load all resource snapshots from S3.
 #[message(ret = LoadAllSnapshotsResult)]
-pub struct LoadAllSnapshots;
+pub struct LoadAllSnapshots {
+    pub channel: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum LoadAllSnapshotsResult {

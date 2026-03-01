@@ -205,27 +205,43 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                     // ----------------------------------------------------------
                     // Snapshot operations
                     // ----------------------------------------------------------
-                    (SaveSnapshot { resource_id, value }, token) => {
-                        let path = ObjPath::from(format!("snapshots/{}.json.gz", resource_id));
+                    (SaveSnapshot { channel, resource_id, value }, token) => {
+                        let path = ObjPath::from(format!("snapshots/{}/{}.json.gz", channel, resource_id));
                         let result = store_json(store.as_ref(), &path, &value)
                             .await
                             .map(|()| {
-                                tracing::debug!(resource_id = %resource_id, "Saved snapshot (compressed)");
+                                tracing::debug!(channel = %channel, resource_id = %resource_id, "Saved snapshot (compressed)");
                                 SaveSnapshotResult::Ok
                             })
                             .unwrap_or_else(SaveSnapshotResult::Error);
                         ctx.respond(token, result);
                     }
 
-                    (LoadSnapshot { resource_id }, token) => {
-                        let gz_path = ObjPath::from(format!("snapshots/{}.json.gz", resource_id));
-                        let plain_path = ObjPath::from(format!("snapshots/{}.json", resource_id));
+                    (LoadSnapshot { channel, resource_id }, token) => {
+                        let gz_path = ObjPath::from(format!("snapshots/{}/{}.json.gz", channel, resource_id));
+                        let plain_path = ObjPath::from(format!("snapshots/{}/{}.json", channel, resource_id));
+                        // Also try legacy global path for migration
+                        let legacy_gz = ObjPath::from(format!("snapshots/{}.json.gz", resource_id));
+                        let legacy_plain = ObjPath::from(format!("snapshots/{}.json", resource_id));
                         let result = match load_json(store.as_ref(), &gz_path).await {
                             Ok(Some(v)) => LoadSnapshotResult::Ok(v),
                             Ok(None) => {
                                 match load_json(store.as_ref(), &plain_path).await {
                                     Ok(Some(v)) => LoadSnapshotResult::Ok(v),
-                                    Ok(None) => LoadSnapshotResult::NotFound,
+                                    Ok(None) => {
+                                        // Try legacy global paths for backward compat
+                                        match load_json(store.as_ref(), &legacy_gz).await {
+                                            Ok(Some(v)) => LoadSnapshotResult::Ok(v),
+                                            Ok(None) => {
+                                                match load_json(store.as_ref(), &legacy_plain).await {
+                                                    Ok(Some(v)) => LoadSnapshotResult::Ok(v),
+                                                    Ok(None) => LoadSnapshotResult::NotFound,
+                                                    Err(e) => LoadSnapshotResult::Error(e),
+                                                }
+                                            }
+                                            Err(e) => LoadSnapshotResult::Error(e),
+                                        }
+                                    }
                                     Err(e) => LoadSnapshotResult::Error(e),
                                 }
                             }
@@ -234,8 +250,8 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                         ctx.respond(token, result);
                     }
 
-                    (LoadAllSnapshots, token) => {
-                        let prefix = ObjPath::from("snapshots/");
+                    (LoadAllSnapshots { channel }, token) => {
+                        let prefix = ObjPath::from(format!("snapshots/{}/", channel));
                         let result = list_and_load_all::<serde_json::Value>(
                             store.as_ref(),
                             &prefix,
