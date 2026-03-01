@@ -1,0 +1,1099 @@
+//! Python bindings for the Dyna distributed CRUD system.
+//!
+//! This crate provides a `DynaRepo` Python class that wraps the Rust
+//! [`dyna_cli::repository::Repository`] and [`dyna_cli::sync_client::SyncClient`]
+//! via PyO3. Every CLI command is exposed as a method on `DynaRepo`.
+
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+use serde_json::Value;
+
+use dyna_cli::repository::Repository;
+use dyna_cli::sync_client::SyncClient;
+use dyna_core::models::{
+    Changeset, Patch, PatchOperation, StagedChange, SyncState,
+};
+use dyna_core::protocol::{
+    CloneRequest, PromoteRequest, PullRequest, PushRequest,
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn to_py_err(e: anyhow::Error) -> PyErr {
+    PyRuntimeError::new_err(format!("{:#}", e))
+}
+
+fn block_on<F: std::future::Future>(f: F) -> F::Output {
+    tokio::runtime::Runtime::new()
+        .expect("Failed to create tokio runtime")
+        .block_on(f)
+}
+
+// ---------------------------------------------------------------------------
+// DynaRepo — the main Python class
+// ---------------------------------------------------------------------------
+
+/// A Dyna repository backed by the local filesystem.
+///
+/// Construct with `DynaRepo(path)` where `path` is the working directory
+/// containing a `.dyna/` folder. Use `DynaRepo.init()` or
+/// `DynaRepo.clone_repo()` to create a new repository.
+#[pyclass]
+struct DynaRepo {
+    repo: Repository,
+}
+
+#[pymethods]
+impl DynaRepo {
+    // -----------------------------------------------------------------------
+    // Construction
+    // -----------------------------------------------------------------------
+
+    #[new]
+    fn new(path: &str) -> PyResult<Self> {
+        let work_dir = PathBuf::from(path);
+        if !work_dir.join(".dyna").exists() {
+            return Err(PyRuntimeError::new_err(format!(
+                "No .dyna directory found in '{}'. Run init() or clone_repo() first.",
+                path
+            )));
+        }
+        let repo = Repository::from_work_dir(work_dir);
+        Ok(Self { repo })
+    }
+
+    /// Initialise a new Dyna repository at `path`.
+    #[staticmethod]
+    #[pyo3(signature = (path, remote_url=None, user_name=None))]
+    fn init(path: &str, remote_url: Option<&str>, user_name: Option<&str>) -> PyResult<Self> {
+        let work_dir = PathBuf::from(path);
+        std::fs::create_dir_all(&work_dir)
+            .map_err(|e| PyRuntimeError::new_err(format!("Cannot create directory: {}", e)))?;
+
+        // Repository::init creates .dyna/ and all subdirectories, writes HEAD,
+        // default config, main channel, and sync state.
+        let repo = Repository::init(&work_dir).map_err(to_py_err)?;
+
+        // Optionally override config
+        if remote_url.is_some() || user_name.is_some() {
+            let mut config = repo.load_config().map_err(to_py_err)?;
+            if let Some(url) = remote_url {
+                config.remote_url = Some(url.to_string());
+            }
+            if let Some(name) = user_name {
+                config.user.name = name.to_string();
+            }
+            repo.save_config(&config).map_err(to_py_err)?;
+        }
+
+        Ok(Self { repo })
+    }
+
+    // -----------------------------------------------------------------------
+    // Config
+    // -----------------------------------------------------------------------
+
+    /// Get the remote URL.
+    fn remote_url(&self) -> PyResult<Option<String>> {
+        let config = self.repo.load_config().map_err(to_py_err)?;
+        Ok(config.remote_url)
+    }
+
+    /// Set the remote URL.
+    fn set_remote(&self, url: &str) -> PyResult<()> {
+        let mut config = self.repo.load_config().map_err(to_py_err)?;
+        config.remote_url = Some(url.to_string());
+        self.repo.save_config(&config).map_err(to_py_err)
+    }
+
+    /// Get the user name.
+    fn user_name(&self) -> PyResult<String> {
+        let config = self.repo.load_config().map_err(to_py_err)?;
+        Ok(config.user.name)
+    }
+
+    /// Set the user name.
+    fn set_user_name(&self, name: &str) -> PyResult<()> {
+        let mut config = self.repo.load_config().map_err(to_py_err)?;
+        config.user.name = name.to_string();
+        self.repo.save_config(&config).map_err(to_py_err)
+    }
+
+    // -----------------------------------------------------------------------
+    // File I/O (working directory)
+    // -----------------------------------------------------------------------
+
+    /// Write a JSON resource to the working directory.
+    fn write_resource(&self, resource_id: &str, json_str: &str) -> PyResult<()> {
+        let _: Value = serde_json::from_str(json_str)
+            .map_err(|e| PyRuntimeError::new_err(format!("Invalid JSON: {}", e)))?;
+        self.repo
+            .write_resource_file(resource_id, json_str)
+            .map_err(to_py_err)
+    }
+
+    /// Read a JSON resource from the working directory.
+    fn read_resource(&self, resource_id: &str) -> PyResult<String> {
+        self.repo.read_resource_file(resource_id).map_err(to_py_err)
+    }
+
+    /// Check if a resource exists in the working directory.
+    fn resource_exists(&self, resource_id: &str) -> PyResult<bool> {
+        let rel = self.repo.relative_path_for_resource_id(resource_id);
+        self.repo.work_file_exists(&rel).map_err(to_py_err)
+    }
+
+    /// Delete a resource from the working directory.
+    fn delete_resource(&self, resource_id: &str) -> PyResult<()> {
+        let rel = self.repo.relative_path_for_resource_id(resource_id);
+        self.repo.remove_work_file(&rel).map_err(to_py_err)
+    }
+
+    /// List all resource IDs in the working directory.
+    fn list_resources(&self) -> PyResult<Vec<String>> {
+        self.repo
+            .list_work_json_files()
+            .map_err(to_py_err)
+            .map(|files| {
+                files
+                    .iter()
+                    .map(|f| self.repo.resource_id_from_relative(f))
+                    .collect()
+            })
+    }
+
+    // -----------------------------------------------------------------------
+    // Staging (add)
+    // -----------------------------------------------------------------------
+
+    /// Stage a resource for commit.
+    fn add(&self, resource_id: &str) -> PyResult<()> {
+        let rel = self.repo.relative_path_for_resource_id(resource_id);
+        let current_content = self.repo.read_work_file(&rel).map_err(to_py_err)?;
+        let current: Value = serde_json::from_str(&current_content)
+            .map_err(|e| PyRuntimeError::new_err(format!("Invalid JSON in {}: {}", resource_id, e)))?;
+
+        let previous = self.repo.load_snapshot(resource_id).map_err(to_py_err)?;
+        let operations = match &previous {
+            Some(prev) => dyna_core::diff::diff(prev, &current),
+            None => dyna_core::diff::diff(&Value::Null, &current),
+        };
+
+        if operations.is_empty() {
+            return Err(PyRuntimeError::new_err(format!(
+                "No changes detected for '{}'",
+                resource_id
+            )));
+        }
+
+        let staged = StagedChange {
+            resource_id: resource_id.to_string(),
+            file_path: rel,
+            previous,
+            current,
+            operations,
+        };
+        self.repo.stage_change(&staged).map_err(to_py_err)
+    }
+
+    /// Stage a resource deletion.
+    fn add_delete(&self, resource_id: &str) -> PyResult<()> {
+        let rel = self.repo.relative_path_for_resource_id(resource_id);
+        let previous = self
+            .repo
+            .load_snapshot(resource_id)
+            .map_err(to_py_err)?
+            .ok_or_else(|| {
+                PyRuntimeError::new_err(format!(
+                    "Resource '{}' has no snapshot — nothing to delete",
+                    resource_id
+                ))
+            })?;
+
+        let operations = vec![PatchOperation::Remove {
+            path: "/".to_string(),
+        }];
+
+        let staged = StagedChange {
+            resource_id: resource_id.to_string(),
+            file_path: rel,
+            previous: Some(previous),
+            current: Value::Null,
+            operations,
+        };
+        self.repo.stage_change(&staged).map_err(to_py_err)
+    }
+
+    // -----------------------------------------------------------------------
+    // Status
+    // -----------------------------------------------------------------------
+
+    /// Get repository status as a dict with keys:
+    /// channel, staged, modified, deleted, untracked, conflicts.
+    fn status(&self) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let dict = pyo3::types::PyDict::new(py);
+
+            let channel = self.repo.current_channel_name().map_err(to_py_err)?;
+            dict.set_item("channel", &channel)?;
+
+            let staged = self.repo.load_staged_changes().map_err(to_py_err)?;
+            let staged_list: Vec<PyObject> = staged
+                .iter()
+                .map(|s| {
+                    let d = pyo3::types::PyDict::new(py);
+                    d.set_item("resource_id", &s.resource_id).unwrap();
+                    d.set_item("op_count", s.operations.len()).unwrap();
+                    let kind = if s.previous.is_none() {
+                        "new"
+                    } else if s.current.is_null() {
+                        "deleted"
+                    } else {
+                        "modified"
+                    };
+                    d.set_item("kind", kind).unwrap();
+                    d.into()
+                })
+                .collect();
+            dict.set_item("staged", staged_list)?;
+
+            let staged_ids: HashSet<String> =
+                staged.iter().map(|s| s.resource_id.clone()).collect();
+
+            let snapshots = self.repo.load_all_snapshots().map_err(to_py_err)?;
+            let work_files = self.repo.list_work_json_files().map_err(to_py_err)?;
+
+            // Modified (unstaged changes to tracked files)
+            let mut modified = Vec::new();
+            for file_path in &work_files {
+                let rid = self.repo.resource_id_from_relative(file_path);
+                if staged_ids.contains(&rid) {
+                    continue;
+                }
+                if let Some(snapshot_val) = snapshots.get(&rid) {
+                    if let Ok(content) = self.repo.read_work_file(file_path) {
+                        if let Ok(current_val) = serde_json::from_str::<Value>(&content) {
+                            if &current_val != snapshot_val {
+                                modified.push(rid);
+                            }
+                        }
+                    }
+                }
+            }
+            dict.set_item("modified", modified)?;
+
+            // Deleted tracked files
+            let work_rids: HashSet<String> = work_files
+                .iter()
+                .map(|f| self.repo.resource_id_from_relative(f))
+                .collect();
+            let deleted: Vec<String> = snapshots
+                .keys()
+                .filter(|rid| !work_rids.contains(*rid) && !staged_ids.contains(*rid))
+                .cloned()
+                .collect();
+            dict.set_item("deleted", deleted)?;
+
+            // Untracked (new files not yet in snapshots)
+            let mut untracked = Vec::new();
+            for file_path in &work_files {
+                let rid = self.repo.resource_id_from_relative(file_path);
+                if !snapshots.contains_key(&rid) && !staged_ids.contains(&rid) {
+                    untracked.push(rid);
+                }
+            }
+            dict.set_item("untracked", untracked)?;
+
+            // Conflicts
+            let conflicts = self.repo.list_conflicted_resources().map_err(to_py_err)?;
+            dict.set_item("conflicts", conflicts)?;
+
+            Ok(dict.into())
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Commit
+    // -----------------------------------------------------------------------
+
+    /// Commit staged changes. Returns the change_id.
+    fn commit(&self, message: &str) -> PyResult<String> {
+        let staged = self.repo.load_staged_changes().map_err(to_py_err)?;
+        if staged.is_empty() {
+            return Err(PyRuntimeError::new_err("Nothing staged to commit"));
+        }
+
+        let config = self.repo.load_config().map_err(to_py_err)?;
+        let channel_name = self.repo.current_channel_name().map_err(to_py_err)?;
+        let mut channel = self.repo.load_channel(&channel_name).map_err(to_py_err)?;
+
+        let patches: Vec<Patch> = staged
+            .iter()
+            .map(|s| dyna_core::patch::build_patch(s))
+            .collect();
+
+        let parents = channel
+            .head_change_id
+            .clone()
+            .map(|id| vec![id])
+            .unwrap_or_default();
+
+        let changeset = Changeset::new(
+            config.user.name.clone(),
+            message.to_string(),
+            parents,
+            patches,
+        );
+
+        let change_id = changeset.change_id.clone();
+
+        self.repo.store_changeset(&changeset).map_err(to_py_err)?;
+        channel.changesets.push(changeset.change_id.clone());
+        channel.head_change_id = Some(changeset.change_id.clone());
+        self.repo.save_channel(&channel).map_err(to_py_err)?;
+
+        self.repo
+            .set_working_change(Some(&change_id))
+            .map_err(to_py_err)?;
+
+        for s in &staged {
+            if s.current.is_null() {
+                self.repo
+                    .remove_snapshot(&s.resource_id)
+                    .map_err(to_py_err)?;
+            } else {
+                self.repo
+                    .save_snapshot(&s.resource_id, &s.current)
+                    .map_err(to_py_err)?;
+            }
+        }
+
+        self.repo.clear_staging().map_err(to_py_err)?;
+        Ok(change_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Push
+    // -----------------------------------------------------------------------
+
+    /// Push local changesets to the remote server.
+    #[pyo3(signature = (channel=None))]
+    fn push(&self, channel: Option<&str>) -> PyResult<PyObject> {
+        let config = self.repo.load_config().map_err(to_py_err)?;
+        let remote_url = config
+            .remote_url
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("No remote URL configured"))?
+            .clone();
+
+        let channel_name = channel
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| self.repo.current_channel_name().unwrap_or_default());
+
+        let ch = self.repo.load_channel(&channel_name).map_err(to_py_err)?;
+        let sync_state = self.repo.load_sync_state().map_err(to_py_err)?;
+
+        let pushed_set: HashSet<&str> = sync_state
+            .pushed_changesets
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        let new_changeset_ids: Vec<&String> = ch
+            .changesets
+            .iter()
+            .filter(|id| !pushed_set.contains(id.as_str()))
+            .collect();
+
+        if new_changeset_ids.is_empty() {
+            return Err(PyRuntimeError::new_err(
+                "Nothing to push — all changesets are up to date",
+            ));
+        }
+
+        let new_changesets: Vec<Changeset> = new_changeset_ids
+            .iter()
+            .filter_map(|id| self.repo.load_changeset(id).ok())
+            .collect();
+
+        let expected_head = sync_state.remote_heads.get(&channel_name).cloned();
+
+        let request = PushRequest {
+            channel: channel_name.clone(),
+            changesets: new_changesets,
+            expected_head,
+        };
+
+        let client = SyncClient::new(&remote_url);
+        let response = block_on(client.push(&request)).map_err(to_py_err)?;
+
+        if response.success {
+            let mut new_sync = sync_state;
+            if let Some(ref new_head) = response.new_head {
+                new_sync
+                    .remote_heads
+                    .insert(channel_name.clone(), new_head.clone());
+            }
+            for id in &new_changeset_ids {
+                if !new_sync.pushed_changesets.contains(id) {
+                    new_sync.pushed_changesets.push((*id).clone());
+                }
+            }
+            self.repo.save_sync_state(&new_sync).map_err(to_py_err)?;
+        }
+
+        Python::with_gil(|py| {
+            let dict = pyo3::types::PyDict::new(py);
+            dict.set_item("success", response.success)?;
+            dict.set_item("changesets_pushed", response.accepted_count)?;
+            dict.set_item("channel", &channel_name)?;
+            if let Some(ref err) = response.error {
+                dict.set_item("error", err)?;
+            }
+            Ok(dict.into())
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Pull
+    // -----------------------------------------------------------------------
+
+    /// Pull changesets from the remote server.
+    #[pyo3(signature = (channel=None))]
+    fn pull(&self, channel: Option<&str>) -> PyResult<PyObject> {
+        let config = self.repo.load_config().map_err(to_py_err)?;
+        let remote_url = config
+            .remote_url
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("No remote URL configured"))?
+            .clone();
+
+        let channel_name = channel
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| self.repo.current_channel_name().unwrap_or_default());
+
+        let sync_state = self.repo.load_sync_state().map_err(to_py_err)?;
+        let since = sync_state.remote_heads.get(&channel_name).cloned();
+
+        let request = PullRequest {
+            channel: channel_name.clone(),
+            since_change_id: since,
+        };
+
+        let client = SyncClient::new(&remote_url);
+        let response = block_on(client.pull(&request)).map_err(to_py_err)?;
+        let new_count = response.changesets.len();
+
+        for cs in &response.changesets {
+            self.repo.store_changeset(cs).map_err(to_py_err)?;
+        }
+
+        self.repo
+            .save_channel(&response.channel)
+            .map_err(to_py_err)?;
+
+        let mut new_sync = sync_state;
+        if let Some(ref head) = response.current_head {
+            new_sync
+                .remote_heads
+                .insert(channel_name.clone(), head.clone());
+        }
+        self.repo.save_sync_state(&new_sync).map_err(to_py_err)?;
+
+        let mut resources_updated = 0usize;
+        for cs in &response.changesets {
+            for patch in &cs.patches {
+                if let Some(ref snap) = patch.result_snapshot {
+                    let json = serde_json::to_string_pretty(snap)
+                        .map_err(|e| to_py_err(e.into()))?;
+                    self.repo
+                        .write_resource_file(&patch.target_resource, &json)
+                        .map_err(to_py_err)?;
+                    self.repo
+                        .save_snapshot(&patch.target_resource, snap)
+                        .map_err(to_py_err)?;
+                    resources_updated += 1;
+                }
+            }
+        }
+
+        Python::with_gil(|py| {
+            let dict = pyo3::types::PyDict::new(py);
+            dict.set_item("changesets_pulled", new_count)?;
+            dict.set_item("channel", &channel_name)?;
+            dict.set_item("resources_updated", resources_updated)?;
+            Ok(dict.into())
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Promote
+    // -----------------------------------------------------------------------
+
+    /// Promote changesets from a channel to main.
+    #[pyo3(signature = (channel=None))]
+    fn promote(&self, channel: Option<&str>) -> PyResult<PyObject> {
+        let config = self.repo.load_config().map_err(to_py_err)?;
+        let remote_url = config
+            .remote_url
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("No remote URL configured"))?
+            .clone();
+
+        let source_channel = channel
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| self.repo.current_channel_name().unwrap_or_default());
+
+        if source_channel == "main" {
+            return Err(PyRuntimeError::new_err(
+                "Cannot promote from 'main'. Specify a source channel.",
+            ));
+        }
+
+        let request = PromoteRequest {
+            source_channel: source_channel.clone(),
+            target_channel: "main".to_string(),
+        };
+
+        let client = SyncClient::new(&remote_url);
+        let response = block_on(client.promote(&request)).map_err(to_py_err)?;
+
+        Python::with_gil(|py| {
+            let dict = pyo3::types::PyDict::new(py);
+            dict.set_item("success", response.success)?;
+            dict.set_item("source_channel", &source_channel)?;
+            dict.set_item("promoted_count", response.promoted_changesets.len())?;
+            if let Some(ref new_head) = response.new_head {
+                dict.set_item("new_head", new_head)?;
+            }
+            if let Some(ref err) = response.error {
+                dict.set_item("error", err)?;
+            }
+            Ok(dict.into())
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Clone
+    // -----------------------------------------------------------------------
+
+    /// Clone a remote repository into `path`.
+    #[staticmethod]
+    #[pyo3(signature = (url, path, user_name=None))]
+    fn clone_repo(url: &str, path: &str, user_name: Option<&str>) -> PyResult<Self> {
+        let work_dir = PathBuf::from(path);
+        std::fs::create_dir_all(&work_dir)
+            .map_err(|e| PyRuntimeError::new_err(format!("Cannot create directory: {}", e)))?;
+
+        let repo = Repository::init(&work_dir).map_err(to_py_err)?;
+
+        let mut config = repo.load_config().map_err(to_py_err)?;
+        config.remote_url = Some(url.to_string());
+        if let Some(name) = user_name {
+            config.user.name = name.to_string();
+        }
+        repo.save_config(&config).map_err(to_py_err)?;
+
+        let client = SyncClient::new(url);
+        let request = CloneRequest { channel: None };
+        let response = block_on(client.clone_repo(&request)).map_err(to_py_err)?;
+
+        for cs in &response.changesets {
+            repo.store_changeset(cs).map_err(to_py_err)?;
+        }
+        for ch in &response.channels {
+            repo.save_channel(ch).map_err(to_py_err)?;
+        }
+        for (resource_id, snapshot) in &response.snapshots {
+            let json = serde_json::to_string_pretty(snapshot)
+                .map_err(|e| to_py_err(e.into()))?;
+            repo.write_resource_file(resource_id, &json)
+                .map_err(to_py_err)?;
+            repo.save_snapshot(resource_id, snapshot)
+                .map_err(to_py_err)?;
+        }
+
+        if let Some(main_ch) = response.channels.iter().find(|c| c.name == "main") {
+            repo.set_current_channel(&main_ch.name)
+                .map_err(to_py_err)?;
+            if let Some(ref head) = main_ch.head_change_id {
+                repo.set_working_change(Some(head)).map_err(to_py_err)?;
+            }
+        } else if let Some(first_ch) = response.channels.first() {
+            repo.set_current_channel(&first_ch.name)
+                .map_err(to_py_err)?;
+        }
+
+        let mut sync_state = SyncState::default();
+        for ch in &response.channels {
+            if let Some(ref head) = ch.head_change_id {
+                sync_state
+                    .remote_heads
+                    .insert(ch.name.clone(), head.clone());
+            }
+            for cs_id in &ch.changesets {
+                if !sync_state.pushed_changesets.contains(cs_id) {
+                    sync_state.pushed_changesets.push(cs_id.clone());
+                }
+            }
+        }
+        repo.save_sync_state(&sync_state).map_err(to_py_err)?;
+
+        Ok(Self { repo })
+    }
+
+    // -----------------------------------------------------------------------
+    // Channels
+    // -----------------------------------------------------------------------
+
+    /// Get the current channel name.
+    fn current_channel(&self) -> PyResult<String> {
+        self.repo.current_channel_name().map_err(to_py_err)
+    }
+
+    /// List all local channels. Returns a list of channel names.
+    fn list_channels(&self) -> PyResult<Vec<String>> {
+        self.repo
+            .list_channels()
+            .map(|channels| channels.iter().map(|c| c.name.clone()).collect())
+            .map_err(to_py_err)
+    }
+
+    /// Create a new channel, optionally forking from an existing one.
+    #[pyo3(signature = (name, fork_from=None))]
+    fn create_channel(&self, name: &str, fork_from: Option<&str>) -> PyResult<()> {
+        self.repo
+            .create_channel(name, fork_from)
+            .map_err(to_py_err)?;
+        Ok(())
+    }
+
+    /// Switch to a channel.
+    fn switch_channel(&self, name: &str) -> PyResult<()> {
+        let _ch = self.repo.load_channel(name).map_err(to_py_err)?;
+        self.repo.set_current_channel(name).map_err(to_py_err)
+    }
+
+    // -----------------------------------------------------------------------
+    // Log
+    // -----------------------------------------------------------------------
+
+    /// Get the changeset log. Returns a list of dicts.
+    #[pyo3(signature = (count=None, verbose=None))]
+    fn log(&self, count: Option<usize>, verbose: Option<bool>) -> PyResult<Vec<PyObject>> {
+        let channel_name = self.repo.current_channel_name().map_err(to_py_err)?;
+        let changesets = self
+            .repo
+            .load_channel_changesets(&channel_name)
+            .map_err(to_py_err)?;
+        let verbose = verbose.unwrap_or(false);
+        let limit = count.unwrap_or(changesets.len());
+
+        Python::with_gil(|py| {
+            changesets
+                .iter()
+                .rev()
+                .take(limit)
+                .map(|cs| {
+                    let dict = pyo3::types::PyDict::new(py);
+                    dict.set_item("change_id", &cs.change_id)?;
+                    dict.set_item("commit_hash", &cs.commit_hash)?;
+                    dict.set_item("message", &cs.message)?;
+                    dict.set_item("author", &cs.author)?;
+                    dict.set_item("created_at", cs.created_at.to_rfc3339())?;
+                    dict.set_item("parents", &cs.parents)?;
+                    dict.set_item("patch_count", cs.patches.len())?;
+                    dict.set_item("immutable", cs.immutable)?;
+
+                    if verbose {
+                        let patches: Vec<PyObject> = cs
+                            .patches
+                            .iter()
+                            .map(|p| {
+                                let pd = pyo3::types::PyDict::new(py);
+                                pd.set_item("target_resource", &p.target_resource)
+                                    .unwrap();
+                                pd.set_item("hash", &p.hash).unwrap();
+                                pd.set_item("op_count", p.operations.len()).unwrap();
+                                pd.into()
+                            })
+                            .collect();
+                        dict.set_item("patches", patches)?;
+                    }
+
+                    Ok(dict.into())
+                })
+                .collect()
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Diff
+    // -----------------------------------------------------------------------
+
+    /// Compute diff for a resource. Returns JSON string of operations.
+    fn diff(&self, resource_id: &str) -> PyResult<String> {
+        let rel = self.repo.relative_path_for_resource_id(resource_id);
+        let current_content = self.repo.read_work_file(&rel).map_err(to_py_err)?;
+        let current: Value = serde_json::from_str(&current_content)
+            .map_err(|e| PyRuntimeError::new_err(format!("Invalid JSON: {}", e)))?;
+
+        let previous = self
+            .repo
+            .load_snapshot(resource_id)
+            .map_err(to_py_err)?
+            .unwrap_or(Value::Null);
+
+        let ops = dyna_core::diff::diff(&previous, &current);
+        serde_json::to_string_pretty(&ops).map_err(|e| to_py_err(e.into()))
+    }
+
+    // -----------------------------------------------------------------------
+    // Restore
+    // -----------------------------------------------------------------------
+
+    /// Restore a resource to its snapshot state.
+    #[pyo3(signature = (resource_id, _channel=None, changeset=None))]
+    fn restore(
+        &self,
+        resource_id: &str,
+        _channel: Option<&str>,
+        changeset: Option<&str>,
+    ) -> PyResult<()> {
+        let snapshot_value = if let Some(cs_prefix) = changeset {
+            let matches = self
+                .repo
+                .find_changeset_by_prefix(cs_prefix)
+                .map_err(to_py_err)?;
+            match matches.len() {
+                0 => {
+                    return Err(PyRuntimeError::new_err(format!(
+                        "No changeset found matching '{}'",
+                        cs_prefix
+                    )))
+                }
+                1 => {
+                    let cs = &matches[0];
+                    cs.patches
+                        .iter()
+                        .find(|p| p.target_resource == resource_id)
+                        .and_then(|p| p.result_snapshot.clone())
+                        .ok_or_else(|| {
+                            PyRuntimeError::new_err(format!(
+                                "Changeset '{}' does not contain resource '{}'",
+                                cs.change_id, resource_id
+                            ))
+                        })?
+                }
+                _ => {
+                    let ids: Vec<&str> =
+                        matches.iter().map(|m| m.change_id.as_str()).collect();
+                    return Err(PyRuntimeError::new_err(format!(
+                        "Ambiguous prefix '{}', matches: {:?}",
+                        cs_prefix, ids
+                    )));
+                }
+            }
+        } else {
+            self.repo
+                .load_snapshot(resource_id)
+                .map_err(to_py_err)?
+                .ok_or_else(|| {
+                    PyRuntimeError::new_err(format!(
+                        "No snapshot found for '{}'",
+                        resource_id
+                    ))
+                })?
+        };
+
+        let json =
+            serde_json::to_string_pretty(&snapshot_value).map_err(|e| to_py_err(e.into()))?;
+        self.repo
+            .write_resource_file(resource_id, &json)
+            .map_err(to_py_err)?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Squash
+    // -----------------------------------------------------------------------
+
+    /// Squash a changeset into its parent. Returns the target change_id.
+    #[pyo3(signature = (revision=None, into=None, message=None))]
+    fn squash(
+        &self,
+        revision: Option<&str>,
+        into: Option<&str>,
+        message: Option<&str>,
+    ) -> PyResult<String> {
+        let channel_name = self.repo.current_channel_name().map_err(to_py_err)?;
+        let mut channel = self.repo.load_channel(&channel_name).map_err(to_py_err)?;
+
+        let child_id = if let Some(rev) = revision {
+            let matches = self
+                .repo
+                .find_changeset_by_prefix(rev)
+                .map_err(to_py_err)?;
+            match matches.len() {
+                0 => {
+                    return Err(PyRuntimeError::new_err(format!(
+                        "No changeset found matching '{}'",
+                        rev
+                    )))
+                }
+                1 => matches[0].change_id.clone(),
+                _ => return Err(PyRuntimeError::new_err("Ambiguous changeset prefix")),
+            }
+        } else {
+            channel
+                .head_change_id
+                .clone()
+                .ok_or_else(|| {
+                    PyRuntimeError::new_err("No changesets in channel to squash")
+                })?
+        };
+
+        let child = self.repo.load_changeset(&child_id).map_err(to_py_err)?;
+        if child.immutable {
+            return Err(PyRuntimeError::new_err(
+                "Cannot squash an immutable changeset",
+            ));
+        }
+
+        let target_id = if let Some(into_prefix) = into {
+            let matches = self
+                .repo
+                .find_changeset_by_prefix(into_prefix)
+                .map_err(to_py_err)?;
+            match matches.len() {
+                0 => {
+                    return Err(PyRuntimeError::new_err(format!(
+                        "No changeset found matching '{}'",
+                        into_prefix
+                    )))
+                }
+                1 => matches[0].change_id.clone(),
+                _ => return Err(PyRuntimeError::new_err("Ambiguous changeset prefix")),
+            }
+        } else {
+            child
+                .parents
+                .first()
+                .cloned()
+                .ok_or_else(|| {
+                    PyRuntimeError::new_err("Changeset has no parent to squash into")
+                })?
+        };
+
+        let mut target = self.repo.load_changeset(&target_id).map_err(to_py_err)?;
+        if target.immutable {
+            return Err(PyRuntimeError::new_err(
+                "Cannot squash into an immutable changeset",
+            ));
+        }
+
+        // Merge patches
+        let mut merged_patches = target.patches.clone();
+        for child_patch in &child.patches {
+            if let Some(existing) = merged_patches
+                .iter_mut()
+                .find(|p| p.target_resource == child_patch.target_resource)
+            {
+                let parent_snap = existing.parent_snapshot.clone();
+                let result_snap = child_patch.result_snapshot.clone();
+                let ops = match (&parent_snap, &result_snap) {
+                    (Some(prev), Some(curr)) => dyna_core::diff::diff(prev, curr),
+                    _ => child_patch.operations.clone(),
+                };
+                *existing = Patch::new(
+                    existing.target_resource.clone(),
+                    ops,
+                    parent_snap,
+                    result_snap,
+                );
+            } else {
+                merged_patches.push(child_patch.clone());
+            }
+        }
+
+        target.patches = merged_patches;
+        if let Some(msg) = message {
+            target.message = msg.to_string();
+        }
+        target.recompute_hash();
+
+        self.repo.store_changeset(&target).map_err(to_py_err)?;
+
+        channel.changesets.retain(|id| id != &child_id);
+        if channel.head_change_id.as_deref() == Some(&child_id) {
+            channel.head_change_id = channel.changesets.last().cloned();
+        }
+        self.repo.save_channel(&channel).map_err(to_py_err)?;
+
+        // Update working change if needed
+        if let Ok(Some(wc)) = self.repo.working_change_id() {
+            if wc == child_id {
+                self.repo
+                    .set_working_change(Some(&target_id))
+                    .map_err(to_py_err)?;
+            }
+        }
+
+        // Reparent any changesets that had child as parent
+        let all_ids = self.repo.all_changeset_ids().map_err(to_py_err)?;
+        for id in &all_ids {
+            if id == &child_id || id == &target_id {
+                continue;
+            }
+            if let Ok(mut cs) = self.repo.load_changeset(id) {
+                if cs.parents.contains(&child_id) {
+                    cs.parents = cs
+                        .parents
+                        .iter()
+                        .map(|p| {
+                            if p == &child_id {
+                                target_id.clone()
+                            } else {
+                                p.clone()
+                            }
+                        })
+                        .collect();
+                    cs.recompute_hash();
+                    self.repo.store_changeset(&cs).map_err(to_py_err)?;
+                }
+            }
+        }
+
+        self.repo
+            .remove_changeset_file(&child_id)
+            .map_err(to_py_err)?;
+        Ok(target_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Describe
+    // -----------------------------------------------------------------------
+
+    /// Update the message of a changeset.
+    fn describe(&self, change_id: &str, message: &str) -> PyResult<()> {
+        let matches = self
+            .repo
+            .find_changeset_by_prefix(change_id)
+            .map_err(to_py_err)?;
+        match matches.len() {
+            0 => Err(PyRuntimeError::new_err(format!(
+                "No changeset found matching '{}'",
+                change_id
+            ))),
+            1 => {
+                let mut cs = matches.into_iter().next().unwrap();
+                if cs.immutable {
+                    return Err(PyRuntimeError::new_err(
+                        "Cannot describe an immutable changeset",
+                    ));
+                }
+                cs.message = message.to_string();
+                cs.recompute_hash();
+                self.repo.store_changeset(&cs).map_err(to_py_err)
+            }
+            _ => Err(PyRuntimeError::new_err("Ambiguous changeset prefix")),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // History (remote query)
+    // -----------------------------------------------------------------------
+
+    /// Query the change history of a resource from the remote server.
+    fn history(&self, resource_id: &str) -> PyResult<Vec<PyObject>> {
+        let config = self.repo.load_config().map_err(to_py_err)?;
+        let remote_url = config
+            .remote_url
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("No remote URL configured"))?
+            .clone();
+
+        let client = SyncClient::new(&remote_url);
+        let response =
+            block_on(client.resource_history(resource_id)).map_err(to_py_err)?;
+
+        Python::with_gil(|py| {
+            response
+                .entries
+                .iter()
+                .map(|entry| {
+                    let dict = pyo3::types::PyDict::new(py);
+                    dict.set_item("change_id", &entry.change_id)?;
+                    dict.set_item("commit_hash", &entry.commit_hash)?;
+                    dict.set_item("message", &entry.message)?;
+                    dict.set_item("author", &entry.author)?;
+                    dict.set_item("timestamp", &entry.timestamp)?;
+                    dict.set_item("channel", &entry.channel)?;
+                    let ops_json = serde_json::to_string(&entry.operations)
+                        .unwrap_or_else(|_| "[]".to_string());
+                    dict.set_item("operations", ops_json)?;
+                    Ok(dict.into())
+                })
+                .collect()
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Conflict resolution
+    // -----------------------------------------------------------------------
+
+    /// List conflicted resources.
+    fn list_conflicts(&self) -> PyResult<Vec<String>> {
+        self.repo.list_conflicted_resources().map_err(to_py_err)
+    }
+
+    /// Resolve a conflict by accepting the current working file.
+    fn resolve(&self, resource_id: &str) -> PyResult<()> {
+        let rel = self.repo.relative_path_for_resource_id(resource_id);
+        let content = self.repo.read_work_file(&rel).map_err(to_py_err)?;
+        let value: Value = serde_json::from_str(&content)
+            .map_err(|e| PyRuntimeError::new_err(format!("Invalid JSON: {}", e)))?;
+
+        self.repo
+            .save_snapshot(resource_id, &value)
+            .map_err(to_py_err)?;
+        self.repo
+            .clear_conflicts(resource_id)
+            .map_err(to_py_err)
+    }
+
+    // -----------------------------------------------------------------------
+    // Utility
+    // -----------------------------------------------------------------------
+
+    /// Convert a relative file path to a resource ID.
+    fn path_to_resource_id(&self, path: &str) -> String {
+        self.repo.resource_id_from_relative(path)
+    }
+
+    /// Convert a resource ID to a relative file path.
+    fn resource_id_to_path(&self, resource_id: &str) -> String {
+        self.repo.relative_path_for_resource_id(resource_id)
+    }
+
+    /// Get the working directory path.
+    fn work_dir(&self) -> String {
+        self.repo.work_dir.display().to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Python module
+// ---------------------------------------------------------------------------
+
+/// The `dyna_py` Python module — Python bindings for the Dyna distributed
+/// CRUD system.
+#[pymodule]
+fn dyna_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<DynaRepo>()?;
+    Ok(())
+}

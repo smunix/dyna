@@ -2,7 +2,7 @@
 
 **A distributed CRUD system for collaborative JSON resource editing.**
 
-Dyna enables multiple users to concurrently edit a shared set of JSON resources stored in S3, with full version history, conflict resolution, and a powerful changeset-based model. It consists of four crates and a browser-based Elm UI:
+Dyna enables multiple users to concurrently edit a shared set of JSON resources stored in S3, with full version history, conflict resolution, and a powerful changeset-based model. It consists of five Rust crates, a Python package, and a browser-based Elm UI:
 
 | Crate | Description |
 |-------|-------------|
@@ -11,6 +11,7 @@ Dyna enables multiple users to concurrently edit a shared set of JSON resources 
 | **dyna-server** | Remote server built on [elfo-rs](https://github.com/elfo-rs/elfo) actors + Axum, with S3 storage and WebSocket notifications. |
 | **dyna-wasm** | WebAssembly client for browser-based usage, with in-memory VFS and `web-sys` fetch/WebSocket. |
 | **dyna-app** | Elm-based browser UI that uses `dyna-wasm` for full collaborative JSON editing. |
+| **dyna-py** | Python bindings via PyO3 that call directly into `dyna-cli`, with a `click`-based CLI. |
 
 ---
 
@@ -40,6 +41,13 @@ Dyna enables multiple users to concurrently edit a shared set of JSON resources 
 │  │  (MemoryFS)    │  │                           │  └──────────────┘                    │
 │  └───────────────┘  │                           │                                      │
 └─────────────────────┘                           └──────────────────────────────────────┘
+
+┌─────────────────────┐
+│  dyna-py (Python)   │         HTTP/gzip
+│                     │◄────────────────────────►  (same dyna-server)
+│  PyO3 → dyna-cli   │         REST API
+│  (PhysicalFS)       │
+└─────────────────────┘
 ```
 
 ## Key Concepts
@@ -91,6 +99,7 @@ nix build .#dyna-cli
 nix build .#dyna-server
 nix build .#dyna-wasm
 nix build .#dyna-app
+nix build .#dyna-py
 
 # Build everything
 nix flake check
@@ -99,6 +108,7 @@ nix flake check
 nix run .#dyna-cli
 nix run .#dyna-server
 nix run .#dyna-app-serve       # build & serve the Elm UI locally
+nix run .#dyna-py              # Python CLI
 
 # Build Docker/OCI images for deployment
 nix build .#dyna-server-image
@@ -112,6 +122,8 @@ The `nix develop` shell provides:
 | `dyna` (dyna-cli) | Pre-built CLI binary, directly executable |
 | `dyna-server` | Pre-built server binary, directly executable |
 | `dyna-app-serve` | Script that builds WASM + Elm and serves the UI locally |
+| `dyna-py` | Pre-built Python CLI (via PyO3), directly executable |
+| Python 3 + maturin + click | Rebuild dyna-py from source with `maturin develop` |
 | Rust toolchain (stable + wasm32 target) | Build all Rust crates natively and for WASM |
 | rust-analyzer, clippy, rustfmt | IDE support and linting |
 | wasm-pack, wasm-bindgen-cli | WASM packaging and JS/TS glue generation |
@@ -141,10 +153,12 @@ cd dyna-app && elm make src/Main.elm --output=public/elm.js
 | `packages.dyna-app` | Compiled Elm app with bundled WASM package |
 | `packages.dyna-server-image` | OCI/Docker image for the server |
 | `packages.dyna-app-image` | OCI/Docker image serving the Elm UI (static-web-server) |
+| `packages.dyna-py` | Python package with native Rust extension (via maturin) |
 | `packages.dyna-app-serve` | Shell script: build WASM + Elm and serve locally |
 | `apps.dyna-cli` | `nix run .#dyna-cli` |
 | `apps.dyna-server` | `nix run .#dyna-server` |
 | `apps.dyna-app-serve` | `nix run .#dyna-app-serve [port]` |
+| `apps.dyna-py` | `nix run .#dyna-py` |
 | `devShells.default` | Full development environment with all binaries on PATH |
 | `checks.*` | Clippy, fmt, nextest, and build checks |
 

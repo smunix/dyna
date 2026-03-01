@@ -56,6 +56,7 @@
               (craneLib.fileset.commonCargoSources ./dyna-cli)
               (craneLib.fileset.commonCargoSources ./dyna-server)
               (craneLib.fileset.commonCargoSources ./dyna-wasm)
+              (craneLib.fileset.commonCargoSources ./dyna-py)
             ];
           };
 
@@ -158,6 +159,53 @@
             '';
           };
 
+          # ── Python package (dyna-py via maturin) ────────────────────
+          #
+          # Builds the PyO3 cdylib and installs it as a Python package.
+          dyna-py = pkgs.python3Packages.buildPythonPackage {
+            pname = "dyna-py";
+            version = "0.1.0";
+            format = "pyproject";
+
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                ./Cargo.toml
+                ./Cargo.lock
+                (craneLib.fileset.commonCargoSources ./dyna-core)
+                (craneLib.fileset.commonCargoSources ./dyna-cli)
+                (craneLib.fileset.commonCargoSources ./dyna-py)
+                ./dyna-py/pyproject.toml
+                ./dyna-py/python
+              ];
+            };
+
+            cargoDeps = pkgs.rustPlatform.importCargoLock {
+              lockFile = ./Cargo.lock;
+            };
+
+            nativeBuildInputs = [
+              pkgs.rustPlatform.cargoSetupHook
+              pkgs.rustPlatform.maturinBuildHook
+              nativeToolchain
+              pkgs.pkg-config
+            ];
+
+            buildInputs = [
+              pkgs.openssl
+            ] ++ lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.libiconv
+              pkgs.darwin.apple_sdk.frameworks.Security
+              pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+            ];
+
+            propagatedBuildInputs = [
+              pkgs.python3Packages.click
+            ];
+
+            pythonImportsCheck = [ "dyna_py" ];
+          };
+
           # ── Docker / OCI images ────────────────────────────────────────
 
           dyna-server-image = pkgs.dockerTools.buildLayeredImage {
@@ -250,7 +298,7 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-app-serve;
+            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-py dyna-app-serve;
             inherit dyna-server-image dyna-app-image;
             default = dyna-cli;
           };
@@ -268,6 +316,10 @@
             dyna-app-serve = {
               type = "app";
               program = "${dyna-app-serve}/bin/dyna-app-serve";
+            };
+            dyna-py = {
+              type = "app";
+              program = "${dyna-py}/bin/dyna-py";
             };
             default = {
               type = "app";
@@ -303,6 +355,12 @@
               dyna-server
               dyna-app-serve
 
+              # Python (dyna-py)
+              pkgs.python3
+              pkgs.python3Packages.maturin
+              pkgs.python3Packages.click
+              dyna-py
+
               # WASM tooling
               pkgs.wasm-pack
               pkgs.wasm-bindgen-cli
@@ -332,12 +390,14 @@
               echo "  ║    dyna             — CLI client                         ║"
               echo "  ║    dyna-server      — start the server                   ║"
               echo "  ║    dyna-app-serve   — build & serve the Elm UI           ║"
+              echo "  ║    dyna-py          — Python CLI (via PyO3)               ║"
               echo "  ║                                                          ║"
               echo "  ║  Development commands:                                   ║"
               echo "  ║    cargo build      — build native crates from source    ║"
               echo "  ║    cargo test       — run all tests                      ║"
               echo "  ║    cargo watch      — rebuild on file changes            ║"
               echo "  ║    wasm-pack build dyna-wasm --target web                ║"
+              echo "  ║    maturin develop  — rebuild dyna-py from source         ║"
               echo "  ║                                                          ║"
               echo "  ╚══════════════════════════════════════════════════════════╝"
               echo ""

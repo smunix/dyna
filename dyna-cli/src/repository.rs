@@ -149,7 +149,7 @@ impl Repository {
     // -----------------------------------------------------------------------
 
     /// Create a Repository from a physical path, setting up VFS roots.
-    fn from_work_dir(work_dir: PathBuf) -> Self {
+    pub fn from_work_dir(work_dir: PathBuf) -> Self {
         let dyna_dir = work_dir.join(DYNA_DIR);
         let vfs_root: VfsPath = PhysicalFS::new(&work_dir).into();
         let vfs_dyna = vfs_root.join(DYNA_DIR).expect("join .dyna");

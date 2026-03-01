@@ -6,6 +6,10 @@ authors.workspace = true
 license.workspace = true
 description = "CLI client for the Dyna distributed CRUD system"
 
+[lib]
+name = "dyna_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "dyna"
 path = "src/main.rs"

@@ -6,12 +6,10 @@
 //! [`Changeset`] objects that group patches together.
 
 mod cli;
-mod commands;
-mod repository;
-mod sync_client;
 
 use clap::Parser;
 use cli::{Cli, Commands};
+use dyna_cli::commands;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
