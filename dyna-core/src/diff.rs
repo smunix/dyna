@@ -241,6 +241,56 @@ fn unescape_json_pointer(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Operation inversion (for revert)
+// ---------------------------------------------------------------------------
+
+/// Invert a list of patch operations so that applying the inverse undoes the
+/// original change.
+///
+/// - `Add { path, value }` → `Remove { path }`
+/// - `Remove { path }` → `Add { path, value }` (requires `base` to recover the
+///   removed value)
+/// - `Replace { path, value }` → `Replace { path, value: old_value }` (requires
+///   `base` to recover the old value)
+/// - `Move { from, path }` → `Move { from: path, path: from }`
+/// - `Copy` and `Test` are dropped (they have no meaningful inverse).
+///
+/// The `base` document is the state *before* the operations were applied.
+/// Operations are inverted in **reverse order** so that the resulting list can
+/// be applied sequentially to undo the original change.
+pub fn invert_operations(
+    operations: &[PatchOperation],
+    base: &Value,
+) -> Vec<PatchOperation> {
+    operations
+        .iter()
+        .rev()
+        .filter_map(|op| match op {
+            PatchOperation::Add { path, .. } => Some(PatchOperation::Remove {
+                path: path.clone(),
+            }),
+            PatchOperation::Remove { path } => get_value(base, path)
+                .cloned()
+                .map(|value| PatchOperation::Add {
+                    path: path.clone(),
+                    value,
+                }),
+            PatchOperation::Replace { path, .. } => get_value(base, path)
+                .cloned()
+                .map(|value| PatchOperation::Replace {
+                    path: path.clone(),
+                    value,
+                }),
+            PatchOperation::Move { from, path } => Some(PatchOperation::Move {
+                from: path.clone(),
+                path: from.clone(),
+            }),
+            PatchOperation::Copy { .. } | PatchOperation::Test { .. } => None,
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Three-way merge
 // ---------------------------------------------------------------------------
 

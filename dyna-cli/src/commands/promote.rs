@@ -4,17 +4,24 @@
 //! By default, promotes from the current channel. Use `--channel` to
 //! specify a different source channel.
 //!
+//! Promotion is **remote-first**: the server must accept the promotion
+//! before local state is updated. This ensures the protected `main`
+//! channel is always consistent with the remote and that conflicts are
+//! detected server-side before the local repo is mutated.
+//!
 //! Promoted changesets are marked as immutable.
 
 use anyhow::{Result, bail};
-use itertools::izip;
 use colored::Colorize;
 use dyna_core::channel::promote_changesets;
+use itertools::izip;
 
 use crate::repository::Repository;
+use crate::sync_client::SyncClient;
 
 pub async fn execute(channel: Option<String>) -> Result<()> {
     let repo = Repository::find_current()?;
+    let config = repo.load_config()?;
     let current_name = repo.current_channel_name()?;
 
     // Use the specified channel or fall back to the current channel
@@ -27,16 +34,105 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
         );
     }
 
-    let source = repo.load_channel(&source_name)?;
-    let mut target = repo.load_channel("main")?;
-
     println!(
         "Promoting changesets from '{}' to 'main'...",
         source_name.bold().cyan()
     );
 
+    // ── Remote-first: push the promotion to the server ──────────────
+    let remote_url = config
+        .remote_url
+        .as_ref()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No remote URL configured. Promotion requires a remote server \
+                 to ensure conflict-free merges. Set 'remote_url' in .dyna/config.toml."
+            )
+        })?;
+
+    // First, ensure the source channel's changesets are pushed to the remote
+    // so the server has the data it needs to promote.
+    let source_channel = repo.load_channel(&source_name)?;
+    let sync_state = repo.load_sync_state()?;
+    let remote_head = sync_state.remote_heads.get(&source_name).cloned();
+
+    let unpushed_ids: Vec<String> = remote_head
+        .as_ref()
+        .map(|head| {
+            izip!(&source_channel.changesets)
+                .skip_while(|id| *id != head)
+                .skip(1)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_else(|| source_channel.changesets.clone());
+
+    let client = SyncClient::new(remote_url);
+
+    if !unpushed_ids.is_empty() {
+        println!(
+            "  Pushing {} unpushed changeset(s) to remote first...",
+            unpushed_ids.len()
+        );
+        let changesets: Vec<_> = izip!(&unpushed_ids)
+            .map(|id| repo.load_changeset(id))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let push_request = dyna_core::protocol::PushRequest {
+            channel: source_name.clone(),
+            changesets,
+            expected_head: remote_head,
+        };
+        let push_response = client.push(&push_request).await?;
+
+        // Update sync state after successful push
+        if let Some(new_head) = &push_response.new_head {
+            let mut sync_state = repo.load_sync_state()?;
+            sync_state
+                .remote_heads
+                .insert(source_name.clone(), new_head.clone());
+            repo.save_sync_state(&sync_state)?;
+        }
+
+        println!(
+            "  {} changeset(s) pushed to remote.",
+            push_response.accepted_count
+        );
+    }
+
+    // Now ask the server to promote
+    let promote_request = dyna_core::protocol::PromoteRequest {
+        source_channel: source_name.clone(),
+        target_channel: "main".to_string(),
+    };
+
+    let promote_response = client.promote(&promote_request).await.map_err(|e| {
+        anyhow::anyhow!(
+            "Remote promotion failed (no local changes made): {}",
+            e
+        )
+    })?;
+
+    if !promote_response.success {
+        bail!(
+            "Remote promotion rejected (no local changes made): {}",
+            promote_response
+                .error
+                .unwrap_or_else(|| "Unknown conflict".into())
+        );
+    }
+
+    println!(
+        "  Remote promotion succeeded: {} changeset(s) promoted.",
+        promote_response.promoted_changesets.len()
+    );
+
+    // ── Apply locally only after remote success ─────────────────────
+    let source = repo.load_channel(&source_name)?;
+    let mut target = repo.load_channel("main")?;
+
     promote_changesets(&source, &mut target)
-        .map_err(|e| anyhow::anyhow!("Promotion failed: {}", e))
+        .map_err(|e| anyhow::anyhow!("Local promotion failed: {}", e))
         .and_then(|promoted_ids| {
             // Mark promoted changesets as immutable via try_for_each
             izip!(&promoted_ids)
@@ -50,7 +146,8 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
             repo.save_channel(&target)?;
 
             println!(
-                "\nPromoted {} changeset(s) to 'main':",
+                "\n{} {} changeset(s) promoted to 'main':",
+                "✓".green(),
                 promoted_ids.len().to_string().green()
             );
 
@@ -78,39 +175,15 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
                 );
             });
 
-            // Also push to remote if configured
-            Ok(promoted_ids)
-        })
-        .and_then(|_promoted_ids| {
-            repo.load_config()?
-                .remote_url
-                .map(|remote_url| async move {
-                    println!("\nPushing promoted changesets to remote...");
-                    let client = crate::sync_client::SyncClient::new(&remote_url);
-                    let request = dyna_core::protocol::PromoteRequest {
-                        source_channel: source_name.clone(),
-                        target_channel: "main".to_string(),
-                    };
-                    client
-                        .promote(&request)
-                        .await
-                        .map(|response| {
-                            println!(
-                                "Remote promotion complete. {} changeset(s) promoted.",
-                                response.promoted_changesets.len()
-                            );
-                        })
-                        .unwrap_or_else(|e| {
-                            println!(
-                                "{}",
-                                format!(
-                                    "Warning: Remote promotion failed: {}. Local promotion succeeded.",
-                                    e
-                                )
-                                .yellow()
-                            );
-                        });
-                });
+            // Update sync state for main channel
+            promote_response.new_head.as_ref().map(|new_head| -> Result<()> {
+                let mut sync_state = repo.load_sync_state()?;
+                sync_state
+                    .remote_heads
+                    .insert("main".to_string(), new_head.clone());
+                repo.save_sync_state(&sync_state)
+            }).transpose()?;
+
             Ok(())
         })
 }

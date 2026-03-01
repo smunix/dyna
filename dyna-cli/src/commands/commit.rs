@@ -21,6 +21,15 @@ pub async fn execute(message: String) -> Result<()> {
     }
 
     let channel_name = repo.current_channel_name()?;
+
+    // Protect the main channel from direct commits
+    if channel_name == "main" {
+        bail!(
+            "Cannot commit directly to the 'main' channel. \
+             Switch to a feature channel first, then promote to main."
+        );
+    }
+
     let channel = repo.load_channel(&channel_name)?;
 
     // Parent is the current head of the channel (if any)

@@ -214,6 +214,31 @@ pub enum Commands {
         verbose: bool,
     },
 
+    /// Revert a changeset by creating a new changeset with inverse patches.
+    ///
+    /// Loads the target changeset, inverts all of its patches, and commits
+    /// the inverse as a new changeset on the current (or specified) channel.
+    Revert {
+        /// The change_id (or prefix) of the changeset to revert.
+        change_id: String,
+        /// The channel to apply the revert on (defaults to current channel).
+        #[arg(short = 'C', long)]
+        channel: Option<String>,
+    },
+
+    /// Cherry-pick a changeset from another channel onto the current channel.
+    ///
+    /// Copies the patches from the source changeset and applies them as a new
+    /// changeset on the destination channel (current channel by default).
+    /// The new changeset records the destination channel's head as its parent.
+    CherryPick {
+        /// The change_id (or prefix) of the changeset to cherry-pick.
+        change_id: String,
+        /// The destination channel (defaults to current channel).
+        #[arg(short = 'C', long)]
+        channel: Option<String>,
+    },
+
     /// Describe (amend the message of) a changeset.
     ///
     /// Defaults to the current working changeset if no change_id is given.

@@ -183,6 +183,20 @@ async fn handle_push(
         error: Some(msg),
     };
 
+    // Reject direct pushes to the protected 'main' channel
+    if channel_name == "main" {
+        return PushResponse {
+            success: false,
+            new_head: None,
+            accepted_count: 0,
+            error: Some(
+                "Cannot push directly to the 'main' channel. \
+                 Push to a feature channel and use promote instead."
+                    .into(),
+            ),
+        };
+    }
+
     // Load or create channel
     let mut channel = match load_or_create_channel(ctx, &channel_name).await {
         Ok(ch) => ch,

@@ -330,6 +330,15 @@ impl DynaRepo {
 
         let config = self.repo.load_config().map_err(to_py_err)?;
         let channel_name = self.repo.current_channel_name().map_err(to_py_err)?;
+
+        // Protect the main channel from direct commits
+        if channel_name == "main" {
+            return Err(PyRuntimeError::new_err(
+                "Cannot commit directly to the 'main' channel. \
+                 Switch to a feature channel first, then promote to main.",
+            ));
+        }
+
         let mut channel = self.repo.load_channel(&channel_name).map_err(to_py_err)?;
 
         let patches: Vec<Patch> = staged
@@ -394,6 +403,14 @@ impl DynaRepo {
         let channel_name = channel
             .map(|c| c.to_string())
             .unwrap_or_else(|| self.repo.current_channel_name().unwrap_or_default());
+
+        // Protect the main channel from direct pushes
+        if channel_name == "main" {
+            return Err(PyRuntimeError::new_err(
+                "Cannot push directly to the 'main' channel. \
+                 Push to a feature channel and use promote instead.",
+            ));
+        }
 
         let ch = self.repo.load_channel(&channel_name).map_err(to_py_err)?;
         let sync_state = self.repo.load_sync_state().map_err(to_py_err)?;
@@ -972,6 +989,311 @@ impl DynaRepo {
             .remove_changeset_file(&child_id)
             .map_err(to_py_err)?;
         Ok(target_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Revert
+    // -----------------------------------------------------------------------
+
+    /// Revert a changeset by creating a new changeset with inverse patches.
+    /// Returns the change_id of the revert changeset.
+    #[pyo3(signature = (change_id, channel=None))]
+    fn revert(&self, change_id: &str, channel: Option<&str>) -> PyResult<String> {
+        let channel_name = channel
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| self.repo.current_channel_name().unwrap_or_default());
+
+        // Protect the main channel
+        if channel_name == "main" {
+            return Err(PyRuntimeError::new_err(
+                "Cannot revert directly on the 'main' channel. \
+                 Switch to a feature channel first, then promote to main.",
+            ));
+        }
+
+        // Resolve changeset by prefix
+        let matches = self
+            .repo
+            .find_changeset_by_prefix(change_id)
+            .map_err(to_py_err)?;
+        let target_cs = match matches.len() {
+            0 => {
+                return Err(PyRuntimeError::new_err(format!(
+                    "No changeset found matching '{}'",
+                    change_id
+                )))
+            }
+            1 => matches.into_iter().next().unwrap(),
+            n => {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Ambiguous prefix '{}' matches {} changesets",
+                    change_id, n
+                )))
+            }
+        };
+
+        if target_cs.patches.is_empty() {
+            return Err(PyRuntimeError::new_err(
+                "Changeset has no patches to revert.",
+            ));
+        }
+
+        let config = self.repo.load_config().map_err(to_py_err)?;
+
+        // Build inverse patches
+        let inverse_patches: Vec<Patch> = target_cs
+            .patches
+            .iter()
+            .map(|original| {
+                let base = original
+                    .parent_snapshot
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+
+                let inverse_ops =
+                    dyna_core::diff::invert_operations(&original.operations, &base);
+
+                let content = dyna_core::models::PatchContent {
+                    target_resource: original.target_resource.clone(),
+                    operations: inverse_ops,
+                    parent_snapshot: original.result_snapshot.clone(),
+                    result_snapshot: original.parent_snapshot.clone(),
+                };
+                let serialized = serde_json::to_vec(&content).unwrap();
+                let hash = dyna_core::hash::content_hash(&serialized);
+
+                Patch {
+                    hash,
+                    target_resource: content.target_resource,
+                    operations: content.operations,
+                    parent_snapshot: content.parent_snapshot,
+                    result_snapshot: content.result_snapshot,
+                }
+            })
+            .collect();
+
+        // Parent is the current channel head
+        let ch = self
+            .repo
+            .load_channel(&channel_name)
+            .map_err(to_py_err)?;
+        let parents = ch
+            .head_change_id
+            .clone()
+            .map(|id| vec![id])
+            .unwrap_or_default();
+
+        let revert_message = format!(
+            "Revert \"{}\" ({})",
+            target_cs.message,
+            &target_cs.change_id[..std::cmp::min(target_cs.change_id.len(), 8)]
+        );
+
+        let revert_cs = Changeset::new(
+            config.user.name.clone(),
+            revert_message,
+            parents,
+            inverse_patches,
+        );
+        let revert_id = revert_cs.change_id.clone();
+
+        self.repo.store_changeset(&revert_cs).map_err(to_py_err)?;
+
+        // Update snapshots
+        for p in &revert_cs.patches {
+            if let Some(snap) = &p.result_snapshot {
+                if snap.is_null() {
+                    self.repo
+                        .remove_snapshot(&p.target_resource)
+                        .map_err(to_py_err)?;
+                } else {
+                    self.repo
+                        .save_snapshot(&p.target_resource, snap)
+                        .map_err(to_py_err)?;
+                }
+            }
+        }
+
+        // Update channel
+        let mut channel = self
+            .repo
+            .load_channel(&channel_name)
+            .map_err(to_py_err)?;
+        channel.changesets.push(revert_cs.change_id.clone());
+        channel.head_change_id = Some(revert_cs.change_id.clone());
+        self.repo.save_channel(&channel).map_err(to_py_err)?;
+
+        // Set as working change
+        self.repo
+            .set_working_change(Some(&revert_id))
+            .map_err(to_py_err)?;
+
+        Ok(revert_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Cherry-pick
+    // -----------------------------------------------------------------------
+
+    /// Cherry-pick a changeset from another channel onto the current (or specified) channel.
+    /// Returns the change_id of the new cherry-pick changeset.
+    #[pyo3(signature = (change_id, channel=None))]
+    fn cherry_pick(&self, change_id: &str, channel: Option<&str>) -> PyResult<String> {
+        let dest_channel_name = channel
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| self.repo.current_channel_name().unwrap_or_default());
+
+        // Protect the main channel
+        if dest_channel_name == "main" {
+            return Err(PyRuntimeError::new_err(
+                "Cannot cherry-pick directly onto the 'main' channel. \
+                 Switch to a feature channel first, then promote to main.",
+            ));
+        }
+
+        // Resolve changeset by prefix
+        let matches = self
+            .repo
+            .find_changeset_by_prefix(change_id)
+            .map_err(to_py_err)?;
+        let source_cs = match matches.len() {
+            0 => {
+                return Err(PyRuntimeError::new_err(format!(
+                    "No changeset found matching '{}'",
+                    change_id
+                )))
+            }
+            1 => matches.into_iter().next().unwrap(),
+            n => {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Ambiguous prefix '{}' matches {} changesets",
+                    change_id, n
+                )))
+            }
+        };
+
+        if source_cs.patches.is_empty() {
+            return Err(PyRuntimeError::new_err(
+                "Changeset has no patches to cherry-pick.",
+            ));
+        }
+
+        let dest_channel = self
+            .repo
+            .load_channel(&dest_channel_name)
+            .map_err(to_py_err)?;
+        if dest_channel.changesets.contains(&source_cs.change_id) {
+            return Err(PyRuntimeError::new_err(
+                "Changeset is already in this channel.",
+            ));
+        }
+
+        let config = self.repo.load_config().map_err(to_py_err)?;
+
+        // Build cherry-pick patches
+        let cherry_patches: Vec<Patch> = source_cs
+            .patches
+            .iter()
+            .map(|src_patch| {
+                let current_snapshot = self
+                    .repo
+                    .load_snapshot(&src_patch.target_resource)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| serde_json::json!({}));
+
+                let new_snapshot = src_patch
+                    .result_snapshot
+                    .as_ref()
+                    .and_then(|result| {
+                        src_patch.parent_snapshot.as_ref().map(|parent| {
+                            let delta_ops = dyna_core::diff::diff(parent, result);
+                            let mut dest = current_snapshot.clone();
+                            dyna_core::diff::apply_patch(&mut dest, &delta_ops).ok();
+                            dest
+                        })
+                    })
+                    .unwrap_or_else(|| {
+                        src_patch
+                            .result_snapshot
+                            .clone()
+                            .unwrap_or_else(|| current_snapshot.clone())
+                    });
+
+                let operations = dyna_core::diff::diff(&current_snapshot, &new_snapshot);
+
+                let content = dyna_core::models::PatchContent {
+                    target_resource: src_patch.target_resource.clone(),
+                    operations,
+                    parent_snapshot: Some(current_snapshot),
+                    result_snapshot: Some(new_snapshot),
+                };
+                let serialized = serde_json::to_vec(&content).unwrap();
+                let hash = dyna_core::hash::content_hash(&serialized);
+
+                Patch {
+                    hash,
+                    target_resource: content.target_resource,
+                    operations: content.operations,
+                    parent_snapshot: content.parent_snapshot,
+                    result_snapshot: content.result_snapshot,
+                }
+            })
+            .collect();
+
+        let parents = dest_channel
+            .head_change_id
+            .clone()
+            .map(|id| vec![id])
+            .unwrap_or_default();
+
+        let cherry_message = format!(
+            "Cherry-pick \"{}\" ({})",
+            source_cs.message,
+            &source_cs.change_id[..std::cmp::min(source_cs.change_id.len(), 8)]
+        );
+
+        let cherry_cs = Changeset::new(
+            config.user.name.clone(),
+            cherry_message,
+            parents,
+            cherry_patches,
+        );
+        let cherry_id = cherry_cs.change_id.clone();
+
+        self.repo.store_changeset(&cherry_cs).map_err(to_py_err)?;
+
+        // Update snapshots
+        for p in &cherry_cs.patches {
+            if let Some(snap) = &p.result_snapshot {
+                if snap.is_null() {
+                    self.repo
+                        .remove_snapshot(&p.target_resource)
+                        .map_err(to_py_err)?;
+                } else {
+                    self.repo
+                        .save_snapshot(&p.target_resource, snap)
+                        .map_err(to_py_err)?;
+                }
+            }
+        }
+
+        // Update channel
+        let mut channel = self
+            .repo
+            .load_channel(&dest_channel_name)
+            .map_err(to_py_err)?;
+        channel.changesets.push(cherry_cs.change_id.clone());
+        channel.head_change_id = Some(cherry_cs.change_id.clone());
+        self.repo.save_channel(&channel).map_err(to_py_err)?;
+
+        // Set as working change
+        self.repo
+            .set_working_change(Some(&cherry_id))
+            .map_err(to_py_err)?;
+
+        Ok(cherry_id)
     }
 
     // -----------------------------------------------------------------------

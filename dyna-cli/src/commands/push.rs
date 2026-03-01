@@ -3,7 +3,7 @@
 //! Pushes local changesets to the remote server.
 //! Accepts an optional `--channel` argument; defaults to the current channel.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use dyna_core::protocol::PushRequest;
 use itertools::{izip, Itertools};
 
@@ -22,6 +22,14 @@ pub async fn execute(channel: Option<String>) -> Result<()> {
     let channel_name = channel
         .map(Ok)
         .unwrap_or_else(|| repo.current_channel_name())?;
+
+    // Protect the main channel from direct pushes
+    if channel_name == "main" {
+        bail!(
+            "Cannot push directly to the 'main' channel. \
+             Push to a feature channel and use 'dyna promote' instead."
+        );
+    }
 
     let channel_data = repo.load_channel(&channel_name)?;
 

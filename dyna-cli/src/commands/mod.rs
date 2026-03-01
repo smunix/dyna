@@ -28,3 +28,5 @@ pub mod promote;
 pub mod squash;
 pub mod describe;
 pub mod history;
+pub mod revert;
+pub mod cherry_pick;

@@ -12,7 +12,7 @@
 //! | `POST` | `/api/v1/channels` | Create a new channel |
 //! | `GET`  | `/api/v1/channels` | List all channels |
 //! | `GET`  | `/api/v1/changesets/:id` | Fetch a single changeset |
-//! | `GET`  | `/api/v1/history/{resource_id}` | Query changeset history for a resource |
+//! | `GET`  | `/api/v1/resources/{resource_id}/history` | Query changeset history for a resource |
 //! | `GET`  | `/api/v1/ws` | WebSocket endpoint for real-time notifications |
 //!
 //! ## Compression
@@ -337,7 +337,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/v1/channels", post(create_channel_handler))
         .route("/api/v1/changesets/{change_id}", get(get_changeset_handler))
         .route(
-            "/api/v1/history/{resource_id}",
+            "/api/v1/resources/{resource_id}/history",
             get(resource_history_handler),
         )
         // WebSocket endpoint — uses its own state (the hub)

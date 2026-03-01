@@ -333,6 +333,14 @@ impl DynaClient {
         let author = config.user.name.clone();
         let channel_name = self.repo.current_channel_name().map_err(to_js_error)?;
 
+        // Protect the main channel from direct commits
+        if channel_name == "main" {
+            return Err(JsError::new(
+                "Cannot commit directly to the 'main' channel. \
+                 Switch to a feature channel first, then promote to main.",
+            ));
+        }
+
         let parent = self.repo.working_change_id().map_err(to_js_error)?;
         let parents = parent.into_iter().collect::<Vec<_>>();
 
@@ -631,6 +639,239 @@ impl DynaClient {
     }
 
     // -----------------------------------------------------------------------
+    // Revert
+    // -----------------------------------------------------------------------
+
+    /// Revert a changeset by creating a new changeset with inverse patches.
+    ///
+    /// Returns the change_id of the newly created revert changeset.
+    #[wasm_bindgen]
+    pub fn revert(&self, change_id: &str) -> Result<String, JsError> {
+        let channel_name = self.repo.current_channel_name().map_err(to_js_error)?;
+
+        // Protect the main channel
+        if channel_name == "main" {
+            return Err(JsError::new(
+                "Cannot revert directly on the 'main' channel. \
+                 Switch to a feature channel first, then promote to main.",
+            ));
+        }
+
+        let target_cs = self.repo.load_changeset(change_id).map_err(to_js_error)?;
+
+        if target_cs.patches.is_empty() {
+            return Err(JsError::new("Changeset has no patches to revert."));
+        }
+
+        let config = self.repo.load_config().map_err(to_js_error)?;
+        let author = config.user.name.clone();
+
+        // Build inverse patches
+        let inverse_patches: Vec<Patch> = izip!(&target_cs.patches)
+            .map(|original| {
+                let base = original
+                    .parent_snapshot
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+
+                let inverse_ops = diff::invert_operations(&original.operations, &base);
+
+                let content = PatchContent {
+                    target_resource: original.target_resource.clone(),
+                    operations: inverse_ops,
+                    parent_snapshot: original.result_snapshot.clone(),
+                    result_snapshot: original.parent_snapshot.clone(),
+                };
+                let serialized = serde_json::to_vec(&content).unwrap();
+                let hash = dyna_core::hash::content_hash(&serialized);
+
+                Patch {
+                    hash,
+                    target_resource: content.target_resource,
+                    operations: content.operations,
+                    parent_snapshot: content.parent_snapshot,
+                    result_snapshot: content.result_snapshot,
+                }
+            })
+            .collect();
+
+        // Parent is the current channel head
+        let channel = self.repo.load_channel(&channel_name).map_err(to_js_error)?;
+        let parents = channel
+            .head_change_id
+            .clone()
+            .map(|id| vec![id])
+            .unwrap_or_default();
+
+        let revert_message = format!(
+            "Revert \"{}\" ({})",
+            target_cs.message,
+            &target_cs.change_id[..std::cmp::min(target_cs.change_id.len(), 8)]
+        );
+
+        let revert_cs = Changeset::new(author, revert_message, parents, inverse_patches);
+        let revert_id = revert_cs.change_id.clone();
+
+        // Save changeset
+        self.repo.save_changeset(&revert_cs).map_err(to_js_error)?;
+
+        // Update snapshots
+        izip!(&revert_cs.patches).try_for_each(|p| {
+            p.result_snapshot
+                .as_ref()
+                .map(|snap| {
+                    if snap.is_null() {
+                        self.repo.remove_snapshot(&p.target_resource)
+                    } else {
+                        self.repo.save_snapshot(&p.target_resource, snap)
+                    }
+                })
+                .unwrap_or(Ok(()))
+        }).map_err(to_js_error)?;
+
+        // Update channel
+        let mut channel = self.repo.load_channel(&channel_name).map_err(to_js_error)?;
+        channel.append_changeset(revert_cs.change_id.clone());
+        self.repo.save_channel(&channel).map_err(to_js_error)?;
+
+        // Update working change
+        self.repo
+            .set_working_change(Some(&revert_id))
+            .map_err(to_js_error)?;
+
+        Ok(revert_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Cherry-pick
+    // -----------------------------------------------------------------------
+
+    /// Cherry-pick a changeset from another channel onto the current channel.
+    ///
+    /// Copies the patches from the source changeset and applies them as a new
+    /// changeset on the current channel. Returns the new change_id.
+    #[wasm_bindgen]
+    pub fn cherry_pick(&self, change_id: &str) -> Result<String, JsError> {
+        let channel_name = self.repo.current_channel_name().map_err(to_js_error)?;
+
+        // Protect the main channel
+        if channel_name == "main" {
+            return Err(JsError::new(
+                "Cannot cherry-pick directly onto the 'main' channel. \
+                 Switch to a feature channel first, then promote to main.",
+            ));
+        }
+
+        let source_cs = self.repo.load_changeset(change_id).map_err(to_js_error)?;
+
+        if source_cs.patches.is_empty() {
+            return Err(JsError::new("Changeset has no patches to cherry-pick."));
+        }
+
+        let channel = self.repo.load_channel(&channel_name).map_err(to_js_error)?;
+        if channel.changesets.contains(&source_cs.change_id) {
+            return Err(JsError::new("Changeset is already in this channel."));
+        }
+
+        let config = self.repo.load_config().map_err(to_js_error)?;
+        let author = config.user.name.clone();
+
+        // Build cherry-pick patches
+        let cherry_patches: Vec<Patch> = izip!(&source_cs.patches)
+            .map(|src_patch| {
+                let current_snapshot = self
+                    .repo
+                    .load_snapshot(&src_patch.target_resource)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| serde_json::json!({}));
+
+                let new_snapshot = src_patch
+                    .result_snapshot
+                    .as_ref()
+                    .and_then(|result| {
+                        src_patch.parent_snapshot.as_ref().map(|parent| {
+                            let delta_ops = diff::diff(parent, result);
+                            let mut dest = current_snapshot.clone();
+                            diff::apply_patch(&mut dest, &delta_ops).ok();
+                            dest
+                        })
+                    })
+                    .unwrap_or_else(|| {
+                        src_patch
+                            .result_snapshot
+                            .clone()
+                            .unwrap_or_else(|| current_snapshot.clone())
+                    });
+
+                let operations = diff::diff(&current_snapshot, &new_snapshot);
+
+                let content = PatchContent {
+                    target_resource: src_patch.target_resource.clone(),
+                    operations,
+                    parent_snapshot: Some(current_snapshot),
+                    result_snapshot: Some(new_snapshot),
+                };
+                let serialized = serde_json::to_vec(&content).unwrap();
+                let hash = dyna_core::hash::content_hash(&serialized);
+
+                Patch {
+                    hash,
+                    target_resource: content.target_resource,
+                    operations: content.operations,
+                    parent_snapshot: content.parent_snapshot,
+                    result_snapshot: content.result_snapshot,
+                }
+            })
+            .collect();
+
+        let parents = channel
+            .head_change_id
+            .clone()
+            .map(|id| vec![id])
+            .unwrap_or_default();
+
+        let cherry_message = format!(
+            "Cherry-pick \"{}\" ({})",
+            source_cs.message,
+            &source_cs.change_id[..std::cmp::min(source_cs.change_id.len(), 8)]
+        );
+
+        let cherry_cs = Changeset::new(author, cherry_message, parents, cherry_patches);
+        let cherry_id = cherry_cs.change_id.clone();
+
+        // Save changeset
+        self.repo.save_changeset(&cherry_cs).map_err(to_js_error)?;
+
+        // Update snapshots
+        izip!(&cherry_cs.patches).try_for_each(|p| {
+            p.result_snapshot
+                .as_ref()
+                .map(|snap| {
+                    if snap.is_null() {
+                        self.repo.remove_snapshot(&p.target_resource)
+                    } else {
+                        self.repo.save_snapshot(&p.target_resource, snap)
+                    }
+                })
+                .unwrap_or(Ok(()))
+        }).map_err(to_js_error)?;
+
+        // Update channel
+        let mut channel = self.repo.load_channel(&channel_name).map_err(to_js_error)?;
+        channel.append_changeset(cherry_cs.change_id.clone());
+        self.repo.save_channel(&channel).map_err(to_js_error)?;
+
+        // Update working change
+        self.repo
+            .set_working_change(Some(&cherry_id))
+            .map_err(to_js_error)?;
+
+        Ok(cherry_id)
+    }
+
+    // -----------------------------------------------------------------------
     // Remote operations (async)
     // -----------------------------------------------------------------------
 
@@ -706,6 +947,15 @@ impl DynaClient {
 
         let client = SyncClient::new(remote_url);
         let channel_name = self.repo.current_channel_name().map_err(to_js_error)?;
+
+        // Protect the main channel from direct pushes
+        if channel_name == "main" {
+            return Err(JsError::new(
+                "Cannot push directly to the 'main' channel. \
+                 Push to a feature channel and use promote instead.",
+            ));
+        }
+
         let channel = self.repo.load_channel(&channel_name).map_err(to_js_error)?;
         let sync_state = self.repo.load_sync_state().map_err(to_js_error)?;
 

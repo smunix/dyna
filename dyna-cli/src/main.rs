@@ -64,6 +64,12 @@ async fn main() -> anyhow::Result<()> {
             resource_id,
             verbose,
         } => commands::history::execute(resource_id, verbose).await,
+        Commands::Revert { change_id, channel } => {
+            commands::revert::execute(change_id, channel).await
+        }
+        Commands::CherryPick { change_id, channel } => {
+            commands::cherry_pick::execute(change_id, channel).await
+        }
         Commands::Describe { change_id, message } => {
             commands::describe::execute(change_id, message).await
         }
