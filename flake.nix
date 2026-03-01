@@ -97,6 +97,7 @@
           # ── Common build inputs (platform-specific) ────────────────────
           darwinBuildInputs = lib.optionals pkgs.stdenv.isDarwin [
             pkgs.libiconv
+            pkgs.openssl
             pkgs.darwin.apple_sdk.frameworks.Security
             pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           ];
@@ -300,11 +301,30 @@
           #
           # A convenience wrapper that builds the Elm app (if needed),
           # bundles the WASM package, and serves the result locally.
+          # Python helper script for serving with correct MIME types
+          dyna-serve-py = pkgs.writeText "dyna-serve.py" ''
+            import http.server, functools, os
+
+            class WasmHandler(http.server.SimpleHTTPRequestHandler):
+                extensions_map = {
+                    **http.server.SimpleHTTPRequestHandler.extensions_map,
+                    ".wasm": "application/wasm",
+                    ".js":   "application/javascript",
+                    ".mjs":  "application/javascript",
+                    ".json": "application/json",
+                }
+
+            serve_dir = os.environ["SERVE_DIR"]
+            port = int(os.environ["SERVE_PORT"])
+            handler = functools.partial(WasmHandler, directory=serve_dir)
+            with http.server.HTTPServer(("", port), handler) as httpd:
+                httpd.serve_forever()
+          '';
+
           dyna-app-serve = pkgs.writeShellScriptBin "dyna-app-serve" ''
             set -euo pipefail
 
             PORT="''${1:-8080}"
-            SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
             # Locate the dyna-app source directory
             ELM_SRC="''${DYNA_ELM_SRC:-$(pwd)/dyna-app}"
@@ -314,27 +334,30 @@
               exit 1
             fi
 
-            # Build the WASM package if not already built
-            WASM_OUT="$(pwd)/pkg"
-            if [ ! -f "$WASM_OUT/dyna_wasm.js" ]; then
+            # Build the WASM package (output goes into dyna-app/public/pkg)
+            PKG_DIR="$ELM_SRC/public/pkg"
+            mkdir -p "$PKG_DIR"
+            if [ ! -f "$PKG_DIR/dyna_wasm.js" ]; then
               echo "Building dyna-wasm..."
-              wasm-pack build dyna-wasm --target web --out-dir "$WASM_OUT"
+              if wasm-pack build dyna-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
+                echo "  WASM package built successfully."
+              else
+                echo "  Warning: wasm-pack build failed. The UI will render but WASM operations will not work."
+                echo "  Make sure wasm-pack and the wasm32-unknown-unknown target are available."
+              fi
             fi
 
             # Compile the Elm app
             echo "Compiling Elm app..."
             (cd "$ELM_SRC" && elm make src/Main.elm --optimize --output=public/elm.js)
 
-            # Copy WASM package into the Elm public directory
-            mkdir -p "$ELM_SRC/public/pkg"
-            cp "$WASM_OUT"/dyna_wasm* "$ELM_SRC/public/pkg/" 2>/dev/null || true
-
-            # Serve the Elm app
+            # Serve with correct MIME types (especially .wasm -> application/wasm)
             echo ""
             echo "  Serving dyna-app on http://localhost:$PORT"
             echo "  Press Ctrl+C to stop."
             echo ""
-            ${pkgs.python3}/bin/python3 -m http.server "$PORT" --directory "$ELM_SRC/public"
+            SERVE_DIR="$ELM_SRC/public" SERVE_PORT="$PORT" \
+              ${pkgs.python3}/bin/python3 ${dyna-serve-py}
           '';
 
         in
