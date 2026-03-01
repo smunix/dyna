@@ -1502,7 +1502,7 @@ impl DynaRepo {
 /// The `dyna_py` Python module — Python bindings for the Dyna distributed
 /// CRUD system.
 #[pymodule]
-fn dyna_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DynaRepo>()?;
     Ok(())
 }
