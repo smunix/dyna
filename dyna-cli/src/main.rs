@@ -2,8 +2,8 @@
 //!
 //! This is the entry point for the `dyna` command-line tool. It parses CLI
 //! arguments via `clap` and dispatches to the appropriate command handler.
-//! The workflow is **changeset-centric**, inspired by Jujutsu: all operations
-//! revolve around [`Changeset`] objects that group patches together.
+//! The workflow is **changeset-centric**: all operations revolve around
+//! [`Changeset`] objects that group patches together.
 
 mod cli;
 mod commands;

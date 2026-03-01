@@ -1,6 +1,6 @@
 //! `dyna restore` command implementation.
 //!
-//! Restores a file to its snapshot state, analogous to `jj restore`. The
+//! Restores a file to its snapshot state. The
 //! snapshot source can be:
 //!
 //! - **Default** (no flags): the current channel's latest snapshot.

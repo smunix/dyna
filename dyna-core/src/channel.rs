@@ -1,6 +1,6 @@
 //! Channel management and promotion logic.
 //!
-//! In the Jujutsu-inspired model, channels serve as named bookmarks pointing
+//! Channels serve as named bookmarks pointing
 //! into the changeset DAG. Each channel maintains an ordered list of changeset
 //! IDs and a `head_change_id` pointing to the latest changeset.
 //!

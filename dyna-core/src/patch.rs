@@ -9,7 +9,7 @@
 //! This module provides utilities for:
 //! - Building patches from staged changes.
 //! - Computing content-addressed hashes for patches.
-//! - Analyzing commutativity between patches (Pijul-inspired).
+//! - Analyzing commutativity between patches.
 
 use crate::diff;
 use crate::models::{Patch, PatchOperation, StagedChange};

@@ -1,6 +1,6 @@
 //! `dyna squash` command implementation.
 //!
-//! Squashes a changeset into its parent, analogous to `jj squash`. The child
+//! Squashes a changeset into its parent. The child
 //! changeset's patches are merged into the parent changeset:
 //!
 //! - Patches targeting the **same resource** are combined: the parent patch's

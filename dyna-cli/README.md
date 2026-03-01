@@ -2,7 +2,7 @@
 
 **Command-line client for the Dyna distributed CRUD system.**
 
-`dyna-cli` provides a Jujutsu-inspired command-line interface for managing JSON resources with full version history, conflict resolution, and collaborative editing via channels.
+`dyna-cli` provides a changeset-centric command-line interface for managing JSON resources with full version history, conflict resolution, and collaborative editing via channels.
 
 ## Features
 
@@ -10,7 +10,7 @@
 - **VFS-abstracted storage**: Uses the `vfs` crate for filesystem abstraction, enabling `PhysicalFS` for production and `MemoryFS` for testing
 - **Compressed storage**: All `.dyna/` metadata files are gzip-compressed with transparent backwards-compatible reads
 - **Compressed transport**: HTTP requests/responses use gzip compression
-- **Jujutsu-inspired commands**: `squash`, `restore`, `describe`, `channel` — familiar to Jujutsu users
+- **Rich command set**: `squash`, `restore`, `describe`, `channel`, `promote`, `history`
 - **Glob and directory support**: `dyna add` and `dyna add --delete` accept single files, directories, or glob patterns
 - **Resource history**: Query the full change history of any resource from the remote server
 - **Smart status**: Shows staged changes, modified files, deleted tracked files, and unstaged modifications on staged files

@@ -4,7 +4,7 @@
 //! Dyna distributed CRUD system. This crate is used by both the CLI client and
 //! the remote server.
 //!
-//! The data model is **changeset-centric**, inspired by the Jujutsu VCS:
+//! The data model is **changeset-centric**:
 //!
 //! - A [`models::Changeset`] is the primary unit of work, grouping one or more
 //!   [`models::Patch`] objects that were committed together.

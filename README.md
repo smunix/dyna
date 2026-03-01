@@ -1,6 +1,6 @@
 # Dyna
 
-**A distributed CRUD system for collaborative JSON resource editing, inspired by [Jujutsu](https://github.com/martinvonz/jj).**
+**A distributed CRUD system for collaborative JSON resource editing.**
 
 Dyna enables multiple users to concurrently edit a shared set of JSON resources stored in S3, with full version history, conflict resolution, and a powerful changeset-based model. It consists of four crates and a browser-based Elm UI:
 
@@ -51,8 +51,8 @@ Dyna enables multiple users to concurrently edit a shared set of JSON resources 
 | **Changeset** | A group of patches committed together, with a stable `change_id`, `commit_hash`, parent tracking, and author. The primary unit of work. |
 | **Channel** | A named bookmark pointing to an ordered list of changesets, similar to a Git branch. |
 | **Promote** | The act of merging changesets from a feature channel into `main`. Triggers WebSocket notifications to all connected clients. |
-| **Squash** | Merge a child changeset into its parent, combining patches (Jujutsu-inspired). |
-| **Restore** | Revert a file to its snapshot state from a channel head or specific changeset (Jujutsu-inspired). |
+| **Squash** | Merge a child changeset into its parent, combining patches. |
+| **Restore** | Revert a file to its snapshot state from a channel head or specific changeset. |
 
 ## CLI Commands
 
@@ -64,7 +64,7 @@ Dyna enables multiple users to concurrently edit a shared set of JSON resources 
 | `dyna add --delete <pattern>` | Stage the removal of deleted tracked file(s), directory, or glob pattern. |
 | `dyna commit -m "msg"` | Record staged changes as a new changeset. Removes snapshots for deletions. |
 | `dyna describe -m "msg"` | Amend the message of the current working changeset. |
-| `dyna squash` | Squash a changeset into its parent (Jujutsu-inspired). Supports `--revision`, `--into`, `--message`. |
+| `dyna squash` | Squash a changeset into its parent. Supports `--revision`, `--into`, `--message`. |
 | `dyna push` | Push local changesets to the remote server. |
 | `dyna pull` | Fetch and merge remote changesets. |
 | `dyna status` | Show working directory status: staged, modified, deleted tracked files, and unstaged modifications on staged files. |
@@ -78,7 +78,43 @@ Dyna enables multiple users to concurrently edit a shared set of JSON resources 
 
 ## Getting Started
 
-### Build
+### Building with Nix (recommended)
+
+Dyna ships with a Nix flake that uses [flake-parts](https://flake.parts) and [crane](https://crane.dev) for reproducible builds of all components.
+
+```bash
+# Enter the development shell (all tools available: Rust, wasm-pack, Elm, etc.)
+nix develop
+
+# Build individual packages
+nix build .#dyna-cli
+nix build .#dyna-server
+nix build .#dyna-wasm
+nix build .#dyna-elm
+
+# Build everything
+nix flake check
+
+# Run directly
+nix run .#dyna-cli
+nix run .#dyna-server
+
+# Build Docker/OCI images for deployment
+nix build .#dyna-server-image
+nix build .#dyna-elm-image
+```
+
+The `nix develop` shell provides:
+
+| Tool | Purpose |
+|------|---------|
+| Rust toolchain (stable + wasm32 target) | Build all Rust crates natively and for WASM |
+| rust-analyzer, clippy, rustfmt | IDE support and linting |
+| wasm-pack, wasm-bindgen-cli | WASM packaging and JS/TS glue generation |
+| elm, elm-format, elm-test, elm-review | Elm development toolchain |
+| cargo-nextest, cargo-watch | Testing and live-reload |
+
+### Building with Cargo (manual)
 
 ```bash
 # Build all native crates
@@ -90,6 +126,21 @@ wasm-pack build dyna-wasm --target web --out-dir ../pkg
 # Build the Elm UI
 cd dyna-elm && elm make src/Main.elm --output=public/elm.js
 ```
+
+### Nix Flake Outputs
+
+| Output | Description |
+|--------|-------------|
+| `packages.dyna-cli` | Native CLI binary |
+| `packages.dyna-server` | Native server binary |
+| `packages.dyna-wasm` | WASM + JS/TS glue (via wasm-bindgen) |
+| `packages.dyna-elm` | Compiled Elm app with bundled WASM package |
+| `packages.dyna-server-image` | OCI/Docker image for the server |
+| `packages.dyna-elm-image` | OCI/Docker image serving the Elm UI (static-web-server) |
+| `apps.dyna-cli` | `nix run .#dyna-cli` |
+| `apps.dyna-server` | `nix run .#dyna-server` |
+| `devShells.default` | Full development environment |
+| `checks.*` | Clippy, fmt, nextest, and build checks |
 
 ### Use the CLI
 

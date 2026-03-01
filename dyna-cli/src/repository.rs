@@ -2,7 +2,7 @@
 //!
 //! Manages the `.dyna/` directory structure, which serves as the local
 //! repository for the Dyna distributed CRUD system. The storage layout is
-//! **changeset-centric**, inspired by Jujutsu:
+//! **changeset-centric**:
 //!
 //! ```text
 //! .dyna/

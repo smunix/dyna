@@ -5,3 +5,11 @@
 .env
 dyna-elm/elm-stuff/
 dyna-elm/public/elm.js
+
+# Nix
+result
+result-*
+.direnv/
+
+# WASM build output
+pkg/

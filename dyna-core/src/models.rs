@@ -1,7 +1,7 @@
 //! Core data model for the Dyna distributed CRUD system.
 //!
 //! This module defines the fundamental data structures for the changeset-centric
-//! version control model inspired by Jujutsu:
+//! version control model:
 //!
 //! - [`PatchOperation`]: A single JSON Patch (RFC 6902) operation (add, remove,
 //!   replace, move, copy, test).
@@ -12,7 +12,7 @@
 //!   references forming a DAG, and optional bookmarks. Changesets are mutable
 //!   locally until promoted, at which point they become immutable.
 //! - [`Channel`]: A named bookmark pointing to an ordered sequence of changeset
-//!   IDs, analogous to a branch in Git or a bookmark in Jujutsu.
+//!   IDs.
 //! - Supporting types: [`StagedChange`], [`Conflict`], [`SyncState`], [`RepoConfig`].
 
 use chrono::{DateTime, Utc};
@@ -170,13 +170,12 @@ impl Patch {
 }
 
 // ---------------------------------------------------------------------------
-// Changeset (Jujutsu-inspired)
+// Changeset
 // ---------------------------------------------------------------------------
 
-/// A Changeset is the primary unit of work in Dyna, inspired by Jujutsu's
-/// change concept.
+/// A Changeset is the primary unit of work in Dyna.
 ///
-/// Key properties (mirroring Jujutsu):
+/// Key properties:
 /// - Has an immutable **change_id** (randomly generated, stays constant).
 /// - Has a mutable **commit_hash** (recomputed when content changes).
 /// - Contains one or more **Patches** (grouped atomic changes).
@@ -184,7 +183,7 @@ impl Patch {
 /// - Can be mutable (working/draft) or immutable (promoted/published).
 /// - Can be described with a human-readable message.
 ///
-/// The working copy is always a Changeset (like jj's `@`).
+/// The working copy is always a Changeset (the `@` reference).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Changeset {
     /// Immutable change identifier. Stays constant even as the changeset is
@@ -351,8 +350,7 @@ fn generate_change_id() -> String {
 // ---------------------------------------------------------------------------
 
 /// A Channel is a named bookmark pointing to a changeset lineage.
-/// Channels in Dyna serve the same purpose as bookmarks in Jujutsu:
-/// they label a position in the changeset DAG, primarily for
+/// Channels label a position in the changeset DAG, primarily for
 /// synchronization with the remote server.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Channel {

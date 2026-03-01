@@ -1,8 +1,8 @@
 //! CLI argument definitions using clap's Derive API.
 //!
 //! Defines the `dyna` command-line interface with a changeset-centric command
-//! set inspired by Jujutsu. Commands operate on **changesets** (groups of
-//! patches) rather than individual patches.
+//! set. Commands operate on **changesets** (groups of patches) rather than
+//! individual patches.
 //!
 //! Commands: `init`, `clone`, `add`, `commit`, `describe`, `squash`, `push`,
 //! `pull`, `status`, `diff`, `log`, `resolve`, `restore`, `channel`, `promote`.
@@ -15,7 +15,7 @@ use std::path::PathBuf;
     name = "dyna",
     author,
     version,
-    about = "A distributed CRUD tool for collaborative JSON resource editing.\nInspired by Pijul and Jujutsu, with changeset-centric workflow.",
+    about = "A distributed CRUD tool for collaborative JSON resource editing, with changeset-centric workflow.",
     long_about = None
 )]
 pub struct Cli {
@@ -63,7 +63,7 @@ pub enum Commands {
     ///
     /// A changeset groups one or more patches (one per modified resource)
     /// into a single logical unit with a message, author, and parent
-    /// changeset references. This is analogous to `jj commit`.
+    /// changeset references.
     Commit {
         /// A descriptive message for this changeset.
         #[arg(short, long)]
@@ -128,7 +128,7 @@ pub enum Commands {
         path: PathBuf,
     },
 
-    /// Restore a file to its snapshot state (analogous to `jj restore`).
+    /// Restore a file to its snapshot state.
     ///
     /// Without flags, restores from the current channel's latest snapshot.
     /// Use `--channel` to restore from a specific channel's head, or
@@ -178,7 +178,7 @@ pub enum Commands {
         channel: Option<String>,
     },
 
-    /// Squash a changeset into its parent (analogous to `jj squash`).
+    /// Squash a changeset into its parent.
     ///
     /// Merges the child changeset's patches into the parent: patches targeting
     /// the same resource are combined (parent_snapshot from target, result_snapshot

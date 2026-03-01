@@ -1,6 +1,6 @@
 //! `dyna describe` command implementation.
 //!
-//! Amends the message of a changeset, similar to `jj describe`.
+//! Amends the message of a changeset.
 //! Defaults to the current working changeset if no change_id is given.
 
 use anyhow::{Result, bail};
