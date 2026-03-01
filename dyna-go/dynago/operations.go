@@ -662,6 +662,177 @@ func (r *Repository) CherryPick(changeID string) (string, error) {
 }
 
 // ---------------------------------------------------------------------------
+// PromoteLocal — local channel promotion with three-way merge
+// ---------------------------------------------------------------------------
+
+// PromoteLocalResult holds the result of a local promote operation.
+type PromoteLocalResult struct {
+	PromotedIDs []string
+	Conflicts   map[string][]Conflict // resource_id -> conflicts
+}
+
+// PromoteLocal promotes changesets from sourceChannel into targetChannel
+// locally, performing three-way merge for each affected resource.
+// If conflicts are detected, they are recorded but the non-conflicting
+// resources are still merged. The caller can inspect Conflicts to decide
+// how to resolve them.
+func (r *Repository) PromoteLocal(sourceChannel, targetChannel string) (*PromoteLocalResult, error) {
+	src, err := r.LoadChannel(sourceChannel)
+	if err != nil {
+		return nil, fmt.Errorf("source channel not found: %s", sourceChannel)
+	}
+	tgt, err := r.LoadChannel(targetChannel)
+	if err != nil {
+		return nil, fmt.Errorf("target channel not found: %s", targetChannel)
+	}
+
+	// Find changesets in source that are not in target
+	targetSet := map[string]bool{}
+	for _, id := range tgt.Changesets {
+		targetSet[id] = true
+	}
+	var newIDs []string
+	for _, id := range src.Changesets {
+		if !targetSet[id] {
+			newIDs = append(newIDs, id)
+		}
+	}
+	if len(newIDs) == 0 {
+		return nil, fmt.Errorf("no new changesets to promote from %s to %s", sourceChannel, targetChannel)
+	}
+
+	// For each new changeset, apply its patches to the target channel's
+	// snapshots using three-way merge when the target has diverged.
+	allConflicts := map[string][]Conflict{}
+
+	// We need to temporarily read snapshots from the target channel.
+	// Save current channel, switch to target to read its snapshots.
+	origChannel, _ := r.CurrentChannelName()
+
+	for _, cid := range newIDs {
+		cs, err := r.LoadChangeset(cid)
+		if err != nil {
+			continue
+		}
+
+		for _, patch := range cs.Patches {
+			resID := patch.TargetResource
+
+			// Load the base snapshot (what the resource looked like before
+			// the source channel's change). nil means the resource didn't
+			// exist before this changeset.
+			baseSnap := patch.ParentSnapshot
+			baseIsNil := baseSnap == nil || string(baseSnap) == "null"
+
+			// Load the source's result (what the resource looks like after
+			// the source channel's change)
+			var sourceSnap json.RawMessage
+			if patch.ResultSnapshot != nil {
+				sourceSnap = patch.ResultSnapshot
+			} else {
+				// Apply operations to base to get the result
+				if !baseIsNil {
+					sourceSnap = make(json.RawMessage, len(baseSnap))
+					copy(sourceSnap, baseSnap)
+				} else {
+					sourceSnap = json.RawMessage("{}")
+				}
+				_ = ApplyPatch(&sourceSnap, patch.Operations)
+			}
+
+			// Load the target channel's current snapshot for this resource
+			_ = r.setCurrentChannelName(targetChannel)
+			targetSnap, _ := r.LoadSnapshot(resID)
+
+			// If the resource is new (base is nil), skip three-way merge:
+			// if the target also doesn't have it, just apply the source.
+			// If the target has a different version, that's a real conflict.
+			if baseIsNil {
+				if targetSnap == nil || string(targetSnap) == "{}" || string(targetSnap) == "null" {
+					// Resource is new and target doesn't have it — no conflict
+					_ = r.SaveSnapshot(resID, sourceSnap)
+					relPath := PathForResourceID(resID)
+					_ = r.WriteWorkFile(relPath, sourceSnap)
+					continue
+				}
+				// Target has a version but source added from scratch — conflict
+				allConflicts[resID] = append(allConflicts[resID], Conflict{
+					ResourceID:  resID,
+					JSONPath:    "/",
+					LocalValue:  targetSnap,
+					RemoteValue: sourceSnap,
+					BaseValue:   json.RawMessage("null"),
+				})
+				_ = r.SaveConflicts(resID, allConflicts[resID])
+				continue
+			}
+
+			// Both base and target exist — do three-way merge
+			if targetSnap == nil {
+				targetSnap = json.RawMessage("{}")
+			}
+
+			merged, conflicts, err := ThreeWayMerge(baseSnap, targetSnap, sourceSnap)
+			if err != nil {
+				allConflicts[resID] = append(allConflicts[resID], Conflict{
+					ResourceID: resID,
+					JSONPath:   "/",
+					LocalValue: targetSnap,
+					RemoteValue: sourceSnap,
+					BaseValue:  baseSnap,
+				})
+				continue
+			}
+
+			if len(conflicts) > 0 {
+				// Record conflicts for this resource
+				for i := range conflicts {
+					conflicts[i].ResourceID = resID
+				}
+				allConflicts[resID] = append(allConflicts[resID], conflicts...)
+				// Save conflicts to the repository
+				_ = r.SaveConflicts(resID, conflicts)
+			} else {
+				// No conflict — save the merged snapshot to the target channel
+				_ = r.SaveSnapshot(resID, merged)
+				// Also update the working directory
+				relPath := PathForResourceID(resID)
+				_ = r.WriteWorkFile(relPath, merged)
+			}
+		}
+
+		// Append changeset to target channel
+		cs.Immutable = true
+		_ = r.SaveChangeset(cs)
+		tgt.AppendChangeset(cid)
+	}
+
+	// Save the updated target channel
+	_ = r.SaveChannel(tgt)
+
+	// Restore original channel
+	_ = r.setCurrentChannelName(origChannel)
+
+	return &PromoteLocalResult{
+		PromotedIDs: newIDs,
+		Conflicts:   allConflicts,
+	}, nil
+}
+
+// ResolveConflict resolves a conflict for a resource by writing the chosen
+// value as the snapshot and clearing the conflict record.
+func (r *Repository) ResolveConflict(resourceID string, resolvedValue json.RawMessage) error {
+	if err := r.SaveSnapshot(resourceID, resolvedValue); err != nil {
+		return err
+	}
+	relPath := PathForResourceID(resourceID)
+	if err := r.WriteWorkFile(relPath, resolvedValue); err != nil {
+		return err
+	}
+	return r.ClearConflicts(resourceID)
+}
+
+// ---------------------------------------------------------------------------
 // Resolve conflicts
 // ---------------------------------------------------------------------------
 

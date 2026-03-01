@@ -327,12 +327,11 @@ impl Repository {
         })
     }
 
-    pub fn create_channel(&self, name: &str, fork_from: Option<&str>) -> Result<Channel> {
+      pub fn create_channel(&self, name: &str, fork_from: Option<&str>) -> Result<Channel> {
         let path = self.vfs_dyna.join("channels")?.join(&format!("{}.json", name))?;
         if vfs_exists(&path)? {
             bail!("Channel '{}' already exists", name);
         }
-
         let channel = fork_from
             .map(|source_name| {
                 self.load_channel(source_name).map(|source| {
@@ -343,6 +342,23 @@ impl Repository {
                 })
             })
             .unwrap_or_else(|| Ok(Channel::new(name)))?;
+
+        // Copy snapshots from source channel to the new channel
+        if let Some(source_name) = fork_from {
+            if let Ok(src_dir) = self.snapshot_dir_for(source_name) {
+                if let Ok(entries) = src_dir.read_dir() {
+                    let dst_dir = self.snapshot_dir_for(name)?;
+                    for entry in entries {
+                        if entry.extension().map_or(false, |ext| ext == "json") {
+                            if let Ok(content) = vfs_read(&entry) {
+                                let dst = dst_dir.join(&entry.filename())?;
+                                vfs_write(&dst, &content).ok();
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         self.save_channel(&channel).map(|()| channel)
     }
@@ -518,6 +534,18 @@ impl Repository {
 
     pub fn load_snapshot(&self, resource_id: &str) -> Result<Option<Value>> {
         let path = self.snapshot_dir()?.join(&format!("{}.json", resource_id))?;
+        vfs_exists(&path)?
+            .then(|| {
+                vfs_read(&path)
+                    .and_then(|content| serde_json::from_str(&content).map_err(Into::into))
+                    .map(Some)
+            })
+            .unwrap_or(Ok(None))
+    }
+
+    /// Load a snapshot for a specific channel.
+    pub fn load_snapshot_for_channel(&self, channel: &str, resource_id: &str) -> Result<Option<Value>> {
+        let path = self.snapshot_dir_for(channel)?.join(&format!("{}.json", resource_id))?;
         vfs_exists(&path)?
             .then(|| {
                 vfs_read(&path)

@@ -214,6 +214,21 @@ func (r *Repository) CreateChannel(name string, forkFrom *string) error {
 		ch.Changesets = make([]string, len(src.Changesets))
 		copy(ch.Changesets, src.Changesets)
 		ch.HeadChangeID = src.HeadChangeID
+
+		// Copy snapshots from source channel to the new channel
+		srcDir := r.snapshotDirFor(*forkFrom)
+		dstDir := r.snapshotDirFor(name)
+		entries, _ := afero.ReadDir(r.fs, srcDir)
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			data, err := afero.ReadFile(r.fs, filepath.Join(srcDir, entry.Name()))
+			if err != nil {
+				continue
+			}
+			_ = afero.WriteFile(r.fs, filepath.Join(dstDir, entry.Name()), data, 0644)
+		}
 	}
 	return r.SaveChannel(&ch)
 }

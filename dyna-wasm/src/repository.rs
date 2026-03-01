@@ -270,6 +270,23 @@ impl Repository {
             })
             .unwrap_or_else(|| Ok(Channel::new(name)))?;
 
+        // Copy snapshots from source channel to the new channel
+        if let Some(source_name) = fork_from {
+            if let Ok(src_dir) = self.snapshot_dir_for(source_name) {
+                if let Ok(entries) = src_dir.read_dir() {
+                    let dst_dir = self.snapshot_dir_for(name)?;
+                    for entry in entries {
+                        if entry.extension().map_or(false, |ext| ext == "json") {
+                            if let Ok(content) = vfs_read(&entry) {
+                                let dst = dst_dir.join(&entry.filename())?;
+                                vfs_write(&dst, &content).ok();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         self.save_channel(&channel)
     }
 

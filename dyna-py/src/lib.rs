@@ -594,6 +594,93 @@ impl DynaRepo {
         })
     }
 
+    /// Perform a local promote from source channel to target channel.
+    /// Returns a dict with 'success', 'promoted_count', and optionally 'conflicts'.
+    /// Conflicts are returned as a list of dicts with 'resource_id', 'json_path',
+    /// 'base_value', 'local_value', 'remote_value'.
+    #[pyo3(signature = (source_channel, target_channel="main"))]
+    fn promote_local(&self, source_channel: &str, target_channel: &str) -> PyResult<PyObject> {
+        use dyna_core::channel::promote_changesets;
+        use dyna_core::diff::three_way_merge_checked;
+
+        let source = self.repo.load_channel(source_channel).map_err(to_py_err)?;
+        let mut target = self.repo.load_channel(target_channel).map_err(to_py_err)?;
+
+        let promoted = promote_changesets(&source, &mut target)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut all_conflicts: Vec<(String, Vec<dyna_core::models::Conflict>)> = Vec::new();
+
+        for cs_id in &promoted {
+            let cs = self.repo.load_changeset(cs_id).map_err(to_py_err)?;
+            for p in &cs.patches {
+                let resource_id = &p.target_resource;
+
+                let base = p.parent_snapshot.clone().unwrap_or(serde_json::Value::Null);
+                let local = self.repo
+                    .load_snapshot_for_channel(target_channel, resource_id)
+                    .map_err(to_py_err)?
+                    .unwrap_or(serde_json::Value::Null);
+                let remote = p.result_snapshot.clone().unwrap_or(serde_json::Value::Null);
+
+                // Fast path: new resource (base is null and target is null)
+                if base.is_null() && local.is_null() {
+                    self.repo.save_snapshot_for_channel(target_channel, resource_id, &remote)
+                        .map_err(to_py_err)?;
+                    continue;
+                }
+
+                // Fast path: no divergence on target
+                if local == base {
+                    self.repo.save_snapshot_for_channel(target_channel, resource_id, &remote)
+                        .map_err(to_py_err)?;
+                    continue;
+                }
+
+                match three_way_merge_checked(&base, &local, &remote) {
+                    Ok(merged) => {
+                        self.repo.save_snapshot_for_channel(target_channel, resource_id, &merged)
+                            .map_err(to_py_err)?;
+                    }
+                    Err(conflicts) => {
+                        self.repo.save_conflicts(resource_id, &conflicts)
+                            .map_err(to_py_err)?;
+                        all_conflicts.push((resource_id.clone(), conflicts));
+                    }
+                }
+            }
+        }
+
+        Python::with_gil(|py| {
+            let dict = pyo3::types::PyDict::new(py);
+            dict.set_item("promoted_count", promoted.len())?;
+
+            if all_conflicts.is_empty() {
+                dict.set_item("success", true)?;
+                // Update target channel
+                target.head_change_id = source.head_change_id.clone();
+                self.repo.save_channel(&target).map_err(to_py_err)?;
+            } else {
+                dict.set_item("success", false)?;
+                let conflict_list = pyo3::types::PyList::empty(py);
+                for (resource_id, conflicts) in &all_conflicts {
+                    for c in conflicts {
+                        let cd = pyo3::types::PyDict::new(py);
+                        cd.set_item("resource_id", resource_id)?;
+                        cd.set_item("json_path", &c.json_path)?;
+                        cd.set_item("base_value", c.base_value.as_ref().map(|v| v.to_string()))?;
+                        cd.set_item("local_value", c.local_value.to_string())?;
+                        cd.set_item("remote_value", c.remote_value.to_string())?;
+                        conflict_list.append(cd)?;
+                    }
+                }
+                dict.set_item("conflicts", conflict_list)?;
+            }
+
+            Ok(dict.into())
+        })
+    }
+
     // -----------------------------------------------------------------------
     // Clone
     // -----------------------------------------------------------------------
