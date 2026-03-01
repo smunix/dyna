@@ -185,6 +185,47 @@
             };
           };
 
+          # ── dyna-elm-serve script ─────────────────────────────────
+          #
+          # A convenience wrapper that builds the Elm app (if needed),
+          # bundles the WASM package, and serves the result locally.
+          dyna-elm-serve = pkgs.writeShellScriptBin "dyna-elm-serve" ''
+            set -euo pipefail
+
+            PORT="''${1:-8080}"
+            SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+            # Locate the dyna-elm source directory
+            ELM_SRC="''${DYNA_ELM_SRC:-$(pwd)/dyna-elm}"
+            if [ ! -f "$ELM_SRC/elm.json" ]; then
+              echo "Error: Cannot find dyna-elm/elm.json"
+              echo "Run this from the workspace root, or set DYNA_ELM_SRC."
+              exit 1
+            fi
+
+            # Build the WASM package if not already built
+            WASM_OUT="$(pwd)/pkg"
+            if [ ! -f "$WASM_OUT/dyna_wasm.js" ]; then
+              echo "Building dyna-wasm..."
+              wasm-pack build dyna-wasm --target web --out-dir "$WASM_OUT"
+            fi
+
+            # Compile the Elm app
+            echo "Compiling Elm app..."
+            (cd "$ELM_SRC" && elm make src/Main.elm --optimize --output=public/elm.js)
+
+            # Copy WASM package into the Elm public directory
+            mkdir -p "$ELM_SRC/public/pkg"
+            cp "$WASM_OUT"/dyna_wasm* "$ELM_SRC/public/pkg/" 2>/dev/null || true
+
+            # Serve the Elm app
+            echo ""
+            echo "  Serving dyna-elm on http://localhost:$PORT"
+            echo "  Press Ctrl+C to stop."
+            echo ""
+            ${pkgs.python3}/bin/python3 -m http.server "$PORT" --directory "$ELM_SRC/public"
+          '';
+
         in
         {
           # ── Checks ───────────────────────────────────────────────────
@@ -209,7 +250,7 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-elm;
+            inherit dyna-cli dyna-server dyna-wasm dyna-elm dyna-elm-serve;
             inherit dyna-server-image dyna-elm-image;
             default = dyna-cli;
           };
@@ -223,6 +264,10 @@
             dyna-server = {
               type = "app";
               program = "${dyna-server}/bin/dyna-server";
+            };
+            dyna-elm-serve = {
+              type = "app";
+              program = "${dyna-elm-serve}/bin/dyna-elm-serve";
             };
             default = {
               type = "app";
@@ -253,6 +298,11 @@
                 ];
               })
 
+              # Pre-built Dyna binaries on PATH
+              dyna-cli
+              dyna-server
+              dyna-elm-serve
+
               # WASM tooling
               pkgs.wasm-pack
               pkgs.wasm-bindgen-cli
@@ -274,16 +324,22 @@
 
             shellHook = ''
               echo ""
-              echo "  ╔══════════════════════════════════════════════╗"
-              echo "  ║          Dyna Development Shell              ║"
-              echo "  ╠══════════════════════════════════════════════╣"
-              echo "  ║  cargo build          — build native crates  ║"
-              echo "  ║  cargo test           — run all tests        ║"
-              echo "  ║  cargo run -p dyna-server — start server     ║"
-              echo "  ║  cargo run -p dyna-cli    — run CLI          ║"
-              echo "  ║  wasm-pack build dyna-wasm --target web      ║"
-              echo "  ║  cd dyna-elm && elm make src/Main.elm        ║"
-              echo "  ╚══════════════════════════════════════════════╝"
+              echo "  ╔══════════════════════════════════════════════════════════╗"
+              echo "  ║              Dyna Development Shell                      ║"
+              echo "  ╠══════════════════════════════════════════════════════════╣"
+              echo "  ║                                                          ║"
+              echo "  ║  Pre-built binaries (on PATH):                           ║"
+              echo "  ║    dyna             — CLI client                         ║"
+              echo "  ║    dyna-server      — start the server                   ║"
+              echo "  ║    dyna-elm-serve   — build & serve the Elm UI           ║"
+              echo "  ║                                                          ║"
+              echo "  ║  Development commands:                                   ║"
+              echo "  ║    cargo build      — build native crates from source    ║"
+              echo "  ║    cargo test       — run all tests                      ║"
+              echo "  ║    cargo watch      — rebuild on file changes            ║"
+              echo "  ║    wasm-pack build dyna-wasm --target web                ║"
+              echo "  ║                                                          ║"
+              echo "  ╚══════════════════════════════════════════════════════════╝"
               echo ""
             '';
 

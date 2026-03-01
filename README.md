@@ -98,6 +98,7 @@ nix flake check
 # Run directly
 nix run .#dyna-cli
 nix run .#dyna-server
+nix run .#dyna-elm-serve       # build & serve the Elm UI locally
 
 # Build Docker/OCI images for deployment
 nix build .#dyna-server-image
@@ -108,6 +109,9 @@ The `nix develop` shell provides:
 
 | Tool | Purpose |
 |------|---------|
+| `dyna` (dyna-cli) | Pre-built CLI binary, directly executable |
+| `dyna-server` | Pre-built server binary, directly executable |
+| `dyna-elm-serve` | Script that builds WASM + Elm and serves the UI locally |
 | Rust toolchain (stable + wasm32 target) | Build all Rust crates natively and for WASM |
 | rust-analyzer, clippy, rustfmt | IDE support and linting |
 | wasm-pack, wasm-bindgen-cli | WASM packaging and JS/TS glue generation |
@@ -137,9 +141,11 @@ cd dyna-elm && elm make src/Main.elm --output=public/elm.js
 | `packages.dyna-elm` | Compiled Elm app with bundled WASM package |
 | `packages.dyna-server-image` | OCI/Docker image for the server |
 | `packages.dyna-elm-image` | OCI/Docker image serving the Elm UI (static-web-server) |
+| `packages.dyna-elm-serve` | Shell script: build WASM + Elm and serve locally |
 | `apps.dyna-cli` | `nix run .#dyna-cli` |
 | `apps.dyna-server` | `nix run .#dyna-server` |
-| `devShells.default` | Full development environment |
+| `apps.dyna-elm-serve` | `nix run .#dyna-elm-serve [port]` |
+| `devShells.default` | Full development environment with all binaries on PATH |
 | `checks.*` | Clippy, fmt, nextest, and build checks |
 
 ### Use the CLI
