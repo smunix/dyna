@@ -320,6 +320,13 @@
               lockFile = ./Cargo.lock;
             };
 
+            # cargoSetupHook validates Cargo.lock relative to cargoRoot,
+            # but the workspace lock file lives at the source root.
+            # Copy it into the subcrate directory so the hook finds it.
+            postPatch = ''
+              cp Cargo.lock dyna-py/
+            '';
+
             nativeBuildInputs = [
               pkgs.rustPlatform.cargoSetupHook
               pkgs.rustPlatform.maturinBuildHook
