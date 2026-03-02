@@ -320,11 +320,26 @@
               lockFile = ./Cargo.lock;
             };
 
-            # cargoSetupHook validates Cargo.lock relative to cargoRoot,
-            # but the workspace lock file lives at the source root.
-            # Copy it into the subcrate directory so the hook finds it.
-            postPatch = ''
+            # Two fixups needed for the workspace-based maturin build:
+            # 1. cargoSetupHook validates Cargo.lock relative to cargoRoot,
+            #    but the workspace lock file lives at the source root.
+            # 2. The workspace Cargo.toml lists ALL members, but the filtered
+            #    source only contains dyna-py and its transitive deps.
+            #    Cargo metadata fails on the missing members, so we rewrite
+            #    the members list to match what's actually present.
+            postPatch = let
+              # Compute the list of members that mkCrateSrc actually includes.
+              presentMembers = [ "dyna-py" ] ++ map
+                (p: builtins.baseNameOf (builtins.toString p))
+                (resolveAllLocalDeps ./dyna-py);
+              membersToml = builtins.concatStringsSep ", "
+                (map (m: ''"${m}"'') presentMembers);
+            in ''
               cp Cargo.lock dyna-py/
+
+              # Rewrite workspace members to only those present in the source.
+              sed -i '/^members = \[/,/^\]/c\members = [${membersToml}]' Cargo.toml
+              echo "Patched workspace members to: [${membersToml}]"
             '';
 
             nativeBuildInputs = [
