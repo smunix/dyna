@@ -51,14 +51,6 @@
           # ════════════════════════════════════════════════════════════════
           # Helper: resolve workspace dependency crate paths from Cargo.toml
           # ════════════════════════════════════════════════════════════════
-          #
-          # Reads a crate's Cargo.toml, finds all `{ workspace = true }` or
-          # `{ path = "..." }` dependencies that reference sibling workspace
-          # crates, and returns their directory paths.
-          #
-          # This is the core of the deduplication: instead of manually listing
-          # which crates each package depends on, we derive it from the
-          # Cargo.toml itself.
 
           workspaceMembers = [ "dyna-core" "dyna-cli" "dyna-server" "dyna-wasm" "dyna-py" ];
 
@@ -67,13 +59,9 @@
           readLocalDeps = cratePath:
             let
               cargoToml = builtins.fromTOML (builtins.readFile (cratePath + "/Cargo.toml"));
-              # Collect all dependency sections
               allDeps = (cargoToml.dependencies or {})
                      // (cargoToml.dev-dependencies or {})
                      // (cargoToml.build-dependencies or {});
-              # A dep is local if it's a workspace member name and either:
-              #   - has `workspace = true`
-              #   - has a `path` attribute
               isLocalDep = name: spec:
                 builtins.elem name workspaceMembers
                 && (
@@ -87,7 +75,7 @@
               localDepNames;
 
           # Recursively resolve all transitive local deps for a crate.
-          # Returns a deduplicated list of crate directory paths (as strings).
+          # Returns a deduplicated list of crate directory paths.
           resolveAllLocalDeps = cratePath:
             let
               directNames = readLocalDeps cratePath;
@@ -97,15 +85,40 @@
               lib.lists.unique (directPaths ++ transitive);
 
           # ════════════════════════════════════════════════════════════════
-          # Helper: build filtered source tree for a crate
+          # Helper: compute the workspace member names present in a source
           # ════════════════════════════════════════════════════════════════
           #
-          # Includes the workspace root manifests, the crate itself, and all
-          # of its transitive local dependencies.
+          # Given a cratePath, returns the list of member names that are
+          # actually included by mkCrateSrc (the crate itself + its
+          # transitive local deps).
+
+          presentMembersFor = cratePath:
+            let
+              crateName = builtins.baseNameOf (builtins.toString cratePath);
+              depPaths = resolveAllLocalDeps cratePath;
+              depNames = map (p: builtins.baseNameOf (builtins.toString p)) depPaths;
+            in
+              lib.lists.unique ([ crateName ] ++ depNames);
+
+          # Generate a sed command that rewrites the workspace members list
+          # in Cargo.toml to only include the given member names.
+          patchWorkspaceMembersScript = members:
+            let
+              membersToml = builtins.concatStringsSep ", "
+                (map (m: ''"${m}"'') members);
+            in ''
+              # Rewrite workspace members to only those present in the source.
+              sed -i '/^members = \[/,/^\]/c\members = [${membersToml}]' Cargo.toml
+              echo "Patched workspace members to: [${membersToml}]"
+            '';
+
+          # ════════════════════════════════════════════════════════════════
+          # Helper: build filtered source tree for a crate
+          # ════════════════════════════════════════════════════════════════
 
           mkCrateSrc =
-            { cratePath       # Path to the crate directory (e.g. ./dyna-cli)
-            , extraPaths ? [] # Additional paths to include (e.g. pyproject.toml)
+            { cratePath
+            , extraPaths ? []
             , useCraneLib ? craneLib
             }:
             let
@@ -124,16 +137,13 @@
           # ════════════════════════════════════════════════════════════════
           # Helper: build a native Rust package (deps cache + final build)
           # ════════════════════════════════════════════════════════════════
-          #
-          # Given a crate name, produces { src, cargoArtifacts, package }
-          # with all boilerplate handled automatically.
 
           mkRustPackage =
-            { pname                    # Package name (e.g. "dyna-cli")
-            , cratePath                # Path to the crate directory
-            , extraSrcPaths ? []       # Extra paths for source filtering
-            , extraBuildInputs ? []    # Additional build inputs
-            , buildPackageArgs ? {}    # Extra args passed to buildPackage
+            { pname
+            , cratePath
+            , extraSrcPaths ? []
+            , extraBuildInputs ? []
+            , buildPackageArgs ? {}
             }:
             let
               src = mkCrateSrc {
@@ -141,12 +151,18 @@
                 extraPaths = extraSrcPaths;
               };
 
+              members = presentMembersFor cratePath;
+              patchScript = patchWorkspaceMembersScript members;
+
               cargoArtifacts = craneLib.buildDepsOnly {
                 pname = "${pname}-deps";
                 inherit src;
                 strictDeps = true;
                 cargoExtraArgs = "-p ${pname}";
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                # Patch workspace Cargo.toml so cargo only sees members
+                # that exist in the filtered source tree.
+                postPatch = patchScript;
               };
 
               package = craneLib.buildPackage ({
@@ -155,6 +171,7 @@
                 cargoExtraArgs = "-p ${pname}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                postPatch = patchScript;
               } // buildPackageArgs);
             in
               { inherit src cargoArtifacts package; };
@@ -162,17 +179,14 @@
           # ════════════════════════════════════════════════════════════════
           # Helper: build a WASM package (deps cache + raw build + bindgen)
           # ════════════════════════════════════════════════════════════════
-          #
-          # Produces the raw .wasm via crane, then runs wasm-bindgen-cli
-          # to generate JS/TS glue code.
 
           mkWasmPackage =
-            { pname                    # Package name (e.g. "dyna-wasm")
-            , cratePath                # Path to the crate directory
-            , wasmFileName             # Base name of the .wasm file (e.g. "dyna_wasm")
-            , extraSrcPaths ? []       # Extra paths for source filtering
-            , extraBuildInputs ? []    # Additional build inputs
-            , bindgenTarget ? "web"    # wasm-bindgen target (web, nodejs, etc.)
+            { pname
+            , cratePath
+            , wasmFileName
+            , extraSrcPaths ? []
+            , extraBuildInputs ? []
+            , bindgenTarget ? "web"
             }:
             let
               wasmTarget = "wasm32-unknown-unknown";
@@ -183,6 +197,9 @@
                 useCraneLib = craneLibWasm;
               };
 
+              members = presentMembersFor cratePath;
+              patchScript = patchWorkspaceMembersScript members;
+
               cargoArtifacts = craneLibWasm.buildDepsOnly {
                 pname = "${pname}-deps";
                 inherit src;
@@ -190,6 +207,7 @@
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                postPatch = patchScript;
               };
 
               raw = craneLibWasm.buildPackage {
@@ -198,6 +216,7 @@
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                postPatch = patchScript;
                 installPhaseCommand = ''
                   mkdir -p $out/lib
                   cp target/${wasmTarget}/release/${wasmFileName}.wasm $out/lib/ 2>/dev/null || \
@@ -247,8 +266,6 @@
           # Package definitions (using helpers)
           # ════════════════════════════════════════════════════════════════
 
-          # ── Native packages ────────────────────────────────────────────
-
           cliResult = mkRustPackage {
             pname = "dyna-cli";
             cratePath = ./dyna-cli;
@@ -297,7 +314,10 @@
           };
 
           # ── Python package (dyna-py via maturin) ────────────────────
-          dyna-py = pkgs.python3Packages.buildPythonPackage {
+          dyna-py = let
+            pyMembers = presentMembersFor ./dyna-py;
+            pyPatchScript = patchWorkspaceMembersScript pyMembers;
+          in pkgs.python3Packages.buildPythonPackage {
             pname = "dyna-py";
             version = "0.1.0";
             format = "pyproject";
@@ -321,26 +341,14 @@
               lockFile = ./Cargo.lock;
             };
 
-            # Two fixups needed for the workspace-based maturin build:
-            # 1. cargoSetupHook validates Cargo.lock relative to cargoRoot,
-            #    but the workspace lock file lives at the source root.
-            # 2. The workspace Cargo.toml lists ALL members, but the filtered
-            #    source only contains dyna-py and its transitive deps.
-            #    Cargo metadata fails on the missing members, so we rewrite
-            #    the members list to match what's actually present.
-            postPatch = let
-              # Compute the list of members that mkCrateSrc actually includes.
-              presentMembers = [ "dyna-py" ] ++ map
-                (p: builtins.baseNameOf (builtins.toString p))
-                (resolveAllLocalDeps ./dyna-py);
-              membersToml = builtins.concatStringsSep ", "
-                (map (m: ''"${m}"'') presentMembers);
-            in ''
+            # Three fixups for the workspace-based maturin build:
+            # 1. Copy Cargo.lock into the subcrate dir (cargoSetupHook
+            #    validates it relative to cargoRoot).
+            # 2. Rewrite workspace members to only those present in the
+            #    filtered source (cargo metadata fails on missing members).
+            postPatch = ''
               cp Cargo.lock dyna-py/
-
-              # Rewrite workspace members to only those present in the source.
-              sed -i '/^members = \[/,/^\]/c\members = [${membersToml}]' Cargo.toml
-              echo "Patched workspace members to: [${membersToml}]"
+              ${pyPatchScript}
             '';
 
             nativeBuildInputs = [
