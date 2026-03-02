@@ -71,6 +71,12 @@ fn vfs_write(path: &VfsPath, content: &str) -> Result<()> {
         .and_then(|compressed| vfs_write_bytes(path, &compressed))
 }
 
+/// Write a string to a VfsPath as plain text (no compression).
+/// Use this for working directory files so they are human-readable on disk.
+fn vfs_write_plain(path: &VfsPath, content: &str) -> Result<()> {
+    vfs_write_bytes(path, content.as_bytes())
+}
+
 fn vfs_read_bytes(path: &VfsPath) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     path.open_file()
@@ -550,7 +556,9 @@ impl Repository {
     pub fn write_work_file(&self, relative_path: &str, content: &str) -> Result<()> {
         let path = self.vfs_root.join(relative_path)?;
         path.parent().create_dir_all().map_err(anyhow::Error::from)?;
-        vfs_write(&path, content)
+        // Write working directory files as plain text (not compressed)
+        // so they are human-readable on disk
+        vfs_write_plain(&path, content)
     }
 
     pub fn work_file_exists(&self, relative_path: &str) -> Result<bool> {

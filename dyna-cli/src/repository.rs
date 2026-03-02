@@ -666,7 +666,9 @@ impl Repository {
     pub fn write_work_file(&self, relative_path: &str, content: &str) -> Result<()> {
         let path = self.vfs_root.join(relative_path)?;
         path.parent().create_dir_all().map_err(anyhow::Error::from)?;
-        vfs_write(&path, content)
+        // Write working directory files as plain text (not compressed)
+        // so they are human-readable on disk
+        vfs_write_plain(&path, content)
     }
 
     /// Check if a file exists in the working directory via VFS.

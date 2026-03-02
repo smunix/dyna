@@ -1704,44 +1704,69 @@ viewStagedItem sf =
 viewResources : Model -> Html Msg
 viewResources model =
     let
-        snapshotIds =
-            model.snapshots
-
+        -- Staged resources: resources that have been staged for commit
         stagedIds =
             List.map .resourceId model.status.staged
 
-        modifiedIds =
-            model.status.modified
-
-        allIds =
-            List.foldl
-                (\rid acc ->
-                    if List.member rid acc then
-                        acc
-                    else
-                        acc ++ [ rid ]
+        -- Working directory resources: files in the working dir that are NOT
+        -- in snapshots (new/untracked) or are modified
+        workingOnlyIds =
+            model.resources
+                |> List.filter (\rid -> not (List.member rid (List.map .resourceId model.status.staged)))
+                |> List.filter (\rid ->
+                    not (List.member rid model.snapshots)
+                        || List.member rid model.status.modified
                 )
-                snapshotIds
-                (stagedIds ++ modifiedIds ++ model.resources)
 
-        filteredIds =
+        -- Committed resources: resources in snapshots that are NOT staged
+        -- and NOT modified (clean committed state)
+        committedIds =
+            model.snapshots
+                |> List.filter (\rid -> not (List.member rid stagedIds))
+                |> List.filter (\rid -> not (List.member rid model.status.modified))
+
+        -- Deleted resources
+        deletedIds =
+            model.status.deleted
+
+        -- Apply filter
+        applyFilter ids =
             if String.isEmpty model.resourceFilter then
-                allIds
+                ids
             else
-                List.filter (\rid -> simpleMatch model.resourceFilter rid) allIds
+                List.filter (\rid -> simpleMatch model.resourceFilter rid) ids
 
-        sortedIds =
+        -- Apply sort
+        applySort ids =
             case model.resourceSort of
                 SortByIdAsc ->
-                    List.sort filteredIds
+                    List.sort ids
 
                 SortByIdDesc ->
-                    List.reverse (List.sort filteredIds)
+                    List.reverse (List.sort ids)
+
+        filteredStaged =
+            applySort (applyFilter stagedIds)
+
+        filteredWorking =
+            applySort (applyFilter workingOnlyIds)
+
+        filteredCommitted =
+            applySort (applyFilter committedIds)
+
+        filteredDeleted =
+            applySort (applyFilter deletedIds)
+
+        totalCount =
+            List.length filteredStaged
+                + List.length filteredWorking
+                + List.length filteredCommitted
     in
     div []
-        [ div [ class "panel" ]
+        [ -- Header with filter and sort controls
+          div [ class "panel" ]
             [ div [ class "panel-header" ]
-                [ h2 [] [ text ("Resources (" ++ String.fromInt (List.length sortedIds) ++ ")") ]
+                [ h2 [] [ text ("Resources (" ++ String.fromInt totalCount ++ ")") ]
                 , div [ style "display" "flex", style "gap" "8px" ]
                     [ button [ class "btn btn-sm btn-ghost", onClick RefreshAll ] [ text "Refresh" ]
                     , button [ class "btn btn-sm btn-primary", onClick OpenNewResource ] [ text "+ New Resource" ]
@@ -1772,9 +1797,63 @@ viewResources model =
                     ]
                     [ text "A\u{2193}" ]
                 ]
-            , div [ class "panel-body", style "max-height" "calc(100vh - 240px)", style "overflow-y" "auto" ]
-                [ if List.isEmpty sortedIds then
-                    div [ class "empty-state" ]
+            ]
+
+        -- Section 1: Staged Resources
+        , if not (List.isEmpty filteredStaged) then
+            div [ class "panel" ]
+                [ div [ class "panel-header" ]
+                    [ h2 [ style "color" "#fbbf24" ]
+                        [ text ("Staged (" ++ String.fromInt (List.length filteredStaged) ++ ")")
+                        ]
+                    ]
+                , div [ class "panel-body" ]
+                    [ ul [ class "resource-list" ]
+                        (List.map (viewStagedResourceItem model) filteredStaged)
+                    ]
+                ]
+          else
+            text ""
+
+        -- Section 2: Working Directory
+        , if not (List.isEmpty filteredWorking) || not (List.isEmpty filteredDeleted) then
+            div [ class "panel" ]
+                [ div [ class "panel-header" ]
+                    [ h2 [ style "color" "#60a5fa" ]
+                        [ text ("Working Directory (" ++ String.fromInt (List.length filteredWorking + List.length filteredDeleted) ++ ")")
+                        ]
+                    ]
+                , div [ class "panel-body" ]
+                    [ ul [ class "resource-list" ]
+                        (List.map (viewWorkingResourceItem model) filteredWorking
+                            ++ List.map viewDeletedItem filteredDeleted
+                        )
+                    ]
+                ]
+          else
+            text ""
+
+        -- Section 3: Committed Resources
+        , if not (List.isEmpty filteredCommitted) then
+            div [ class "panel" ]
+                [ div [ class "panel-header" ]
+                    [ h2 [ style "color" "#34d399" ]
+                        [ text ("Committed (" ++ String.fromInt (List.length filteredCommitted) ++ ")")
+                        ]
+                    ]
+                , div [ class "panel-body", style "max-height" "calc(100vh - 400px)", style "overflow-y" "auto" ]
+                    [ ul [ class "resource-list" ]
+                        (List.map (viewCommittedResourceItem model) filteredCommitted)
+                    ]
+                ]
+          else
+            text ""
+
+        -- Empty state
+        , if totalCount == 0 && List.isEmpty filteredDeleted then
+            div [ class "panel" ]
+                [ div [ class "panel-body" ]
+                    [ div [ class "empty-state" ]
                         [ h3 [] [ text "No resources found" ]
                         , p []
                             [ text
@@ -1785,17 +1864,6 @@ viewResources model =
                                 )
                             ]
                         ]
-                  else
-                    ul [ class "resource-list" ]
-                        (List.map (viewResourceItem model) sortedIds)
-                ]
-            ]
-        , if not (List.isEmpty model.status.deleted) then
-            div [ class "panel" ]
-                [ div [ class "panel-header" ] [ h2 [] [ text "Deleted (unstaged)" ] ]
-                , div [ class "panel-body" ]
-                    [ ul [ class "resource-list" ]
-                        (List.map viewDeletedItem model.status.deleted)
                     ]
                 ]
           else
@@ -1803,18 +1871,10 @@ viewResources model =
         ]
 
 
-viewResourceItem : Model -> String -> Html Msg
-viewResourceItem model resourceId =
+-- | View a staged resource item with its staging kind badge
+viewStagedResourceItem : Model -> String -> Html Msg
+viewStagedResourceItem model resourceId =
     let
-        isStaged =
-            List.any (\s -> s.resourceId == resourceId) model.status.staged
-
-        isModified =
-            List.member resourceId model.status.modified
-
-        isInWorkingDir =
-            List.member resourceId model.resources
-
         stagedKind =
             model.status.staged
                 |> List.filter (\s -> s.resourceId == resourceId)
@@ -1832,28 +1892,96 @@ viewResourceItem model resourceId =
         ]
         [ div [ style "display" "flex", style "align-items" "center", style "gap" "6px", style "flex" "1", style "min-width" "0" ]
             [ span [ class "resource-id", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ] [ text resourceId ]
-            , if isStaged then
-                span
-                    [ class "badge"
-                    , class
-                        (case stagedKind of
-                            Just "new" ->
-                                "badge-new"
+            , span
+                [ class "badge"
+                , class
+                    (case stagedKind of
+                        Just "new" ->
+                            "badge-new"
 
-                            Just "deleted" ->
-                                "badge-deleted"
+                        Just "deleted" ->
+                            "badge-deleted"
 
-                            _ ->
-                                "badge-modified"
-                        )
-                    ]
-                    [ text "staged" ]
+                        _ ->
+                            "badge-staged"
+                    )
+                ]
+                [ text
+                    (case stagedKind of
+                        Just k ->
+                            k
+
+                        Nothing ->
+                            "staged"
+                    )
+                ]
+            ]
+        , div [ class "resource-actions" ]
+            [ button [ class "btn btn-sm btn-ghost", onClick (OpenResource resourceId) ] [ text "Edit" ]
+            , button [ class "btn btn-sm btn-ghost", onClick (OpenHistory resourceId) ] [ text "History" ]
+            ]
+        , if showTooltip then
+            viewResourceTooltip model.tooltipContent
+          else
+            text ""
+        ]
+
+
+-- | View a working directory resource item (new or modified)
+viewWorkingResourceItem : Model -> String -> Html Msg
+viewWorkingResourceItem model resourceId =
+    let
+        isModified =
+            List.member resourceId model.status.modified
+
+        isNew =
+            not (List.member resourceId model.snapshots)
+
+        showTooltip =
+            model.tooltipResourceId == resourceId && not (String.isEmpty model.tooltipContent)
+    in
+    li
+        [ class "resource-item"
+        , onMouseEnter (RequestTooltip resourceId)
+        , onMouseLeave ClearTooltip
+        , style "position" "relative"
+        ]
+        [ div [ style "display" "flex", style "align-items" "center", style "gap" "6px", style "flex" "1", style "min-width" "0" ]
+            [ span [ class "resource-id", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ] [ text resourceId ]
+            , if isNew then
+                span [ class "badge badge-new" ] [ text "new" ]
               else if isModified then
                 span [ class "badge badge-modified" ] [ text "modified" ]
-              else if isInWorkingDir && not (List.member resourceId model.snapshots) then
-                span [ class "badge badge-new" ] [ text "working" ]
               else
                 text ""
+            ]
+        , div [ class "resource-actions" ]
+            [ button [ class "btn btn-sm btn-ghost", onClick (OpenResource resourceId) ] [ text "Edit" ]
+            , button [ class "btn btn-sm btn-ghost", onClick (StageResource) ] [ text "Stage" ]
+            , button [ class "btn btn-sm btn-ghost", onClick (ShowRestoreDialog resourceId) ] [ text "Restore" ]
+            ]
+        , if showTooltip then
+            viewResourceTooltip model.tooltipContent
+          else
+            text ""
+        ]
+
+
+-- | View a committed (snapshot) resource item
+viewCommittedResourceItem : Model -> String -> Html Msg
+viewCommittedResourceItem model resourceId =
+    let
+        showTooltip =
+            model.tooltipResourceId == resourceId && not (String.isEmpty model.tooltipContent)
+    in
+    li
+        [ class "resource-item"
+        , onMouseEnter (RequestTooltip resourceId)
+        , onMouseLeave ClearTooltip
+        , style "position" "relative"
+        ]
+        [ div [ style "display" "flex", style "align-items" "center", style "gap" "6px", style "flex" "1", style "min-width" "0" ]
+            [ span [ class "resource-id", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ] [ text resourceId ]
             ]
         , div [ class "resource-actions" ]
             [ button [ class "btn btn-sm btn-ghost", onClick (OpenResource resourceId) ] [ text "Edit" ]
@@ -1861,12 +1989,18 @@ viewResourceItem model resourceId =
             , button [ class "btn btn-sm btn-ghost", onClick (ShowRestoreDialog resourceId) ] [ text "Restore" ]
             ]
         , if showTooltip then
-            div [ class "resource-tooltip" ]
-                [ pre [ style "margin" "0", style "white-space" "pre-wrap", style "word-break" "break-all" ]
-                    [ text (truncateContent model.tooltipContent 500) ]
-                ]
+            viewResourceTooltip model.tooltipContent
           else
             text ""
+        ]
+
+
+-- | Shared tooltip view for resource items
+viewResourceTooltip : String -> Html Msg
+viewResourceTooltip content =
+    div [ class "resource-tooltip" ]
+        [ pre [ style "margin" "0", style "white-space" "pre-wrap", style "word-break" "break-all" ]
+            [ text (truncateContent content 500) ]
         ]
 
 

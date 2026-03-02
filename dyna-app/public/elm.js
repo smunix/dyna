@@ -9494,48 +9494,6 @@ var $elm$core$List$sortBy = _List_sortBy;
 var $elm$core$List$sort = function (xs) {
 	return A2($elm$core$List$sortBy, $elm$core$Basics$identity, xs);
 };
-var $author$project$Main$StageDelete = {$: 'StageDelete'};
-var $author$project$Main$viewDeletedItem = function (resourceId) {
-	return A2(
-		$elm$html$Html$li,
-		_List_fromArray(
-			[
-				$elm$html$Html$Attributes$class('resource-item')
-			]),
-		_List_fromArray(
-			[
-				A2(
-				$elm$html$Html$span,
-				_List_fromArray(
-					[
-						$elm$html$Html$Attributes$class('resource-id')
-					]),
-				_List_fromArray(
-					[
-						$elm$html$Html$text(resourceId)
-					])),
-				A2(
-				$elm$html$Html$div,
-				_List_fromArray(
-					[
-						$elm$html$Html$Attributes$class('resource-actions')
-					]),
-				_List_fromArray(
-					[
-						A2(
-						$elm$html$Html$button,
-						_List_fromArray(
-							[
-								$elm$html$Html$Attributes$class('btn btn-sm btn-danger'),
-								$elm$html$Html$Events$onClick($author$project$Main$StageDelete)
-							]),
-						_List_fromArray(
-							[
-								$elm$html$Html$text('Stage Deletion')
-							]))
-					]))
-			]));
-};
 var $author$project$Main$ClearTooltip = {$: 'ClearTooltip'};
 var $author$project$Main$OpenResource = function (a) {
 	return {$: 'OpenResource', a: a};
@@ -9543,25 +9501,6 @@ var $author$project$Main$OpenResource = function (a) {
 var $author$project$Main$RequestTooltip = function (a) {
 	return {$: 'RequestTooltip', a: a};
 };
-var $elm$core$List$head = function (list) {
-	if (list.b) {
-		var x = list.a;
-		var xs = list.b;
-		return $elm$core$Maybe$Just(x);
-	} else {
-		return $elm$core$Maybe$Nothing;
-	}
-};
-var $elm$core$Maybe$map = F2(
-	function (f, maybe) {
-		if (maybe.$ === 'Just') {
-			var value = maybe.a;
-			return $elm$core$Maybe$Just(
-				f(value));
-		} else {
-			return $elm$core$Maybe$Nothing;
-		}
-	});
 var $elm$html$Html$Events$onMouseEnter = function (msg) {
 	return A2(
 		$elm$html$Html$Events$on,
@@ -9581,29 +9520,33 @@ var $author$project$Main$truncateContent = F2(
 			$elm$core$String$length(s),
 			maxLen) > 0) ? (A2($elm$core$String$left, maxLen, s) + '\n...') : s;
 	});
-var $author$project$Main$viewResourceItem = F2(
-	function (model, resourceId) {
-		var stagedKind = A2(
-			$elm$core$Maybe$map,
-			function ($) {
-				return $.kind;
-			},
-			$elm$core$List$head(
+var $author$project$Main$viewResourceTooltip = function (content) {
+	return A2(
+		$elm$html$Html$div,
+		_List_fromArray(
+			[
+				$elm$html$Html$Attributes$class('resource-tooltip')
+			]),
+		_List_fromArray(
+			[
 				A2(
-					$elm$core$List$filter,
-					function (s) {
-						return _Utils_eq(s.resourceId, resourceId);
-					},
-					model.status.staged)));
+				$elm$html$Html$pre,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'margin', '0'),
+						A2($elm$html$Html$Attributes$style, 'white-space', 'pre-wrap'),
+						A2($elm$html$Html$Attributes$style, 'word-break', 'break-all')
+					]),
+				_List_fromArray(
+					[
+						$elm$html$Html$text(
+						A2($author$project$Main$truncateContent, content, 500))
+					]))
+			]));
+};
+var $author$project$Main$viewCommittedResourceItem = F2(
+	function (model, resourceId) {
 		var showTooltip = _Utils_eq(model.tooltipResourceId, resourceId) && (!$elm$core$String$isEmpty(model.tooltipContent));
-		var isStaged = A2(
-			$elm$core$List$any,
-			function (s) {
-				return _Utils_eq(s.resourceId, resourceId);
-			},
-			model.status.staged);
-		var isModified = A2($elm$core$List$member, resourceId, model.status.modified);
-		var isInWorkingDir = A2($elm$core$List$member, resourceId, model.resources);
 		return A2(
 			$elm$html$Html$li,
 			_List_fromArray(
@@ -9640,54 +9583,7 @@ var $author$project$Main$viewResourceItem = F2(
 							_List_fromArray(
 								[
 									$elm$html$Html$text(resourceId)
-								])),
-							isStaged ? A2(
-							$elm$html$Html$span,
-							_List_fromArray(
-								[
-									$elm$html$Html$Attributes$class('badge'),
-									$elm$html$Html$Attributes$class(
-									function () {
-										_v0$2:
-										while (true) {
-											if (stagedKind.$ === 'Just') {
-												switch (stagedKind.a) {
-													case 'new':
-														return 'badge-new';
-													case 'deleted':
-														return 'badge-deleted';
-													default:
-														break _v0$2;
-												}
-											} else {
-												break _v0$2;
-											}
-										}
-										return 'badge-modified';
-									}())
-								]),
-							_List_fromArray(
-								[
-									$elm$html$Html$text('staged')
-								])) : (isModified ? A2(
-							$elm$html$Html$span,
-							_List_fromArray(
-								[
-									$elm$html$Html$Attributes$class('badge badge-modified')
-								]),
-							_List_fromArray(
-								[
-									$elm$html$Html$text('modified')
-								])) : ((isInWorkingDir && (!A2($elm$core$List$member, resourceId, model.snapshots))) ? A2(
-							$elm$html$Html$span,
-							_List_fromArray(
-								[
-									$elm$html$Html$Attributes$class('badge badge-new')
-								]),
-							_List_fromArray(
-								[
-									$elm$html$Html$text('working')
-								])) : $elm$html$Html$text('')))
+								]))
 						])),
 					A2(
 					$elm$html$Html$div,
@@ -9734,67 +9630,369 @@ var $author$project$Main$viewResourceItem = F2(
 									$elm$html$Html$text('Restore')
 								]))
 						])),
-					showTooltip ? A2(
+					showTooltip ? $author$project$Main$viewResourceTooltip(model.tooltipContent) : $elm$html$Html$text('')
+				]));
+	});
+var $author$project$Main$StageDelete = {$: 'StageDelete'};
+var $author$project$Main$viewDeletedItem = function (resourceId) {
+	return A2(
+		$elm$html$Html$li,
+		_List_fromArray(
+			[
+				$elm$html$Html$Attributes$class('resource-item')
+			]),
+		_List_fromArray(
+			[
+				A2(
+				$elm$html$Html$span,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('resource-id')
+					]),
+				_List_fromArray(
+					[
+						$elm$html$Html$text(resourceId)
+					])),
+				A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('resource-actions')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$button,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('btn btn-sm btn-danger'),
+								$elm$html$Html$Events$onClick($author$project$Main$StageDelete)
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Stage Deletion')
+							]))
+					]))
+			]));
+};
+var $elm$core$List$head = function (list) {
+	if (list.b) {
+		var x = list.a;
+		var xs = list.b;
+		return $elm$core$Maybe$Just(x);
+	} else {
+		return $elm$core$Maybe$Nothing;
+	}
+};
+var $elm$core$Maybe$map = F2(
+	function (f, maybe) {
+		if (maybe.$ === 'Just') {
+			var value = maybe.a;
+			return $elm$core$Maybe$Just(
+				f(value));
+		} else {
+			return $elm$core$Maybe$Nothing;
+		}
+	});
+var $author$project$Main$viewStagedResourceItem = F2(
+	function (model, resourceId) {
+		var stagedKind = A2(
+			$elm$core$Maybe$map,
+			function ($) {
+				return $.kind;
+			},
+			$elm$core$List$head(
+				A2(
+					$elm$core$List$filter,
+					function (s) {
+						return _Utils_eq(s.resourceId, resourceId);
+					},
+					model.status.staged)));
+		var showTooltip = _Utils_eq(model.tooltipResourceId, resourceId) && (!$elm$core$String$isEmpty(model.tooltipContent));
+		return A2(
+			$elm$html$Html$li,
+			_List_fromArray(
+				[
+					$elm$html$Html$Attributes$class('resource-item'),
+					$elm$html$Html$Events$onMouseEnter(
+					$author$project$Main$RequestTooltip(resourceId)),
+					$elm$html$Html$Events$onMouseLeave($author$project$Main$ClearTooltip),
+					A2($elm$html$Html$Attributes$style, 'position', 'relative')
+				]),
+			_List_fromArray(
+				[
+					A2(
 					$elm$html$Html$div,
 					_List_fromArray(
 						[
-							$elm$html$Html$Attributes$class('resource-tooltip')
+							A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+							A2($elm$html$Html$Attributes$style, 'align-items', 'center'),
+							A2($elm$html$Html$Attributes$style, 'gap', '6px'),
+							A2($elm$html$Html$Attributes$style, 'flex', '1'),
+							A2($elm$html$Html$Attributes$style, 'min-width', '0')
 						]),
 					_List_fromArray(
 						[
 							A2(
-							$elm$html$Html$pre,
+							$elm$html$Html$span,
 							_List_fromArray(
 								[
-									A2($elm$html$Html$Attributes$style, 'margin', '0'),
-									A2($elm$html$Html$Attributes$style, 'white-space', 'pre-wrap'),
-									A2($elm$html$Html$Attributes$style, 'word-break', 'break-all')
+									$elm$html$Html$Attributes$class('resource-id'),
+									A2($elm$html$Html$Attributes$style, 'overflow', 'hidden'),
+									A2($elm$html$Html$Attributes$style, 'text-overflow', 'ellipsis'),
+									A2($elm$html$Html$Attributes$style, 'white-space', 'nowrap')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(resourceId)
+								])),
+							A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('badge'),
+									$elm$html$Html$Attributes$class(
+									function () {
+										_v0$2:
+										while (true) {
+											if (stagedKind.$ === 'Just') {
+												switch (stagedKind.a) {
+													case 'new':
+														return 'badge-new';
+													case 'deleted':
+														return 'badge-deleted';
+													default:
+														break _v0$2;
+												}
+											} else {
+												break _v0$2;
+											}
+										}
+										return 'badge-staged';
+									}())
 								]),
 							_List_fromArray(
 								[
 									$elm$html$Html$text(
-									A2($author$project$Main$truncateContent, model.tooltipContent, 500))
+									function () {
+										if (stagedKind.$ === 'Just') {
+											var k = stagedKind.a;
+											return k;
+										} else {
+											return 'staged';
+										}
+									}())
 								]))
-						])) : $elm$html$Html$text('')
+						])),
+					A2(
+					$elm$html$Html$div,
+					_List_fromArray(
+						[
+							$elm$html$Html$Attributes$class('resource-actions')
+						]),
+					_List_fromArray(
+						[
+							A2(
+							$elm$html$Html$button,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+									$elm$html$Html$Events$onClick(
+									$author$project$Main$OpenResource(resourceId))
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('Edit')
+								])),
+							A2(
+							$elm$html$Html$button,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+									$elm$html$Html$Events$onClick(
+									$author$project$Main$OpenHistory(resourceId))
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('History')
+								]))
+						])),
+					showTooltip ? $author$project$Main$viewResourceTooltip(model.tooltipContent) : $elm$html$Html$text('')
+				]));
+	});
+var $author$project$Main$viewWorkingResourceItem = F2(
+	function (model, resourceId) {
+		var showTooltip = _Utils_eq(model.tooltipResourceId, resourceId) && (!$elm$core$String$isEmpty(model.tooltipContent));
+		var isNew = !A2($elm$core$List$member, resourceId, model.snapshots);
+		var isModified = A2($elm$core$List$member, resourceId, model.status.modified);
+		return A2(
+			$elm$html$Html$li,
+			_List_fromArray(
+				[
+					$elm$html$Html$Attributes$class('resource-item'),
+					$elm$html$Html$Events$onMouseEnter(
+					$author$project$Main$RequestTooltip(resourceId)),
+					$elm$html$Html$Events$onMouseLeave($author$project$Main$ClearTooltip),
+					A2($elm$html$Html$Attributes$style, 'position', 'relative')
+				]),
+			_List_fromArray(
+				[
+					A2(
+					$elm$html$Html$div,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+							A2($elm$html$Html$Attributes$style, 'align-items', 'center'),
+							A2($elm$html$Html$Attributes$style, 'gap', '6px'),
+							A2($elm$html$Html$Attributes$style, 'flex', '1'),
+							A2($elm$html$Html$Attributes$style, 'min-width', '0')
+						]),
+					_List_fromArray(
+						[
+							A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('resource-id'),
+									A2($elm$html$Html$Attributes$style, 'overflow', 'hidden'),
+									A2($elm$html$Html$Attributes$style, 'text-overflow', 'ellipsis'),
+									A2($elm$html$Html$Attributes$style, 'white-space', 'nowrap')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(resourceId)
+								])),
+							isNew ? A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('badge badge-new')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('new')
+								])) : (isModified ? A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('badge badge-modified')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('modified')
+								])) : $elm$html$Html$text(''))
+						])),
+					A2(
+					$elm$html$Html$div,
+					_List_fromArray(
+						[
+							$elm$html$Html$Attributes$class('resource-actions')
+						]),
+					_List_fromArray(
+						[
+							A2(
+							$elm$html$Html$button,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+									$elm$html$Html$Events$onClick(
+									$author$project$Main$OpenResource(resourceId))
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('Edit')
+								])),
+							A2(
+							$elm$html$Html$button,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+									$elm$html$Html$Events$onClick($author$project$Main$StageResource)
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('Stage')
+								])),
+							A2(
+							$elm$html$Html$button,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+									$elm$html$Html$Events$onClick(
+									$author$project$Main$ShowRestoreDialog(resourceId))
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('Restore')
+								]))
+						])),
+					showTooltip ? $author$project$Main$viewResourceTooltip(model.tooltipContent) : $elm$html$Html$text('')
 				]));
 	});
 var $author$project$Main$viewResources = function (model) {
+	var workingOnlyIds = A2(
+		$elm$core$List$filter,
+		function (rid) {
+			return (!A2($elm$core$List$member, rid, model.snapshots)) || A2($elm$core$List$member, rid, model.status.modified);
+		},
+		A2(
+			$elm$core$List$filter,
+			function (rid) {
+				return !A2(
+					$elm$core$List$member,
+					rid,
+					A2(
+						$elm$core$List$map,
+						function ($) {
+							return $.resourceId;
+						},
+						model.status.staged));
+			},
+			model.resources));
 	var stagedIds = A2(
 		$elm$core$List$map,
 		function ($) {
 			return $.resourceId;
 		},
 		model.status.staged);
-	var snapshotIds = model.snapshots;
-	var modifiedIds = model.status.modified;
-	var allIds = A3(
-		$elm$core$List$foldl,
-		F2(
-			function (rid, acc) {
-				return A2($elm$core$List$member, rid, acc) ? acc : _Utils_ap(
-					acc,
-					_List_fromArray(
-						[rid]));
-			}),
-		snapshotIds,
-		_Utils_ap(
-			stagedIds,
-			_Utils_ap(modifiedIds, model.resources)));
-	var filteredIds = $elm$core$String$isEmpty(model.resourceFilter) ? allIds : A2(
+	var deletedIds = model.status.deleted;
+	var committedIds = A2(
 		$elm$core$List$filter,
 		function (rid) {
-			return A2($author$project$Main$simpleMatch, model.resourceFilter, rid);
+			return !A2($elm$core$List$member, rid, model.status.modified);
 		},
-		allIds);
-	var sortedIds = function () {
+		A2(
+			$elm$core$List$filter,
+			function (rid) {
+				return !A2($elm$core$List$member, rid, stagedIds);
+			},
+			model.snapshots));
+	var applySort = function (ids) {
 		var _v0 = model.resourceSort;
 		if (_v0.$ === 'SortByIdAsc') {
-			return $elm$core$List$sort(filteredIds);
+			return $elm$core$List$sort(ids);
 		} else {
 			return $elm$core$List$reverse(
-				$elm$core$List$sort(filteredIds));
+				$elm$core$List$sort(ids));
 		}
-	}();
+	};
+	var applyFilter = function (ids) {
+		return $elm$core$String$isEmpty(model.resourceFilter) ? ids : A2(
+			$elm$core$List$filter,
+			function (rid) {
+				return A2($author$project$Main$simpleMatch, model.resourceFilter, rid);
+			},
+			ids);
+	};
+	var filteredCommitted = applySort(
+		applyFilter(committedIds));
+	var filteredDeleted = applySort(
+		applyFilter(deletedIds));
+	var filteredStaged = applySort(
+		applyFilter(stagedIds));
+	var filteredWorking = applySort(
+		applyFilter(workingOnlyIds));
+	var totalCount = ($elm$core$List$length(filteredStaged) + $elm$core$List$length(filteredWorking)) + $elm$core$List$length(filteredCommitted);
 	return A2(
 		$elm$html$Html$div,
 		_List_Nil,
@@ -9822,8 +10020,7 @@ var $author$project$Main$viewResources = function (model) {
 								_List_fromArray(
 									[
 										$elm$html$Html$text(
-										'Resources (' + ($elm$core$String$fromInt(
-											$elm$core$List$length(sortedIds)) + ')'))
+										'Resources (' + ($elm$core$String$fromInt(totalCount) + ')'))
 									])),
 								A2(
 								$elm$html$Html$div,
@@ -9915,18 +10112,176 @@ var $author$project$Main$viewResources = function (model) {
 									[
 										$elm$html$Html$text('A\u2193')
 									]))
+							]))
+					])),
+				(!$elm$core$List$isEmpty(filteredStaged)) ? A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('panel')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('panel-header')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$h2,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'color', '#fbbf24')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text(
+										'Staged (' + ($elm$core$String$fromInt(
+											$elm$core$List$length(filteredStaged)) + ')'))
+									]))
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('panel-body')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$ul,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('resource-list')
+									]),
+								A2(
+									$elm$core$List$map,
+									$author$project$Main$viewStagedResourceItem(model),
+									filteredStaged))
+							]))
+					])) : $elm$html$Html$text(''),
+				((!$elm$core$List$isEmpty(filteredWorking)) || (!$elm$core$List$isEmpty(filteredDeleted))) ? A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('panel')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('panel-header')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$h2,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'color', '#60a5fa')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text(
+										'Working Directory (' + ($elm$core$String$fromInt(
+											$elm$core$List$length(filteredWorking) + $elm$core$List$length(filteredDeleted)) + ')'))
+									]))
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('panel-body')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$ul,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('resource-list')
+									]),
+								_Utils_ap(
+									A2(
+										$elm$core$List$map,
+										$author$project$Main$viewWorkingResourceItem(model),
+										filteredWorking),
+									A2($elm$core$List$map, $author$project$Main$viewDeletedItem, filteredDeleted)))
+							]))
+					])) : $elm$html$Html$text(''),
+				(!$elm$core$List$isEmpty(filteredCommitted)) ? A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('panel')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('panel-header')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$h2,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'color', '#34d399')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text(
+										'Committed (' + ($elm$core$String$fromInt(
+											$elm$core$List$length(filteredCommitted)) + ')'))
+									]))
 							])),
 						A2(
 						$elm$html$Html$div,
 						_List_fromArray(
 							[
 								$elm$html$Html$Attributes$class('panel-body'),
-								A2($elm$html$Html$Attributes$style, 'max-height', 'calc(100vh - 240px)'),
+								A2($elm$html$Html$Attributes$style, 'max-height', 'calc(100vh - 400px)'),
 								A2($elm$html$Html$Attributes$style, 'overflow-y', 'auto')
 							]),
 						_List_fromArray(
 							[
-								$elm$core$List$isEmpty(sortedIds) ? A2(
+								A2(
+								$elm$html$Html$ul,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('resource-list')
+									]),
+								A2(
+									$elm$core$List$map,
+									$author$project$Main$viewCommittedResourceItem(model),
+									filteredCommitted))
+							]))
+					])) : $elm$html$Html$text(''),
+				((!totalCount) && $elm$core$List$isEmpty(filteredDeleted)) ? A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('panel')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('panel-body')
+							]),
+						_List_fromArray(
+							[
+								A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -9949,57 +10304,7 @@ var $author$project$Main$viewResources = function (model) {
 												$elm$html$Html$text(
 												$elm$core$String$isEmpty(model.resourceFilter) ? 'Create a new resource or clone from a remote server.' : ('No resources match the filter \"' + (model.resourceFilter + '\".')))
 											]))
-									])) : A2(
-								$elm$html$Html$ul,
-								_List_fromArray(
-									[
-										$elm$html$Html$Attributes$class('resource-list')
-									]),
-								A2(
-									$elm$core$List$map,
-									$author$project$Main$viewResourceItem(model),
-									sortedIds))
-							]))
-					])),
-				(!$elm$core$List$isEmpty(model.status.deleted)) ? A2(
-				$elm$html$Html$div,
-				_List_fromArray(
-					[
-						$elm$html$Html$Attributes$class('panel')
-					]),
-				_List_fromArray(
-					[
-						A2(
-						$elm$html$Html$div,
-						_List_fromArray(
-							[
-								$elm$html$Html$Attributes$class('panel-header')
-							]),
-						_List_fromArray(
-							[
-								A2(
-								$elm$html$Html$h2,
-								_List_Nil,
-								_List_fromArray(
-									[
-										$elm$html$Html$text('Deleted (unstaged)')
 									]))
-							])),
-						A2(
-						$elm$html$Html$div,
-						_List_fromArray(
-							[
-								$elm$html$Html$Attributes$class('panel-body')
-							]),
-						_List_fromArray(
-							[
-								A2(
-								$elm$html$Html$ul,
-								_List_fromArray(
-									[
-										$elm$html$Html$Attributes$class('resource-list')
-									]),
-								A2($elm$core$List$map, $author$project$Main$viewDeletedItem, model.status.deleted))
 							]))
 					])) : $elm$html$Html$text('')
 			]));
