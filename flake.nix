@@ -307,6 +307,7 @@
               extraPaths = [
                 ./dyna-py/pyproject.toml
                 ./dyna-py/python
+                ./dyna-py/README.md
               ];
             };
 
