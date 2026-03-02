@@ -333,11 +333,7 @@ impl Changeset {
 
 /// Generate a random 16-character hex change ID.
 fn generate_change_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
+    let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0) as u128;
     // Mix in some randomness from the address of a stack variable
     let stack_var = 0u8;
     let addr = &stack_var as *const u8 as usize;
