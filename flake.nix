@@ -113,6 +113,47 @@
             '';
 
           # ════════════════════════════════════════════════════════════════
+          # Helper: generate stub source files for missing workspace members
+          # ════════════════════════════════════════════════════════════════
+          #
+          # When mkCrateSrc includes only Cargo.toml for members outside
+          # the dependency tree, cargo still needs the source entry points
+          # (src/lib.rs or src/main.rs) declared in those Cargo.toml files.
+          # This helper reads each missing member's Cargo.toml at Nix eval
+          # time and generates a postPatch script that creates empty stubs.
+
+          stubSourcesFor = cratePath:
+            let
+              localDeps = resolveAllLocalDeps cratePath;
+              presentNames = [ (builtins.baseNameOf (builtins.toString cratePath)) ]
+                ++ map (p: builtins.baseNameOf (builtins.toString p)) localDeps;
+              missingMembers = builtins.filter
+                (name: !(builtins.elem name presentNames))
+                workspaceMembers;
+
+              # For each missing member, read its Cargo.toml and determine
+              # which source files cargo expects.
+              stubCommandsFor = name:
+                let
+                  toml = builtins.fromTOML (builtins.readFile (./. + "/${name}/Cargo.toml"));
+                  hasLib = toml ? lib || (builtins.pathExists (./. + "/${name}/src/lib.rs"));
+                  hasBin = toml ? bin || (builtins.pathExists (./. + "/${name}/src/main.rs"));
+                  # Check for custom lib path
+                  libPath = if toml ? lib && toml.lib ? path then toml.lib.path else "src/lib.rs";
+                  # Check for custom bin paths
+                  binPaths = if toml ? bin
+                    then map (b: b.path or "src/main.rs") toml.bin
+                    else if hasBin then [ "src/main.rs" ] else [];
+                  allPaths = (if hasLib then [ libPath ] else []) ++ binPaths;
+                in
+                  builtins.concatStringsSep "\n" (map (p: ''
+                    mkdir -p ${name}/$(dirname ${p})
+                    touch ${name}/${p}
+                  '') allPaths);
+            in
+              builtins.concatStringsSep "\n" (map stubCommandsFor missingMembers);
+
+          # ════════════════════════════════════════════════════════════════
           # Helper: build filtered source tree for a crate
           # ════════════════════════════════════════════════════════════════
 
@@ -165,10 +206,10 @@
                 extraPaths = extraSrcPaths;
               };
 
-              # Note: crane automatically generates dummy Cargo.toml files
-              # for missing workspace members, so we do NOT patch the
-              # workspace members list here. Only non-crane builds (e.g.
-              # dyna-py via maturin/buildPythonPackage) need that patch.
+              # Generate empty stub source files for workspace members
+              # that are not in the dependency tree. mkCrateSrc includes
+              # their Cargo.toml but cargo also needs the entry points.
+              stubScript = stubSourcesFor cratePath;
 
               cargoArtifacts = craneLib.buildDepsOnly {
                 pname = "${pname}-deps";
@@ -176,6 +217,7 @@
                 strictDeps = true;
                 cargoExtraArgs = "-p ${pname}";
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                postPatch = stubScript;
               };
 
               package = craneLib.buildPackage ({
@@ -184,6 +226,7 @@
                 cargoExtraArgs = "-p ${pname}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                postPatch = stubScript;
               } // buildPackageArgs);
             in
               { inherit src cargoArtifacts package; };
@@ -209,8 +252,9 @@
                 useCraneLib = craneLibWasm;
               };
 
-              # Note: crane handles missing workspace members automatically.
-              # No postPatch needed here.
+              # Generate empty stub source files for workspace members
+              # not in the dependency tree.
+              stubScript = stubSourcesFor cratePath;
 
               cargoArtifacts = craneLibWasm.buildDepsOnly {
                 pname = "${pname}-deps";
@@ -219,6 +263,7 @@
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                postPatch = stubScript;
               };
 
               raw = craneLibWasm.buildPackage {
@@ -227,6 +272,7 @@
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                postPatch = stubScript;
                 installPhaseCommand = ''
                   mkdir -p $out/lib
                   cp target/${wasmTarget}/release/${wasmFileName}.wasm $out/lib/ 2>/dev/null || \
