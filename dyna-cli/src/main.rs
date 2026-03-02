@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init => commands::init::execute().await,
+        Commands::Init { remote } => commands::init::execute(remote).await,
         Commands::Clone { url, directory } => commands::clone::execute(url, directory).await,
         Commands::Add {
             pattern,

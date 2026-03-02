@@ -26,7 +26,11 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Initialize a new Dyna repository in the current directory.
-    Init,
+    Init {
+        /// Optional: the remote server URL to configure.
+        #[arg(short, long)]
+        remote: Option<String>,
+    },
 
     /// Clone a repository from a remote server URL.
     Clone {

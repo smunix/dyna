@@ -98,6 +98,12 @@ fn vfs_write(path: &VfsPath, content: &str) -> Result<()> {
         .and_then(|compressed| vfs_write_bytes(path, &compressed))
 }
 
+/// Write a string to a VfsPath as plain text (no compression).
+/// Use this for human-editable files like config.toml.
+fn vfs_write_plain(path: &VfsPath, content: &str) -> Result<()> {
+    vfs_write_bytes(path, content.as_bytes())
+}
+
 /// Read raw bytes from a VfsPath.
 fn vfs_read_bytes(path: &VfsPath) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
@@ -214,15 +220,15 @@ impl Repository {
             })?;
 
         // HEAD points to the current channel
-        vfs_write(&repo.vfs_dyna.join("HEAD")?, "main")?;
+        vfs_write_plain(&repo.vfs_dyna.join("HEAD")?, "main")?;
 
         // No working change yet
-        vfs_write(&repo.vfs_dyna.join("WORKING_CHANGE")?, "")?;
+        vfs_write_plain(&repo.vfs_dyna.join("WORKING_CHANGE")?, "")?;
 
-        // Default config
+        // Default config — written as plain text so users can edit it
         toml::to_string_pretty(&RepoConfig::default())
             .map_err(anyhow::Error::from)
-            .and_then(|config_str| vfs_write(&repo.vfs_dyna.join("config.toml")?, &config_str))?;
+            .and_then(|config_str| vfs_write_plain(&repo.vfs_dyna.join("config.toml")?, &config_str))?;
 
         // Create the default "main" channel
         serde_json::to_string_pretty(&Channel::new("main"))
@@ -250,7 +256,7 @@ impl Repository {
     pub fn save_config(&self, config: &RepoConfig) -> Result<()> {
         toml::to_string_pretty(config)
             .map_err(Into::into)
-            .and_then(|s| vfs_write(&self.vfs_dyna.join("config.toml")?, &s))
+            .and_then(|s| vfs_write_plain(&self.vfs_dyna.join("config.toml")?, &s))
     }
 
     // -----------------------------------------------------------------------
@@ -264,7 +270,7 @@ impl Repository {
     }
 
     pub fn set_current_channel(&self, name: &str) -> Result<()> {
-        vfs_write(&self.vfs_dyna.join("HEAD")?, name)
+        vfs_write_plain(&self.vfs_dyna.join("HEAD")?, name)
     }
 
     // -----------------------------------------------------------------------
@@ -285,7 +291,7 @@ impl Repository {
 
     /// Set the working-copy changeset.
     pub fn set_working_change(&self, change_id: Option<&str>) -> Result<()> {
-        vfs_write(
+        vfs_write_plain(
             &self.vfs_dyna.join("WORKING_CHANGE")?,
             change_id.unwrap_or(""),
         )
