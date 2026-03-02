@@ -384,6 +384,9 @@ type Msg
       -- Stage All / Commit All
     | StageAllWorking
     | GotStageAllResult Decode.Value
+      -- Sync main channel
+    | SyncMain
+    | GotSyncMainResult Decode.Value
       -- Collapsible sections
     | ToggleStagedSection
     | ToggleWorkingSection
@@ -445,6 +448,7 @@ update msg model =
                         , Ports.listSnapshots ()
                         , Ports.listFiles ()
                         , Ports.connectNotifications ()
+                        , Ports.syncMain ()
                         ]
                     )
 
@@ -467,6 +471,7 @@ update msg model =
                         , Ports.listSnapshots ()
                         , Ports.listFiles ()
                         , Ports.connectNotifications ()
+                        , Ports.syncMain ()
                         ]
                     )
 
@@ -951,6 +956,13 @@ update msg model =
                                 newNotif.channel :: model.remoteChannels
                             else
                                 model.remoteChannels
+
+                        -- Auto-sync main when notification targets it
+                        syncCmd =
+                            if newNotif.channel == "main" then
+                                Ports.syncMain ()
+                            else
+                                Cmd.none
                     in
                     ( { model
                         | notifications = newNotif :: List.take 9 model.notifications
@@ -958,7 +970,7 @@ update msg model =
                         , notificationsVisible = True
                         , remoteChannels = updatedRemoteChannels
                       }
-                    , Ports.requestChannels ()
+                    , Cmd.batch [ Ports.requestChannels (), syncCmd ]
                     )
 
                 Err _ ->
@@ -1120,6 +1132,37 @@ update msg model =
                                 |> Result.withDefault "Stage all failed"
                     in
                     ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
+
+        -- Sync main channel
+        SyncMain ->
+            ( model, Ports.syncMain () )
+
+        GotSyncMainResult val ->
+            case Decode.decodeValue (Decode.field "success" Decode.bool) val of
+                Ok True ->
+                    let
+                        currentChannel =
+                            model.status.channel
+
+                        -- If user is currently on main, refresh everything
+                        refreshCmd =
+                            if currentChannel == "main" then
+                                Cmd.batch
+                                    [ Ports.requestStatus ()
+                                    , Ports.listSnapshots ()
+                                    , Ports.listFiles ()
+                                    , Ports.requestChannels ()
+                                    ]
+                            else
+                                Ports.requestChannels ()
+                    in
+                    ( { model | flashMessage = Just "Main channel synced from remote", flashIsError = False }
+                    , refreshCmd
+                    )
+
+                _ ->
+                    -- Silent failure for background sync
+                    ( model, Cmd.none )
 
         -- Collapsible sections
         ToggleStagedSection ->
@@ -2852,6 +2895,7 @@ subscriptions _ =
         , Ports.onRemoteChannelsResult GotRemoteChannels
         , Ports.onPullChannelResult GotPullChannelResult
         , Ports.onStageAllResult GotStageAllResult
+        , Ports.onSyncMainResult GotSyncMainResult
         ]
 
 

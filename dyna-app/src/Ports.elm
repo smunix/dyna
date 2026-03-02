@@ -39,6 +39,9 @@ port addDelete : String -> Cmd msg
 port stageAll : () -> Cmd msg
 
 
+port syncMain : () -> Cmd msg
+
+
 port requestStatus : () -> Cmd msg
 
 
@@ -201,3 +204,6 @@ port onPullChannelResult : (Decode.Value -> msg) -> Sub msg
 
 
 port onStageAllResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onSyncMainResult : (Decode.Value -> msg) -> Sub msg

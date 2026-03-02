@@ -521,6 +521,61 @@
             }
         });
 
+        // Sync main channel: pull main from remote without switching away from current channel
+        safeSub('syncMain', async function(_) {
+            await wasmReady;
+            if (!requireClient(app.ports.onSyncMainResult)) return;
+            try {
+                // 1. Remember current channel
+                const statusJson = client.status();
+                const status = JSON.parse(statusJson);
+                const currentChannel = status.channel;
+
+                // 2. Create main locally if it doesn't exist
+                try {
+                    client.create_channel('main', null);
+                } catch (e) {
+                    // main may already exist locally
+                }
+
+                // 3. Switch to main
+                client.switch_channel('main');
+
+                // 4. Pull from remote
+                let pulled = 0;
+                try {
+                    const result = await client.pull();
+                    const pullInfo = JSON.parse(result);
+                    pulled = pullInfo.pulled || 0;
+                } catch (e) {
+                    console.log('[dyna] syncMain pull error (may be no remote):', e.message);
+                }
+
+                // 5. Switch back to original channel
+                if (currentChannel && currentChannel !== 'main') {
+                    client.switch_channel(currentChannel);
+                }
+
+                app.ports.onSyncMainResult.send({
+                    success: true,
+                    pulled: pulled,
+                    error: null
+                });
+            } catch (e) {
+                // Try to switch back to original channel on error
+                try {
+                    const statusJson = client.status();
+                    const status = JSON.parse(statusJson);
+                    // Already switched back or still on original
+                } catch (_) {}
+                app.ports.onSyncMainResult.send({
+                    success: false,
+                    pulled: 0,
+                    error: e.message
+                });
+            }
+        });
+
         // List remote channels
         safeSub('listRemoteChannels', async function(_) {
             await wasmReady;
