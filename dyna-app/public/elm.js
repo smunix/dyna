@@ -5240,6 +5240,9 @@ var $author$project$Main$GotNotification = function (a) {
 var $author$project$Main$GotPromoteResult = function (a) {
 	return {$: 'GotPromoteResult', a: a};
 };
+var $author$project$Main$GotPullChannelResult = function (a) {
+	return {$: 'GotPullChannelResult', a: a};
+};
 var $author$project$Main$GotPushResult = function (a) {
 	return {$: 'GotPushResult', a: a};
 };
@@ -5283,6 +5286,7 @@ var $author$project$Ports$onListSnapshotsResult = _Platform_incomingPort('onList
 var $author$project$Ports$onLogResult = _Platform_incomingPort('onLogResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onNotification = _Platform_incomingPort('onNotification', $elm$json$Json$Decode$string);
 var $author$project$Ports$onPromoteResult = _Platform_incomingPort('onPromoteResult', $elm$json$Json$Decode$value);
+var $author$project$Ports$onPullChannelResult = _Platform_incomingPort('onPullChannelResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onPushResult = _Platform_incomingPort('onPushResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onReadResult = _Platform_incomingPort('onReadResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onRemoteChannelsResult = _Platform_incomingPort('onRemoteChannelsResult', $elm$json$Json$Decode$value);
@@ -5319,7 +5323,8 @@ var $author$project$Main$subscriptions = function (_v0) {
 				$author$project$Ports$onChangesetResult($author$project$Main$GotChangesetResult),
 				$author$project$Ports$onChannelLogResult($author$project$Main$GotChannelLog),
 				$author$project$Ports$onChannelResourcesResult($author$project$Main$GotChannelResources),
-				$author$project$Ports$onRemoteChannelsResult($author$project$Main$GotRemoteChannels)
+				$author$project$Ports$onRemoteChannelsResult($author$project$Main$GotRemoteChannels),
+				$author$project$Ports$onPullChannelResult($author$project$Main$GotPullChannelResult)
 			]));
 };
 var $author$project$Main$ChangesetDetailPage = {$: 'ChangesetDetailPage'};
@@ -5672,6 +5677,7 @@ var $author$project$Ports$listSnapshots = _Platform_outgoingPort(
 var $author$project$Ports$logForChannel = _Platform_outgoingPort('logForChannel', $elm$json$Json$Encode$string);
 var $elm$core$Basics$not = _Basics_not;
 var $author$project$Ports$promoteChanges = _Platform_outgoingPort('promoteChanges', $elm$json$Json$Encode$string);
+var $author$project$Ports$pullChannel = _Platform_outgoingPort('pullChannel', $elm$json$Json$Encode$string);
 var $author$project$Ports$pushChanges = _Platform_outgoingPort(
 	'pushChanges',
 	function ($) {
@@ -6931,10 +6937,9 @@ var $author$project$Main$update = F2(
 					$author$project$Ports$listRemoteChannels(_Utils_Tuple0));
 			case 'GotRemoteChannels':
 				var val = msg.a;
-				var _v28 = A2(
-					$elm$json$Json$Decode$decodeValue,
-					$elm$json$Json$Decode$list($elm$json$Json$Decode$string),
-					val);
+				var nameDecoder = $elm$json$Json$Decode$list(
+					A2($elm$json$Json$Decode$field, 'name', $elm$json$Json$Decode$string));
+				var _v28 = A2($elm$json$Json$Decode$decodeValue, nameDecoder, val);
 				if (_v28.$ === 'Ok') {
 					var chans = _v28.a;
 					return _Utils_Tuple2(
@@ -6943,7 +6948,83 @@ var $author$project$Main$update = F2(
 							{remoteChannels: chans}),
 						$elm$core$Platform$Cmd$none);
 				} else {
-					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
+					var _v29 = A2(
+						$elm$json$Json$Decode$decodeValue,
+						$elm$json$Json$Decode$list($elm$json$Json$Decode$string),
+						val);
+					if (_v29.$ === 'Ok') {
+						var chans = _v29.a;
+						return _Utils_Tuple2(
+							_Utils_update(
+								model,
+								{remoteChannels: chans}),
+							$elm$core$Platform$Cmd$none);
+					} else {
+						return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
+					}
+				}
+			case 'PullRemoteChannel':
+				var channelName = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{
+							flashIsError: false,
+							flashMessage: $elm$core$Maybe$Just('Pulling channel \'' + (channelName + '\' from server...'))
+						}),
+					$author$project$Ports$pullChannel(channelName));
+			case 'GotPullChannelResult':
+				var val = msg.a;
+				var _v30 = A2(
+					$elm$json$Json$Decode$decodeValue,
+					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
+					val);
+				if ((_v30.$ === 'Ok') && _v30.a) {
+					var pulledChannel = A2(
+						$elm$core$Result$withDefault,
+						'',
+						A2(
+							$elm$json$Json$Decode$decodeValue,
+							A2($elm$json$Json$Decode$field, 'channel', $elm$json$Json$Decode$string),
+							val));
+					var updatedRemote = A2(
+						$elm$core$List$filter,
+						function (rn) {
+							return !_Utils_eq(rn, pulledChannel);
+						},
+						model.remoteChannels);
+					return _Utils_Tuple2(
+						_Utils_update(
+							model,
+							{
+								flashIsError: false,
+								flashMessage: $elm$core$Maybe$Just('Channel \'' + (pulledChannel + '\' pulled and switched successfully')),
+								remoteChannels: updatedRemote
+							}),
+						$elm$core$Platform$Cmd$batch(
+							_List_fromArray(
+								[
+									$author$project$Ports$requestStatus(_Utils_Tuple0),
+									$author$project$Ports$requestChannels(_Utils_Tuple0),
+									$author$project$Ports$listSnapshots(_Utils_Tuple0),
+									$author$project$Ports$listFiles(_Utils_Tuple0)
+								])));
+				} else {
+					var detail = A2(
+						$elm$core$Result$withDefault,
+						'Failed to pull channel',
+						A2(
+							$elm$json$Json$Decode$decodeValue,
+							A2($elm$json$Json$Decode$field, 'error', $elm$json$Json$Decode$string),
+							val));
+					return _Utils_Tuple2(
+						_Utils_update(
+							model,
+							{
+								flashIsError: true,
+								flashMessage: $elm$core$Maybe$Just(detail)
+							}),
+						$elm$core$Platform$Cmd$none);
 				}
 			case 'UpdateUserId':
 				var uid = msg.a;
@@ -10078,6 +10159,9 @@ var $author$project$Main$viewChannelItem = F2(
 						])) : $elm$html$Html$text('')
 				]));
 	});
+var $author$project$Main$PullRemoteChannel = function (a) {
+	return {$: 'PullRemoteChannel', a: a};
+};
 var $author$project$Main$viewRemoteChannelItem = function (name) {
 	return A2(
 		$elm$html$Html$div,
@@ -10085,7 +10169,11 @@ var $author$project$Main$viewRemoteChannelItem = function (name) {
 			[
 				$elm$html$Html$Attributes$class('sidebar-item'),
 				A2($elm$html$Html$Attributes$style, 'font-size', '12px'),
-				A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-dim)')
+				A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-dim)'),
+				A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
+				$elm$html$Html$Events$onClick(
+				$author$project$Main$PullRemoteChannel(name)),
+				$elm$html$Html$Attributes$title('Click to pull and switch to this channel')
 			]),
 		_List_fromArray(
 			[

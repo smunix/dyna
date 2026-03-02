@@ -107,6 +107,9 @@ port getSnapshotFromChannel : { resourceId : String, channel : String } -> Cmd m
 port listRemoteChannels : () -> Cmd msg
 
 
+port pullChannel : String -> Cmd msg
+
+
 
 -- =========================================================================
 -- Incoming ports (JS → Elm subscriptions)
@@ -189,3 +192,6 @@ port onSnapshotFromChannelResult : (Decode.Value -> msg) -> Sub msg
 
 
 port onRemoteChannelsResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onPullChannelResult : (Decode.Value -> msg) -> Sub msg

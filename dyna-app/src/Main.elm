@@ -369,6 +369,8 @@ type Msg
       -- Remote channels
     | SearchRemoteChannels
     | GotRemoteChannels Decode.Value
+    | PullRemoteChannel String
+    | GotPullChannelResult Decode.Value
       -- User
     | UpdateUserId String
       -- Resource filter/sort
@@ -993,12 +995,63 @@ update msg model =
             ( model, Ports.listRemoteChannels () )
 
         GotRemoteChannels val ->
-            case Decode.decodeValue (Decode.list Decode.string) val of
+            -- Remote channels come as ChannelInfo objects with "name" field
+            let
+                nameDecoder =
+                    Decode.list (Decode.field "name" Decode.string)
+            in
+            case Decode.decodeValue nameDecoder val of
                 Ok chans ->
                     ( { model | remoteChannels = chans }, Cmd.none )
 
                 Err _ ->
-                    ( model, Cmd.none )
+                    -- Fallback: try decoding as plain strings
+                    case Decode.decodeValue (Decode.list Decode.string) val of
+                        Ok chans ->
+                            ( { model | remoteChannels = chans }, Cmd.none )
+
+                        Err _ ->
+                            ( model, Cmd.none )
+
+        PullRemoteChannel channelName ->
+            ( { model | flashMessage = Just ("Pulling channel '" ++ channelName ++ "' from server..."), flashIsError = False }
+            , Ports.pullChannel channelName
+            )
+
+        GotPullChannelResult val ->
+            case Decode.decodeValue (Decode.field "success" Decode.bool) val of
+                Ok True ->
+                    let
+                        pulledChannel =
+                            val
+                                |> Decode.decodeValue (Decode.field "channel" Decode.string)
+                                |> Result.withDefault ""
+
+                        -- Remove from remoteChannels since it's now local
+                        updatedRemote =
+                            List.filter (\rn -> rn /= pulledChannel) model.remoteChannels
+                    in
+                    ( { model
+                        | flashMessage = Just ("Channel '" ++ pulledChannel ++ "' pulled and switched successfully")
+                        , flashIsError = False
+                        , remoteChannels = updatedRemote
+                      }
+                    , Cmd.batch
+                        [ Ports.requestStatus ()
+                        , Ports.requestChannels ()
+                        , Ports.listSnapshots ()
+                        , Ports.listFiles ()
+                        ]
+                    )
+
+                _ ->
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "Failed to pull channel"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
 
         UpdateUserId uid ->
             ( { model | userId = uid }
@@ -1582,6 +1635,9 @@ viewRemoteChannelItem name =
         [ class "sidebar-item"
         , style "font-size" "12px"
         , style "color" "var(--color-text-dim)"
+        , style "cursor" "pointer"
+        , onClick (PullRemoteChannel name)
+        , title "Click to pull and switch to this channel"
         ]
         [ span [ class "dot", style "background" "#6366f1" ] []
         , span [ style "flex" "1", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ]
@@ -2555,6 +2611,7 @@ subscriptions _ =
         , Ports.onChannelLogResult GotChannelLog
         , Ports.onChannelResourcesResult GotChannelResources
         , Ports.onRemoteChannelsResult GotRemoteChannels
+        , Ports.onPullChannelResult GotPullChannelResult
         ]
 
 

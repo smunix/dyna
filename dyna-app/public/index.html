@@ -446,6 +446,42 @@
             }
         });
 
+        // Pull a remote channel: create locally, switch to it, pull from remote
+        safeSub('pullChannel', async function(channelName) {
+            await wasmReady;
+            if (!requireClient(app.ports.onPullChannelResult)) return;
+            try {
+                // 1. Create the channel locally (ignore error if it already exists)
+                try {
+                    client.create_channel(channelName, null);
+                } catch (e) {
+                    // Channel may already exist locally, that's fine
+                    console.log('[dyna] Channel may already exist locally:', e.message);
+                }
+
+                // 2. Switch to the new channel
+                client.switch_channel(channelName);
+
+                // 3. Pull changesets from the remote server
+                const result = await client.pull();
+                const pullInfo = JSON.parse(result);
+
+                app.ports.onPullChannelResult.send({
+                    success: true,
+                    channel: channelName,
+                    pulled: pullInfo.pulled || 0,
+                    error: null
+                });
+            } catch (e) {
+                app.ports.onPullChannelResult.send({
+                    success: false,
+                    channel: channelName,
+                    pulled: 0,
+                    error: e.message
+                });
+            }
+        });
+
         // List remote channels
         safeSub('listRemoteChannels', async function(_) {
             await wasmReady;
