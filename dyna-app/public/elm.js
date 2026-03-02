@@ -6841,6 +6841,14 @@ var $author$project$Main$update = F2(
 				var _v27 = A2($elm$json$Json$Decode$decodeString, $author$project$Main$decodeServerNotification, json);
 				if (_v27.$ === 'Ok') {
 					var notif = _v27.a;
+					var newNotif = notif(model.nextNotifId);
+					var localNames = A2(
+						$elm$core$List$map,
+						function ($) {
+							return $.name;
+						},
+						model.channels);
+					var updatedRemoteChannels = ((newNotif.channel !== '') && ((!A2($elm$core$List$member, newNotif.channel, localNames)) && (!A2($elm$core$List$member, newNotif.channel, model.remoteChannels)))) ? A2($elm$core$List$cons, newNotif.channel, model.remoteChannels) : model.remoteChannels;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
@@ -6848,9 +6856,10 @@ var $author$project$Main$update = F2(
 								nextNotifId: model.nextNotifId + 1,
 								notifications: A2(
 									$elm$core$List$cons,
-									notif(model.nextNotifId),
+									newNotif,
 									A2($elm$core$List$take, 9, model.notifications)),
-								notificationsVisible: true
+								notificationsVisible: true,
+								remoteChannels: updatedRemoteChannels
 							}),
 						$author$project$Ports$requestChannels(_Utils_Tuple0));
 				} else {

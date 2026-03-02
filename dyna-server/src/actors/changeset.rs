@@ -442,7 +442,7 @@ async fn handle_promote(
         Err(e) => return make_err(e, None),
     };
 
-    let mut target = match load_channel_or_err(ctx, &target_name).await {
+    let mut target = match load_or_create_channel(ctx, &target_name).await {
         Ok(ch) => ch,
         Err(e) => return make_err(e, None),
     };

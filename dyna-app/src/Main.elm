@@ -921,10 +921,25 @@ update msg model =
         GotNotification json ->
             case Decode.decodeString decodeServerNotification json of
                 Ok notif ->
+                    let
+                        newNotif =
+                            notif model.nextNotifId
+
+                        -- Add the notification's channel to remoteChannels if not already known
+                        localNames =
+                            List.map .name model.channels
+
+                        updatedRemoteChannels =
+                            if newNotif.channel /= "" && not (List.member newNotif.channel localNames) && not (List.member newNotif.channel model.remoteChannels) then
+                                newNotif.channel :: model.remoteChannels
+                            else
+                                model.remoteChannels
+                    in
                     ( { model
-                        | notifications = notif model.nextNotifId :: List.take 9 model.notifications
+                        | notifications = newNotif :: List.take 9 model.notifications
                         , nextNotifId = model.nextNotifId + 1
                         , notificationsVisible = True
+                        , remoteChannels = updatedRemoteChannels
                       }
                     , Ports.requestChannels ()
                     )
