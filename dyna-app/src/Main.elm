@@ -27,6 +27,8 @@ type Page
     | EditorPage
     | HistoryPage
     | LogPage
+    | ImportPage
+    | ChangesetDetailPage
 
 
 type alias StagedFile =
@@ -83,6 +85,23 @@ type alias Notification =
     }
 
 
+type alias ChangesetDetail =
+    { changeId : String
+    , commitHash : String
+    , message : String
+    , author : String
+    , createdAt : String
+    , patches : List PatchInfo
+    }
+
+
+type alias PatchInfo =
+    { targetResource : String
+    , opsCount : Int
+    , hasSnapshot : Bool
+    }
+
+
 type alias Model =
     { page : Page
     , serverUrl : String
@@ -107,6 +126,25 @@ type alias Model =
 
     -- User
     , userId : String
+
+    -- Tooltip
+    , tooltipResourceId : String
+    , tooltipContent : String
+
+    -- Import
+    , importSourceChannel : String
+    , importChannelResources : List String
+    , importChannelLog : List LogEntry
+
+    -- Changeset detail
+    , changesetDetail : Maybe ChangesetDetail
+
+    -- Restore dialog
+    , showRestoreDialog : Bool
+    , restoreResourceId : String
+    , restoreMode : String  -- "channel" or "changeset"
+    , restoreChannel : String
+    , restoreChangeId : String
 
     -- Dialogs
     , showCommitDialog : Bool
@@ -160,6 +198,17 @@ init flags =
       , historyEntries = []
       , logEntries = []
       , userId = ""
+      , tooltipResourceId = ""
+      , tooltipContent = ""
+      , importSourceChannel = ""
+      , importChannelResources = []
+      , importChannelLog = []
+      , changesetDetail = Nothing
+      , showRestoreDialog = False
+      , restoreResourceId = ""
+      , restoreMode = "channel"
+      , restoreChannel = ""
+      , restoreChangeId = ""
       , showCommitDialog = False
       , commitMessage = ""
       , showNewChannelDialog = False
@@ -236,6 +285,31 @@ type Msg
       -- Log
     | RefreshLog
     | GotLogResult Decode.Value
+      -- Tooltip
+    | RequestTooltip String
+    | ClearTooltip
+    | GotSnapshotResult Decode.Value
+      -- Import
+    | GoToImport
+    | UpdateImportChannel String
+    | LoadImportChannel
+    | GotChannelResources Decode.Value
+    | GotChannelLog Decode.Value
+    | ImportResourceFromChannel String
+    | ImportChangeset String
+    | GotCherryPickResult Decode.Value
+      -- Changeset detail
+    | ViewChangeset String
+    | GotChangesetResult Decode.Value
+    | ImportResourceFromChangeset String String
+      -- Restore
+    | ShowRestoreDialog String
+    | HideRestoreDialog
+    | UpdateRestoreMode String
+    | UpdateRestoreChannel String
+    | UpdateRestoreChangeId String
+    | DoRestore
+    | GotRestoreResult Decode.Value
       -- Notifications
     | GotNotification String
     | DismissNotification Int
@@ -289,6 +363,7 @@ update msg model =
                         [ Ports.requestStatus ()
                         , Ports.requestChannels ()
                         , Ports.listSnapshots ()
+                        , Ports.listFiles ()
                         , Ports.connectNotifications ()
                         ]
                     )
@@ -310,6 +385,7 @@ update msg model =
                         [ Ports.requestStatus ()
                         , Ports.requestChannels ()
                         , Ports.listSnapshots ()
+                        , Ports.listFiles ()
                         , Ports.connectNotifications ()
                         ]
                     )
@@ -443,7 +519,6 @@ update msg model =
             in
             case error of
                 Just _ ->
-                    -- Resource doesn't exist yet, allow creation
                     ( { model | editContent = "{\n  \n}", editIsNew = True }, Cmd.none )
 
                 Nothing ->
@@ -463,7 +538,7 @@ update msg model =
             case Decode.decodeValue (Decode.field "success" Decode.bool) val of
                 Ok True ->
                     ( { model | flashMessage = Just "File deleted", flashIsError = False, page = ResourcesPage }
-                    , Cmd.batch [ Ports.listSnapshots (), Ports.requestStatus () ]
+                    , Cmd.batch [ Ports.listSnapshots (), Ports.listFiles (), Ports.requestStatus () ]
                     )
 
                 _ ->
@@ -498,11 +573,17 @@ update msg model =
             case Decode.decodeValue (Decode.field "success" Decode.bool) val of
                 Ok True ->
                     ( { model | flashMessage = Just "Committed successfully", flashIsError = False }
-                    , Cmd.batch [ Ports.requestStatus (), Ports.listSnapshots () ]
+                    , Cmd.batch [ Ports.requestStatus (), Ports.listSnapshots (), Ports.listFiles () ]
                     )
 
                 _ ->
-                    ( { model | flashMessage = Just "Commit failed", flashIsError = True }, Cmd.none )
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "Commit failed"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
 
         -- Push
         DoPush ->
@@ -575,7 +656,7 @@ update msg model =
             case Decode.decodeValue (Decode.field "success" Decode.bool) val of
                 Ok True ->
                     ( { model | flashMessage = Just "Switched channel", flashIsError = False }
-                    , Cmd.batch [ Ports.requestStatus (), Ports.requestChannels (), Ports.listSnapshots () ]
+                    , Cmd.batch [ Ports.requestStatus (), Ports.requestChannels (), Ports.listSnapshots (), Ports.listFiles () ]
                     )
 
                 _ ->
@@ -606,6 +687,165 @@ update msg model =
 
                 Err _ ->
                     ( model, Cmd.none )
+
+        -- Tooltip
+        RequestTooltip resourceId ->
+            ( { model | tooltipResourceId = resourceId, tooltipContent = "Loading..." }
+            , Ports.getSnapshot resourceId
+            )
+
+        ClearTooltip ->
+            ( { model | tooltipResourceId = "", tooltipContent = "" }, Cmd.none )
+
+        GotSnapshotResult val ->
+            let
+                content =
+                    val
+                        |> Decode.decodeValue (Decode.field "content" Decode.string)
+                        |> Result.withDefault ""
+
+                error =
+                    val
+                        |> Decode.decodeValue (Decode.field "error" Decode.string)
+                        |> Result.toMaybe
+            in
+            case error of
+                Just e ->
+                    ( { model | tooltipContent = "(no snapshot)" }, Cmd.none )
+
+                Nothing ->
+                    ( { model | tooltipContent = content }, Cmd.none )
+
+        -- Import
+        GoToImport ->
+            ( { model | page = ImportPage, importSourceChannel = "", importChannelResources = [], importChannelLog = [] }
+            , Ports.requestChannels ()
+            )
+
+        UpdateImportChannel ch ->
+            ( { model | importSourceChannel = ch }, Cmd.none )
+
+        LoadImportChannel ->
+            if String.isEmpty model.importSourceChannel then
+                ( model, Cmd.none )
+            else
+                ( { model | importChannelResources = [], importChannelLog = [] }
+                , Cmd.batch
+                    [ Ports.listChannelResources model.importSourceChannel
+                    , Ports.logForChannel model.importSourceChannel
+                    ]
+                )
+
+        GotChannelResources val ->
+            case Decode.decodeValue (Decode.list Decode.string) val of
+                Ok ids ->
+                    ( { model | importChannelResources = ids }, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        GotChannelLog val ->
+            case Decode.decodeValue (Decode.list decodeLogEntry) val of
+                Ok entries ->
+                    ( { model | importChannelLog = entries }, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        ImportResourceFromChannel resourceId ->
+            ( model
+            , Ports.restoreFromChannel { resourceId = resourceId, channel = model.importSourceChannel }
+            )
+
+        ImportChangeset changeId ->
+            ( model, Ports.cherryPick changeId )
+
+        GotCherryPickResult val ->
+            case Decode.decodeValue (Decode.field "success" Decode.bool) val of
+                Ok True ->
+                    ( { model | flashMessage = Just "Changeset imported (cherry-picked) successfully", flashIsError = False }
+                    , Cmd.batch [ Ports.requestStatus (), Ports.listSnapshots (), Ports.listFiles () ]
+                    )
+
+                _ ->
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "Cherry-pick failed"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
+
+        -- Changeset detail
+        ViewChangeset changeId ->
+            ( { model | changesetDetail = Nothing, page = ChangesetDetailPage }
+            , Ports.getChangeset changeId
+            )
+
+        GotChangesetResult val ->
+            case Decode.decodeValue decodeChangesetDetail val of
+                Ok detail ->
+                    ( { model | changesetDetail = Just detail }, Cmd.none )
+
+                Err _ ->
+                    ( { model | flashMessage = Just "Failed to load changeset", flashIsError = True }, Cmd.none )
+
+        ImportResourceFromChangeset resourceId changeId ->
+            ( model
+            , Ports.restoreFromChangeset { resourceId = resourceId, changeId = changeId }
+            )
+
+        -- Restore
+        ShowRestoreDialog resourceId ->
+            ( { model
+                | showRestoreDialog = True
+                , restoreResourceId = resourceId
+                , restoreMode = "channel"
+                , restoreChannel = ""
+                , restoreChangeId = ""
+              }
+            , Cmd.none
+            )
+
+        HideRestoreDialog ->
+            ( { model | showRestoreDialog = False }, Cmd.none )
+
+        UpdateRestoreMode m ->
+            ( { model | restoreMode = m }, Cmd.none )
+
+        UpdateRestoreChannel ch ->
+            ( { model | restoreChannel = ch }, Cmd.none )
+
+        UpdateRestoreChangeId cid ->
+            ( { model | restoreChangeId = cid }, Cmd.none )
+
+        DoRestore ->
+            let
+                cmd =
+                    if model.restoreMode == "channel" && not (String.isEmpty model.restoreChannel) then
+                        Ports.restoreFromChannel { resourceId = model.restoreResourceId, channel = model.restoreChannel }
+                    else if model.restoreMode == "changeset" && not (String.isEmpty model.restoreChangeId) then
+                        Ports.restoreFromChangeset { resourceId = model.restoreResourceId, changeId = model.restoreChangeId }
+                    else
+                        Cmd.none
+            in
+            ( { model | showRestoreDialog = False }, cmd )
+
+        GotRestoreResult val ->
+            case Decode.decodeValue (Decode.field "success" Decode.bool) val of
+                Ok True ->
+                    ( { model | flashMessage = Just "Resource restored successfully", flashIsError = False }
+                    , Cmd.batch [ Ports.listSnapshots (), Ports.listFiles (), Ports.requestStatus () ]
+                    )
+
+                _ ->
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "Restore failed"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
 
         -- Notifications
         GotNotification json ->
@@ -710,6 +950,32 @@ decodeHistoryResponse =
         )
 
 
+decodeChangesetDetail : Decode.Decoder ChangesetDetail
+decodeChangesetDetail =
+    Decode.map6 ChangesetDetail
+        (Decode.field "change_id" Decode.string)
+        (Decode.field "commit_hash" Decode.string)
+        (Decode.field "message" Decode.string)
+        (Decode.field "author" Decode.string)
+        (Decode.field "created_at" Decode.string)
+        (Decode.field "patches"
+            (Decode.list
+                (Decode.map3 PatchInfo
+                    (Decode.field "target_resource" Decode.string)
+                    (Decode.field "operations"
+                        (Decode.list Decode.value |> Decode.map List.length)
+                    )
+                    (Decode.oneOf
+                        [ Decode.field "result_snapshot" (Decode.nullable Decode.value)
+                            |> Decode.map (\v -> v /= Nothing)
+                        , Decode.succeed False
+                        ]
+                    )
+                )
+            )
+        )
+
+
 type alias NotificationPayload =
     { kind : String, title : String, body : String }
 
@@ -788,6 +1054,12 @@ viewApp model =
                 LogPage ->
                     viewLog model
 
+                ImportPage ->
+                    viewImport model
+
+                ChangesetDetailPage ->
+                    viewChangesetDetail model
+
                 _ ->
                     text ""
             ]
@@ -847,6 +1119,17 @@ viewSidebar model =
                 , onClick (GoToPage LogPage)
                 ]
                 [ text "Commit Log" ]
+            , div
+                [ class
+                    (if model.page == ImportPage then
+                        "sidebar-item active"
+
+                     else
+                        "sidebar-item"
+                    )
+                , onClick GoToImport
+                ]
+                [ text "Import" ]
             ]
         , div [ class "sidebar-section" ]
             [ h3 [] [ text "Channels" ]
@@ -894,7 +1177,7 @@ viewChannelItem currentChannel ch =
             []
         , text ch.name
         , if ch.name == currentChannel then
-            span [ style "margin-left" "auto", style "font-size" "10px", style "color" "#fbbf24" ] [ text "●" ]
+            span [ style "margin-left" "auto", style "font-size" "10px", style "color" "#fbbf24" ] [ text "\u{25CF}" ]
 
           else
             text ""
@@ -927,7 +1210,6 @@ viewStagedItem sf =
 viewResources : Model -> Html Msg
 viewResources model =
     let
-        -- Build a unified list of all known resource IDs
         snapshotIds =
             model.snapshots
 
@@ -937,7 +1219,6 @@ viewResources model =
         modifiedIds =
             model.status.modified
 
-        -- Deduplicate: start with snapshots, add staged/modified that aren't already there
         allIds =
             List.foldl
                 (\rid acc ->
@@ -967,7 +1248,7 @@ viewResources model =
 
                   else
                     ul [ class "resource-list" ]
-                        (List.map (viewResourceItem model.status) allIds)
+                        (List.map (viewResourceItem model) allIds)
                 ]
             ]
         , if not (List.isEmpty model.status.deleted) then
@@ -984,22 +1265,30 @@ viewResources model =
         ]
 
 
-viewResourceItem : StatusInfo -> String -> Html Msg
-viewResourceItem status resourceId =
+viewResourceItem : Model -> String -> Html Msg
+viewResourceItem model resourceId =
     let
         isStaged =
-            List.any (\s -> s.resourceId == resourceId) status.staged
+            List.any (\s -> s.resourceId == resourceId) model.status.staged
 
         isModified =
-            List.member resourceId status.modified
+            List.member resourceId model.status.modified
 
         stagedKind =
-            status.staged
+            model.status.staged
                 |> List.filter (\s -> s.resourceId == resourceId)
                 |> List.head
                 |> Maybe.map .kind
+
+        showTooltip =
+            model.tooltipResourceId == resourceId && not (String.isEmpty model.tooltipContent)
     in
-    li [ class "resource-item" ]
+    li
+        [ class "resource-item"
+        , onMouseEnter (RequestTooltip resourceId)
+        , onMouseLeave ClearTooltip
+        , style "position" "relative"
+        ]
         [ div []
             [ span [ class "resource-id" ] [ text resourceId ]
             , if isStaged then
@@ -1014,7 +1303,7 @@ viewResourceItem status resourceId =
                                 "badge-deleted"
 
                             _ ->
-                                "badge-staged"
+                                "badge-modified"
                         )
                     , style "margin-left" "8px"
                     ]
@@ -1029,17 +1318,15 @@ viewResourceItem status resourceId =
         , div [ class "resource-actions" ]
             [ button [ class "btn btn-sm btn-ghost", onClick (OpenResource resourceId) ] [ text "Edit" ]
             , button [ class "btn btn-sm btn-ghost", onClick (OpenHistory resourceId) ] [ text "History" ]
+            , button [ class "btn btn-sm btn-ghost", onClick (ShowRestoreDialog resourceId) ] [ text "Restore" ]
             ]
-        ]
-
-
-viewModifiedItem : String -> Html Msg
-viewModifiedItem resourceId =
-    li [ class "resource-item" ]
-        [ span [ class "resource-id" ] [ text resourceId ]
-        , div [ class "resource-actions" ]
-            [ button [ class "btn btn-sm btn-primary", onClick (OpenResource resourceId) ] [ text "Edit & Stage" ]
-            ]
+        , if showTooltip then
+            div [ class "resource-tooltip" ]
+                [ pre [ style "margin" "0", style "white-space" "pre-wrap", style "word-break" "break-all" ]
+                    [ text (truncateContent model.tooltipContent 500) ]
+                ]
+          else
+            text ""
         ]
 
 
@@ -1068,9 +1355,14 @@ viewEditor model =
                         )
                     ]
                 , div [ style "display" "flex", style "gap" "8px" ]
-                    [ button [ class "btn btn-sm btn-ghost", onClick (GoToPage ResourcesPage) ] [ text "← Back" ]
+                    [ button [ class "btn btn-sm btn-ghost", onClick (GoToPage ResourcesPage) ] [ text "\u{2190} Back" ]
                     , if not model.editIsNew then
                         button [ class "btn btn-sm btn-ghost", onClick (OpenHistory model.editResourceId) ] [ text "History" ]
+
+                      else
+                        text ""
+                    , if not model.editIsNew then
+                        button [ class "btn btn-sm btn-ghost", onClick (ShowRestoreDialog model.editResourceId) ] [ text "Restore" ]
 
                       else
                         text ""
@@ -1127,7 +1419,7 @@ viewEditor model =
                     ]
                 , if model.status.channel == "main" then
                     div [ style "margin-top" "12px", style "padding" "10px 14px", style "background" "rgba(251,191,36,0.1)", style "border-radius" "8px", style "font-size" "12px", style "color" "#fbbf24" ]
-                        [ text "⚠ You are on the main channel. Edits should happen on a feature channel. "
+                        [ text "\u{26A0} You are on the main channel. Edits should happen on a feature channel. "
                         , span [ style "text-decoration" "underline", style "cursor" "pointer", onClick ShowNewChannelDialog ] [ text "Create one" ]
                         ]
 
@@ -1144,25 +1436,28 @@ viewHistory model =
         [ div [ class "panel" ]
             [ div [ class "panel-header" ]
                 [ h2 [] [ text ("History: " ++ model.historyResourceId) ]
-                , button [ class "btn btn-sm btn-ghost", onClick (GoToPage ResourcesPage) ] [ text "← Back" ]
+                , div [ style "display" "flex", style "gap" "8px" ]
+                    [ button [ class "btn btn-sm btn-ghost", onClick (GoToPage ResourcesPage) ] [ text "\u{2190} Back" ]
+                    , button [ class "btn btn-sm btn-ghost", onClick (ShowRestoreDialog model.historyResourceId) ] [ text "Restore" ]
+                    ]
                 ]
             , div [ class "panel-body" ]
                 [ if List.isEmpty model.historyEntries then
                     div [ class "empty-state" ]
                         [ h3 [] [ text "No history" ]
-                        , p [] [ text "This resource has no recorded changes yet." ]
+                        , p [] [ text "This resource has no recorded changes yet (local-only resources have no remote history)." ]
                         ]
 
                   else
                     div [ class "timeline" ]
-                        (List.map viewHistoryEntry model.historyEntries)
+                        (List.map (viewHistoryEntry model.historyResourceId) model.historyEntries)
                 ]
             ]
         ]
 
 
-viewHistoryEntry : HistoryEntry -> Html Msg
-viewHistoryEntry entry =
+viewHistoryEntry : String -> HistoryEntry -> Html Msg
+viewHistoryEntry resourceId entry =
     div [ class "timeline-entry" ]
         [ div [ class "entry-header" ]
             [ span [ class "entry-hash" ] [ text (String.left 8 entry.commitHash) ]
@@ -1170,7 +1465,14 @@ viewHistoryEntry entry =
             ]
         , div [ class "entry-message" ] [ text entry.message ]
         , div [ class "entry-meta" ]
-            [ text (entry.author ++ " · " ++ String.left 19 entry.timestamp) ]
+            [ text (entry.author ++ " \u{00B7} " ++ String.left 19 entry.timestamp) ]
+        , div [ style "margin-top" "6px" ]
+            [ button
+                [ class "btn btn-sm btn-ghost"
+                , onClick (ImportResourceFromChangeset resourceId entry.changeId)
+                ]
+                [ text "Restore to this version" ]
+            ]
         ]
 
 
@@ -1212,7 +1514,154 @@ viewLogEntry entry =
             ]
         , div [ class "entry-message" ] [ text entry.message ]
         , div [ class "entry-meta" ]
-            [ text (entry.author ++ " · " ++ String.left 19 entry.createdAt) ]
+            [ span [ style "font-weight" "500", style "color" "#a78bfa" ] [ text entry.author ]
+            , text (" \u{00B7} " ++ String.left 19 entry.createdAt)
+            ]
+        , div [ style "margin-top" "6px", style "display" "flex", style "gap" "6px" ]
+            [ button [ class "btn btn-sm btn-ghost", onClick (ViewChangeset entry.changeId) ] [ text "Details" ]
+            ]
+        ]
+
+
+viewImport : Model -> Html Msg
+viewImport model =
+    let
+        otherChannels =
+            List.filter (\ch -> not ch.isCurrent) model.channels
+    in
+    div []
+        [ div [ class "panel" ]
+            [ div [ class "panel-header" ]
+                [ h2 [] [ text "Import from Channel" ]
+                ]
+            , div [ class "panel-body" ]
+                [ div [ class "form-group" ]
+                    [ label [] [ text "Source Channel" ]
+                    , div [ style "display" "flex", style "gap" "8px" ]
+                        [ select
+                            [ onInput UpdateImportChannel
+                            , style "flex" "1"
+                            , style "padding" "8px 12px"
+                            , style "background" "var(--surface-2)"
+                            , style "border" "1px solid var(--border)"
+                            , style "border-radius" "8px"
+                            , style "color" "var(--text-primary)"
+                            , style "font-size" "13px"
+                            ]
+                            (option [ value "" ] [ text "Select a channel..." ]
+                                :: List.map
+                                    (\ch -> option [ value ch.name, selected (ch.name == model.importSourceChannel) ] [ text ch.name ])
+                                    otherChannels
+                            )
+                        , button [ class "btn btn-sm btn-primary", onClick LoadImportChannel, disabled (String.isEmpty model.importSourceChannel) ] [ text "Load" ]
+                        ]
+                    ]
+                , if not (List.isEmpty model.importChannelResources) then
+                    div []
+                        [ h3 [ style "margin-top" "16px", style "margin-bottom" "8px" ] [ text "Resources in channel" ]
+                        , p [ style "font-size" "12px", style "color" "#8b90a0", style "margin-bottom" "8px" ]
+                            [ text "Import a resource to copy its latest state into your working directory." ]
+                        , ul [ class "resource-list" ]
+                            (List.map viewImportResourceItem model.importChannelResources)
+                        ]
+
+                  else
+                    text ""
+                , if not (List.isEmpty model.importChannelLog) then
+                    div []
+                        [ h3 [ style "margin-top" "24px", style "margin-bottom" "8px" ] [ text "Changesets in channel" ]
+                        , p [ style "font-size" "12px", style "color" "#8b90a0", style "margin-bottom" "8px" ]
+                            [ text "Cherry-pick a changeset to import all its resource changes into your current channel." ]
+                        , div [ class "timeline" ]
+                            (List.map viewImportLogEntry model.importChannelLog)
+                        ]
+
+                  else
+                    text ""
+                ]
+            ]
+        ]
+
+
+viewImportResourceItem : String -> Html Msg
+viewImportResourceItem resourceId =
+    li [ class "resource-item" ]
+        [ span [ class "resource-id" ] [ text resourceId ]
+        , div [ class "resource-actions" ]
+            [ button [ class "btn btn-sm btn-primary", onClick (ImportResourceFromChannel resourceId) ] [ text "Import" ]
+            ]
+        ]
+
+
+viewImportLogEntry : LogEntry -> Html Msg
+viewImportLogEntry entry =
+    div [ class "timeline-entry" ]
+        [ div [ class "entry-header" ]
+            [ span [ class "entry-hash" ] [ text (String.left 8 entry.commitHash) ]
+            , span [ style "font-size" "11px", style "color" "#5a5f73" ]
+                [ text (String.fromInt entry.patchCount ++ " patch(es)") ]
+            ]
+        , div [ class "entry-message" ] [ text entry.message ]
+        , div [ class "entry-meta" ]
+            [ span [ style "font-weight" "500", style "color" "#a78bfa" ] [ text entry.author ]
+            , text (" \u{00B7} " ++ String.left 19 entry.createdAt)
+            ]
+        , div [ style "margin-top" "6px", style "display" "flex", style "gap" "6px" ]
+            [ button [ class "btn btn-sm btn-primary", onClick (ImportChangeset entry.changeId) ] [ text "Cherry-pick" ]
+            , button [ class "btn btn-sm btn-ghost", onClick (ViewChangeset entry.changeId) ] [ text "Details" ]
+            ]
+        ]
+
+
+viewChangesetDetail : Model -> Html Msg
+viewChangesetDetail model =
+    div []
+        [ div [ class "panel" ]
+            [ div [ class "panel-header" ]
+                [ h2 [] [ text "Changeset Details" ]
+                , button [ class "btn btn-sm btn-ghost", onClick (GoToPage LogPage) ] [ text "\u{2190} Back" ]
+                ]
+            , div [ class "panel-body" ]
+                [ case model.changesetDetail of
+                    Nothing ->
+                        div [ class "empty-state" ]
+                            [ p [] [ text "Loading changeset..." ] ]
+
+                    Just detail ->
+                        div []
+                            [ div [ style "margin-bottom" "16px" ]
+                                [ div [ style "display" "flex", style "gap" "8px", style "align-items" "center", style "margin-bottom" "8px" ]
+                                    [ span [ class "entry-hash" ] [ text (String.left 8 detail.commitHash) ]
+                                    , span [ style "font-weight" "500", style "color" "#a78bfa" ] [ text detail.author ]
+                                    , span [ style "font-size" "12px", style "color" "#5a5f73" ] [ text (String.left 19 detail.createdAt) ]
+                                    ]
+                                , div [ style "font-size" "15px", style "font-weight" "500", style "margin-bottom" "4px" ] [ text detail.message ]
+                                , div [ style "font-size" "11px", style "color" "#5a5f73", style "font-family" "var(--font-mono)" ] [ text detail.changeId ]
+                                ]
+                            , h3 [ style "margin-bottom" "8px" ] [ text ("Patches (" ++ String.fromInt (List.length detail.patches) ++ ")") ]
+                            , ul [ class "resource-list" ]
+                                (List.map (viewPatchItem detail.changeId) detail.patches)
+                            ]
+                ]
+            ]
+        ]
+
+
+viewPatchItem : String -> PatchInfo -> Html Msg
+viewPatchItem changeId patch =
+    li [ class "resource-item" ]
+        [ div []
+            [ span [ class "resource-id" ] [ text patch.targetResource ]
+            , span [ style "margin-left" "8px", style "font-size" "11px", style "color" "#5a5f73" ]
+                [ text (String.fromInt patch.opsCount ++ " op(s)") ]
+            ]
+        , div [ class "resource-actions" ]
+            [ button
+                [ class "btn btn-sm btn-primary"
+                , onClick (ImportResourceFromChangeset patch.targetResource changeId)
+                ]
+                [ text "Import this resource" ]
+            ]
         ]
 
 
@@ -1251,6 +1700,11 @@ viewDialogs model =
 
           else
             text ""
+        , if model.showRestoreDialog then
+            viewRestoreDialog model
+
+          else
+            text ""
         ]
 
 
@@ -1283,9 +1737,9 @@ viewCommitDialog model =
             , div [ style "font-size" "12px", style "color" "#8b90a0", style "margin-bottom" "12px" ]
                 [ text (String.fromInt (List.length model.status.staged) ++ " staged change(s)")
                 , if not (String.isEmpty model.userId) then
-                    text (" · Author: " ++ model.userId)
+                    text (" \u{00B7} Author: " ++ model.userId)
                   else
-                    text " · Author: unknown"
+                    text " \u{00B7} Author: unknown"
                 ]
             , div [ class "modal-actions" ]
                 [ button [ class "btn btn-ghost", onClick HideCommitDialog ] [ text "Cancel" ]
@@ -1345,6 +1799,93 @@ viewPromoteDialog model =
         ]
 
 
+viewRestoreDialog : Model -> Html Msg
+viewRestoreDialog model =
+    let
+        otherChannels =
+            List.filter (\ch -> not ch.isCurrent) model.channels
+    in
+    div [ class "modal-overlay", onClick HideRestoreDialog ]
+        [ div [ class "modal", stopPropagationOn "click" (Decode.succeed ( NoOp, True )) ]
+            [ h3 [] [ text "Restore Resource" ]
+            , p [ style "font-size" "13px", style "color" "#8b90a0", style "margin-bottom" "12px" ]
+                [ text ("Restore \"" ++ model.restoreResourceId ++ "\" to a previous state.") ]
+            , div [ class "form-group" ]
+                [ label [] [ text "Restore from" ]
+                , div [ style "display" "flex", style "gap" "12px", style "margin-bottom" "8px" ]
+                    [ label [ style "display" "flex", style "align-items" "center", style "gap" "4px", style "cursor" "pointer", style "font-size" "13px" ]
+                        [ input
+                            [ type_ "radio"
+                            , name "restoreMode"
+                            , checked (model.restoreMode == "channel")
+                            , onClick (UpdateRestoreMode "channel")
+                            ]
+                            []
+                        , text "Another channel"
+                        ]
+                    , label [ style "display" "flex", style "align-items" "center", style "gap" "4px", style "cursor" "pointer", style "font-size" "13px" ]
+                        [ input
+                            [ type_ "radio"
+                            , name "restoreMode"
+                            , checked (model.restoreMode == "changeset")
+                            , onClick (UpdateRestoreMode "changeset")
+                            ]
+                            []
+                        , text "A specific changeset"
+                        ]
+                    ]
+                ]
+            , if model.restoreMode == "channel" then
+                div [ class "form-group" ]
+                    [ label [] [ text "Source Channel" ]
+                    , select
+                        [ onInput UpdateRestoreChannel
+                        , style "width" "100%"
+                        , style "padding" "8px 12px"
+                        , style "background" "var(--surface-2)"
+                        , style "border" "1px solid var(--border)"
+                        , style "border-radius" "8px"
+                        , style "color" "var(--text-primary)"
+                        , style "font-size" "13px"
+                        ]
+                        (option [ value "" ] [ text "Select channel..." ]
+                            :: List.map
+                                (\ch -> option [ value ch.name ] [ text ch.name ])
+                                otherChannels
+                        )
+                    ]
+
+              else
+                div [ class "form-group" ]
+                    [ label [] [ text "Changeset ID" ]
+                    , input
+                        [ type_ "text"
+                        , value model.restoreChangeId
+                        , onInput UpdateRestoreChangeId
+                        , placeholder "Paste a change_id..."
+                        , style "font-family" "var(--font-mono)"
+                        , style "font-size" "12px"
+                        ]
+                        []
+                    ]
+            , div [ class "modal-actions" ]
+                [ button [ class "btn btn-ghost", onClick HideRestoreDialog ] [ text "Cancel" ]
+                , button
+                    [ class "btn btn-primary"
+                    , onClick DoRestore
+                    , disabled
+                        (if model.restoreMode == "channel" then
+                            String.isEmpty model.restoreChannel
+                         else
+                            String.isEmpty model.restoreChangeId
+                        )
+                    ]
+                    [ text "Restore" ]
+                ]
+            ]
+        ]
+
+
 viewFlash : Model -> Html Msg
 viewFlash model =
     case model.flashMessage of
@@ -1386,7 +1927,16 @@ viewFlash model =
 truncateId : String -> Int -> String
 truncateId s maxLen =
     if String.length s > maxLen then
-        String.left maxLen s ++ "…"
+        String.left maxLen s ++ "\u{2026}"
+
+    else
+        s
+
+
+truncateContent : String -> Int -> String
+truncateContent s maxLen =
+    if String.length s > maxLen then
+        String.left maxLen s ++ "\n..."
 
     else
         s
@@ -1419,6 +1969,12 @@ subscriptions _ =
         , Ports.onListFilesResult GotListFiles
         , Ports.onListSnapshotsResult GotListSnapshots
         , Ports.onNotification GotNotification
+        , Ports.onSnapshotResult GotSnapshotResult
+        , Ports.onCherryPickResult GotCherryPickResult
+        , Ports.onRestoreResult GotRestoreResult
+        , Ports.onChangesetResult GotChangesetResult
+        , Ports.onChannelLogResult GotChannelLog
+        , Ports.onChannelResourcesResult GotChannelResources
         ]
 
 

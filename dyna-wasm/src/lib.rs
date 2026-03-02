@@ -562,6 +562,130 @@ impl DynaClient {
         self.repo.save_snapshot(&resource_id, value).map_err(to_js_error)
     }
 
+    /// Restore a resource to its state in a specific changeset.
+    /// Replays all changesets up to and including the given change_id,
+    /// then writes the resource's state to the working directory.
+    #[wasm_bindgen]
+    pub fn restore_from_changeset(&self, resource_id: &str, change_id: &str) -> Result<(), JsError> {
+        let channel_name = self.repo.current_channel_name().map_err(to_js_error)?;
+        let channel = self.repo.load_channel(&channel_name).map_err(to_js_error)?;
+
+        // Also check all channels for the changeset
+        let all_channels = self.repo.list_channels().map_err(to_js_error)?;
+        let mut found_changesets: Vec<String> = Vec::new();
+        for ch in &all_channels {
+            if ch.changesets.contains(&change_id.to_string()) {
+                // Replay up to and including the target changeset
+                for cid in &ch.changesets {
+                    found_changesets.push(cid.clone());
+                    if cid == change_id {
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        if found_changesets.is_empty() {
+            return Err(JsError::new(&format!("Changeset '{}' not found in any channel", change_id)));
+        }
+
+        let mut resource_state: HashMap<String, serde_json::Value> = HashMap::new();
+        for cid in &found_changesets {
+            if let Ok(cs) = self.repo.load_changeset(cid) {
+                for p in cs.patches {
+                    let current_val = resource_state
+                        .entry(p.target_resource.clone())
+                        .or_insert_with(|| serde_json::json!({}));
+                    p.result_snapshot
+                        .as_ref()
+                        .map(|result| *current_val = result.clone())
+                        .unwrap_or_else(|| {
+                            let _ = diff::apply_patch(current_val, &p.operations);
+                        });
+                }
+            }
+        }
+
+        let value = resource_state
+            .get(resource_id)
+            .ok_or_else(|| JsError::new(&format!("Resource '{}' not found in changeset '{}'", resource_id, change_id)))?;
+
+        serde_json::to_string_pretty(value)
+            .map_err(|e| JsError::new(&e.to_string()))
+            .and_then(|json| self.repo.write_resource_file(resource_id, &json).map_err(to_js_error))?;
+
+        self.repo.save_snapshot(resource_id, value).map_err(to_js_error)
+    }
+
+    /// Get a resource's snapshot from a specific channel (without modifying working dir).
+    /// Returns the JSON content as a string.
+    #[wasm_bindgen]
+    pub fn get_snapshot_from_channel(&self, resource_id: &str, channel_name: &str) -> Result<String, JsError> {
+        let channel = self.repo.load_channel(channel_name).map_err(to_js_error)?;
+
+        let resource_state: HashMap<String, serde_json::Value> = izip!(&channel.changesets)
+            .filter_map(|cid| self.repo.load_changeset(cid).ok())
+            .flat_map(|cs| cs.patches.into_iter())
+            .fold(HashMap::new(), |mut state, p| {
+                let current_val = state
+                    .entry(p.target_resource.clone())
+                    .or_insert_with(|| serde_json::json!({}));
+                p.result_snapshot
+                    .as_ref()
+                    .map(|result| *current_val = result.clone())
+                    .unwrap_or_else(|| {
+                        let _ = diff::apply_patch(current_val, &p.operations);
+                    });
+                state
+            });
+
+        let value = resource_state
+            .get(resource_id)
+            .ok_or_else(|| JsError::new(&format!("Resource '{}' not found in channel '{}'", resource_id, channel_name)))?;
+
+        serde_json::to_string_pretty(value).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// List resource IDs available in a specific channel.
+    #[wasm_bindgen]
+    pub fn list_channel_resources(&self, channel_name: &str) -> Result<String, JsError> {
+        let channel = self.repo.load_channel(channel_name).map_err(to_js_error)?;
+
+        let resource_ids: Vec<String> = izip!(&channel.changesets)
+            .filter_map(|cid| self.repo.load_changeset(cid).ok())
+            .flat_map(|cs| cs.patches.into_iter())
+            .map(|p| p.target_resource)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        serde_json::to_string(&resource_ids).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Get the log for a specific channel (not necessarily the current one).
+    #[wasm_bindgen]
+    pub fn log_for_channel(&self, channel_name: &str) -> Result<String, JsError> {
+        let channel = self.repo.load_channel(channel_name).map_err(to_js_error)?;
+
+        let entries: Vec<LogEntry> = izip!(&channel.changesets)
+            .rev()
+            .filter_map(|cid| {
+                self.repo.load_changeset(cid).ok().map(|cs| LogEntry {
+                    change_id: cs.change_id,
+                    commit_hash: cs.commit_hash,
+                    message: cs.message,
+                    author: cs.author,
+                    created_at: cs.created_at.to_rfc3339(),
+                    patch_count: cs.patches.len(),
+                    immutable: cs.immutable,
+                })
+            })
+            .collect();
+
+        serde_json::to_string(&entries).map_err(|e| JsError::new(&e.to_string()))
+    }
+
     // -----------------------------------------------------------------------
     // Squash
     // -----------------------------------------------------------------------

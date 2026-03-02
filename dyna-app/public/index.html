@@ -66,10 +66,6 @@
 
         // -----------------------------------------------------------------
         // Elm → JS ports (commands)
-        //
-        // Elm's --optimize flag eliminates unused command ports, making
-        // `app.ports.<name>` undefined.  Guard every subscription so a
-        // missing port does not crash the entire <script> module.
         // -----------------------------------------------------------------
 
         function safeSub(portName, fn) {
@@ -216,7 +212,6 @@
             await wasmReady;
             if (!requireClient(app.ports.onPromoteResult)) return;
             try {
-                // WASM promote(source_channel, target_channel) takes two args
                 const source = channel || 'main';
                 await client.promote(source, 'main');
                 app.ports.onPromoteResult.send({ success: true, error: null });
@@ -232,7 +227,6 @@
                 return;
             }
             try {
-                // WASM method is list_channels(), not channels()
                 const channels = JSON.parse(client.list_channels());
                 app.ports.onChannelsResult.send(channels);
             } catch (e) {
@@ -244,7 +238,6 @@
             await wasmReady;
             if (!requireClient(app.ports.onCreateChannelResult)) return;
             try {
-                // WASM create_channel(name, fork_from) — fork_from is optional
                 client.create_channel(name);
                 app.ports.onCreateChannelResult.send({ success: true, error: null });
             } catch (e) {
@@ -270,7 +263,6 @@
                 return;
             }
             try {
-                // WASM log() takes no arguments — returns all entries
                 const log = JSON.parse(client.log());
                 app.ports.onLogResult.send(log);
             } catch (e) {
@@ -328,6 +320,129 @@
                 app.ports.onListSnapshotsResult.send(snapshots);
             } catch (e) {
                 app.ports.onListSnapshotsResult.send([]);
+            }
+        });
+
+        // -----------------------------------------------------------------
+        // New ports for features
+        // -----------------------------------------------------------------
+
+        // Get snapshot content for tooltip
+        safeSub('getSnapshot', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onSnapshotResult.send({ resourceId: resourceId, content: '', error: 'WASM not loaded' });
+                return;
+            }
+            try {
+                const content = client.get_snapshot(resourceId);
+                app.ports.onSnapshotResult.send({ resourceId: resourceId, content: content, error: null });
+            } catch (e) {
+                // Try reading from working directory instead
+                try {
+                    const path = resourceId.replace(/\./g, '/') + '.json';
+                    const content = client.read_file(path);
+                    app.ports.onSnapshotResult.send({ resourceId: resourceId, content: content, error: null });
+                } catch (e2) {
+                    app.ports.onSnapshotResult.send({ resourceId: resourceId, content: '', error: e.message });
+                }
+            }
+        });
+
+        // Cherry-pick a changeset
+        safeSub('cherryPick', async function(changeId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onCherryPickResult)) return;
+            try {
+                const newId = client.cherry_pick(changeId);
+                app.ports.onCherryPickResult.send({ success: true, changeId: newId, error: null });
+            } catch (e) {
+                app.ports.onCherryPickResult.send({ success: false, changeId: null, error: e.message });
+            }
+        });
+
+        // Restore resource from another channel
+        safeSub('restoreFromChannel', async function(args) {
+            await wasmReady;
+            if (!requireClient(app.ports.onRestoreResult)) return;
+            try {
+                const path = args.resourceId.replace(/\./g, '/') + '.json';
+                client.restore_from_channel(path, args.channel);
+                app.ports.onRestoreResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onRestoreResult.send({ success: false, error: e.message });
+            }
+        });
+
+        // Restore resource from a specific changeset
+        safeSub('restoreFromChangeset', async function(args) {
+            await wasmReady;
+            if (!requireClient(app.ports.onRestoreResult)) return;
+            try {
+                client.restore_from_changeset(args.resourceId, args.changeId);
+                app.ports.onRestoreResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onRestoreResult.send({ success: false, error: e.message });
+            }
+        });
+
+        // Get changeset details
+        safeSub('getChangeset', async function(changeId) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onChangesetResult.send({ error: 'WASM not loaded' });
+                return;
+            }
+            try {
+                const cs = JSON.parse(client.get_changeset(changeId));
+                app.ports.onChangesetResult.send(cs);
+            } catch (e) {
+                app.ports.onChangesetResult.send({ error: e.message });
+            }
+        });
+
+        // Get log for a specific channel
+        safeSub('logForChannel', async function(channelName) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onChannelLogResult.send([]);
+                return;
+            }
+            try {
+                const log = JSON.parse(client.log_for_channel(channelName));
+                app.ports.onChannelLogResult.send(log);
+            } catch (e) {
+                app.ports.onChannelLogResult.send([]);
+            }
+        });
+
+        // List resources in a specific channel
+        safeSub('listChannelResources', async function(channelName) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onChannelResourcesResult.send([]);
+                return;
+            }
+            try {
+                const resources = JSON.parse(client.list_channel_resources(channelName));
+                app.ports.onChannelResourcesResult.send(resources);
+            } catch (e) {
+                app.ports.onChannelResourcesResult.send([]);
+            }
+        });
+
+        // Get snapshot from a specific channel (for preview)
+        safeSub('getSnapshotFromChannel', async function(args) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onSnapshotFromChannelResult.send({ content: '', error: 'WASM not loaded' });
+                return;
+            }
+            try {
+                const content = client.get_snapshot_from_channel(args.resourceId, args.channel);
+                app.ports.onSnapshotFromChannelResult.send({ resourceId: args.resourceId, content: content, error: null });
+            } catch (e) {
+                app.ports.onSnapshotFromChannelResult.send({ resourceId: args.resourceId, content: '', error: e.message });
             }
         });
 

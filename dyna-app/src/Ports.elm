@@ -78,6 +78,32 @@ port connectNotifications : () -> Cmd msg
 port disconnectNotifications : () -> Cmd msg
 
 
+-- New ports for features
+
+port getSnapshot : String -> Cmd msg
+
+
+port cherryPick : String -> Cmd msg
+
+
+port restoreFromChannel : { resourceId : String, channel : String } -> Cmd msg
+
+
+port restoreFromChangeset : { resourceId : String, changeId : String } -> Cmd msg
+
+
+port getChangeset : String -> Cmd msg
+
+
+port logForChannel : String -> Cmd msg
+
+
+port listChannelResources : String -> Cmd msg
+
+
+port getSnapshotFromChannel : { resourceId : String, channel : String } -> Cmd msg
+
+
 
 -- =========================================================================
 -- Incoming ports (JS → Elm subscriptions)
@@ -136,3 +162,26 @@ port onListSnapshotsResult : (Decode.Value -> msg) -> Sub msg
 
 
 port onNotification : (String -> msg) -> Sub msg
+
+
+-- New incoming ports
+
+port onSnapshotResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onCherryPickResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onRestoreResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onChangesetResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onChannelLogResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onChannelResourcesResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onSnapshotFromChannelResult : (Decode.Value -> msg) -> Sub msg
