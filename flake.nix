@@ -27,13 +27,10 @@
           };
 
           # ── Rust toolchains ────────────────────────────────────────────
-          #
-          # Native toolchain: builds dyna-cli, dyna-server, dyna-py
           nativeToolchain = overlayPkgs.rust-bin.stable.latest.default.override {
             extensions = [ "rust-src" "rust-analyzer" "clippy" "rustfmt" ];
           };
 
-          # WASM toolchain: builds dyna-wasm for wasm32-unknown-unknown
           wasmToolchain = overlayPkgs.rust-bin.stable.latest.default.override {
             targets = [ "wasm32-unknown-unknown" ];
             extensions = [ "rust-src" ];
@@ -43,58 +40,7 @@
           craneLib = (crane.mkLib pkgs).overrideToolchain nativeToolchain;
           craneLibWasm = (crane.mkLib pkgs).overrideToolchain wasmToolchain;
 
-          # ── Per-package source filtering ───────────────────────────────
-          #
-          # Each package gets a source tree that includes only the workspace
-          # root manifests plus the crate(s) it directly depends on.
-          # This ensures `buildDepsOnly` fetches only the direct dependencies.
-
-          cliSrc = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./Cargo.toml
-              ./Cargo.lock
-              (craneLib.fileset.commonCargoSources ./dyna-core)
-              (craneLib.fileset.commonCargoSources ./dyna-cli)
-            ];
-          };
-
-          serverSrc = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./Cargo.toml
-              ./Cargo.lock
-              (craneLib.fileset.commonCargoSources ./dyna-core)
-              (craneLib.fileset.commonCargoSources ./dyna-server)
-            ];
-          };
-
-          wasmSrc = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./Cargo.toml
-              ./Cargo.lock
-              (craneLib.fileset.commonCargoSources ./dyna-core)
-              (craneLib.fileset.commonCargoSources ./dyna-wasm)
-            ];
-          };
-
-          # Full workspace source — used only for workspace-wide checks
-          # (clippy, fmt, nextest) that need all crates present.
-          workspaceSrc = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./Cargo.toml
-              ./Cargo.lock
-              (craneLib.fileset.commonCargoSources ./dyna-core)
-              (craneLib.fileset.commonCargoSources ./dyna-cli)
-              (craneLib.fileset.commonCargoSources ./dyna-server)
-              (craneLib.fileset.commonCargoSources ./dyna-wasm)
-              (craneLib.fileset.commonCargoSources ./dyna-py)
-            ];
-          };
-
-          # ── Common build inputs (platform-specific) ────────────────────
+          # ── Platform-specific build inputs ─────────────────────────────
           darwinBuildInputs = lib.optionals pkgs.stdenv.isDarwin [
             pkgs.libiconv
             pkgs.openssl
@@ -102,38 +48,194 @@
             pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           ];
 
-          # ── Per-package dependency caching ─────────────────────────────
+          # ════════════════════════════════════════════════════════════════
+          # Helper: resolve workspace dependency crate paths from Cargo.toml
+          # ════════════════════════════════════════════════════════════════
           #
-          # Each package gets its own `buildDepsOnly` derivation that only
-          # fetches and compiles the dependencies declared in that package's
-          # Cargo.toml (plus transitive deps through dyna-core).
+          # Reads a crate's Cargo.toml, finds all `{ workspace = true }` or
+          # `{ path = "..." }` dependencies that reference sibling workspace
+          # crates, and returns their directory paths.
+          #
+          # This is the core of the deduplication: instead of manually listing
+          # which crates each package depends on, we derive it from the
+          # Cargo.toml itself.
 
-          cliCargoArtifacts = craneLib.buildDepsOnly {
-            pname = "dyna-cli-deps";
-            src = cliSrc;
-            strictDeps = true;
-            cargoExtraArgs = "-p dyna-cli";
-            buildInputs = darwinBuildInputs;
+          workspaceMembers = [ "dyna-core" "dyna-cli" "dyna-server" "dyna-wasm" "dyna-py" ];
+
+          # Parse a crate's Cargo.toml and extract workspace dependency names
+          # that are also workspace members (i.e. local crate deps).
+          readLocalDeps = cratePath:
+            let
+              cargoToml = builtins.fromTOML (builtins.readFile (cratePath + "/Cargo.toml"));
+              # Collect all dependency sections
+              allDeps = (cargoToml.dependencies or {})
+                     // (cargoToml.dev-dependencies or {})
+                     // (cargoToml.build-dependencies or {});
+              # A dep is local if it's a workspace member name and either:
+              #   - has `workspace = true`
+              #   - has a `path` attribute
+              isLocalDep = name: spec:
+                builtins.elem name workspaceMembers
+                && (
+                  (builtins.isAttrs spec && (spec.workspace or false || spec ? path))
+                  || false
+                );
+              localDepNames = builtins.filter
+                (name: isLocalDep name (allDeps.${name}))
+                (builtins.attrNames allDeps);
+            in
+              localDepNames;
+
+          # Recursively resolve all transitive local deps for a crate.
+          # Returns a deduplicated list of crate directory paths (as strings).
+          resolveAllLocalDeps = cratePath:
+            let
+              directNames = readLocalDeps cratePath;
+              directPaths = map (name: ./. + "/${name}") directNames;
+              transitive = builtins.concatMap resolveAllLocalDeps directPaths;
+            in
+              lib.lists.unique (directPaths ++ transitive);
+
+          # ════════════════════════════════════════════════════════════════
+          # Helper: build filtered source tree for a crate
+          # ════════════════════════════════════════════════════════════════
+          #
+          # Includes the workspace root manifests, the crate itself, and all
+          # of its transitive local dependencies.
+
+          mkCrateSrc =
+            { cratePath       # Path to the crate directory (e.g. ./dyna-cli)
+            , extraPaths ? [] # Additional paths to include (e.g. pyproject.toml)
+            , useCraneLib ? craneLib
+            }:
+            let
+              localDeps = resolveAllLocalDeps cratePath;
+              crateFilesets = map (p: useCraneLib.fileset.commonCargoSources p) ([ cratePath ] ++ localDeps);
+              extraFilesets = map (p: p) extraPaths;
+            in
+              lib.fileset.toSource {
+                root = ./.;
+                fileset = lib.fileset.unions ([
+                  ./Cargo.toml
+                  ./Cargo.lock
+                ] ++ crateFilesets ++ extraFilesets);
+              };
+
+          # ════════════════════════════════════════════════════════════════
+          # Helper: build a native Rust package (deps cache + final build)
+          # ════════════════════════════════════════════════════════════════
+          #
+          # Given a crate name, produces { src, cargoArtifacts, package }
+          # with all boilerplate handled automatically.
+
+          mkRustPackage =
+            { pname                    # Package name (e.g. "dyna-cli")
+            , cratePath                # Path to the crate directory
+            , extraSrcPaths ? []       # Extra paths for source filtering
+            , extraBuildInputs ? []    # Additional build inputs
+            , buildPackageArgs ? {}    # Extra args passed to buildPackage
+            }:
+            let
+              src = mkCrateSrc {
+                inherit cratePath;
+                extraPaths = extraSrcPaths;
+              };
+
+              cargoArtifacts = craneLib.buildDepsOnly {
+                pname = "${pname}-deps";
+                inherit src;
+                strictDeps = true;
+                cargoExtraArgs = "-p ${pname}";
+                buildInputs = darwinBuildInputs ++ extraBuildInputs;
+              };
+
+              package = craneLib.buildPackage ({
+                inherit pname src cargoArtifacts;
+                strictDeps = true;
+                cargoExtraArgs = "-p ${pname}";
+                doCheck = false;
+                buildInputs = darwinBuildInputs ++ extraBuildInputs;
+              } // buildPackageArgs);
+            in
+              { inherit src cargoArtifacts package; };
+
+          # ════════════════════════════════════════════════════════════════
+          # Helper: build a WASM package (deps cache + raw build + bindgen)
+          # ════════════════════════════════════════════════════════════════
+          #
+          # Produces the raw .wasm via crane, then runs wasm-bindgen-cli
+          # to generate JS/TS glue code.
+
+          mkWasmPackage =
+            { pname                    # Package name (e.g. "dyna-wasm")
+            , cratePath                # Path to the crate directory
+            , wasmFileName             # Base name of the .wasm file (e.g. "dyna_wasm")
+            , extraSrcPaths ? []       # Extra paths for source filtering
+            , extraBuildInputs ? []    # Additional build inputs
+            , bindgenTarget ? "web"    # wasm-bindgen target (web, nodejs, etc.)
+            }:
+            let
+              wasmTarget = "wasm32-unknown-unknown";
+
+              src = mkCrateSrc {
+                inherit cratePath;
+                extraPaths = extraSrcPaths;
+                useCraneLib = craneLibWasm;
+              };
+
+              cargoArtifacts = craneLibWasm.buildDepsOnly {
+                pname = "${pname}-deps";
+                inherit src;
+                strictDeps = true;
+                cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
+                doCheck = false;
+                buildInputs = darwinBuildInputs ++ extraBuildInputs;
+              };
+
+              raw = craneLibWasm.buildPackage {
+                inherit pname src cargoArtifacts;
+                strictDeps = true;
+                cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
+                doCheck = false;
+                buildInputs = darwinBuildInputs ++ extraBuildInputs;
+                installPhaseCommand = ''
+                  mkdir -p $out/lib
+                  cp target/${wasmTarget}/release/${wasmFileName}.wasm $out/lib/ 2>/dev/null || \
+                  cp target/${wasmTarget}/release/*.wasm $out/lib/ 2>/dev/null || true
+                '';
+              };
+
+              package = pkgs.stdenv.mkDerivation {
+                inherit pname;
+                version = "0.1.0";
+                dontUnpack = true;
+                nativeBuildInputs = [ pkgs.wasm-bindgen-cli ];
+                buildPhase = ''
+                  wasm-bindgen \
+                    --target ${bindgenTarget} \
+                    --out-dir $out \
+                    --out-name ${wasmFileName} \
+                    ${raw}/lib/${wasmFileName}.wasm
+                '';
+                installPhase = "true";
+              };
+            in
+              { inherit src cargoArtifacts raw package; };
+
+          # ════════════════════════════════════════════════════════════════
+          # Helper: build the full workspace source (for checks)
+          # ════════════════════════════════════════════════════════════════
+
+          workspaceSrc = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions ([
+              ./Cargo.toml
+              ./Cargo.lock
+            ] ++ map
+              (name: craneLib.fileset.commonCargoSources (./. + "/${name}"))
+              workspaceMembers);
           };
 
-          serverCargoArtifacts = craneLib.buildDepsOnly {
-            pname = "dyna-server-deps";
-            src = serverSrc;
-            strictDeps = true;
-            cargoExtraArgs = "-p dyna-server";
-            buildInputs = darwinBuildInputs;
-          };
-
-          wasmCargoArtifacts = craneLibWasm.buildDepsOnly {
-            pname = "dyna-wasm-deps";
-            src = wasmSrc;
-            strictDeps = true;
-            cargoExtraArgs = "-p dyna-wasm --target wasm32-unknown-unknown";
-            doCheck = false;
-            buildInputs = darwinBuildInputs;
-          };
-
-          # Workspace-wide artifacts for checks only
           workspaceCargoArtifacts = craneLib.buildDepsOnly {
             pname = "dyna-workspace-deps";
             src = workspaceSrc;
@@ -141,62 +243,32 @@
             buildInputs = darwinBuildInputs;
           };
 
+          # ════════════════════════════════════════════════════════════════
+          # Package definitions (using helpers)
+          # ════════════════════════════════════════════════════════════════
+
           # ── Native packages ────────────────────────────────────────────
 
-          dyna-cli = craneLib.buildPackage {
+          cliResult = mkRustPackage {
             pname = "dyna-cli";
-            src = cliSrc;
-            strictDeps = true;
-            cargoArtifacts = cliCargoArtifacts;
-            cargoExtraArgs = "-p dyna-cli";
-            doCheck = false;
-            buildInputs = darwinBuildInputs;
+            cratePath = ./dyna-cli;
           };
+          dyna-cli = cliResult.package;
 
-          dyna-server = craneLib.buildPackage {
+          serverResult = mkRustPackage {
             pname = "dyna-server";
-            src = serverSrc;
-            strictDeps = true;
-            cargoArtifacts = serverCargoArtifacts;
-            cargoExtraArgs = "-p dyna-server";
-            doCheck = false;
-            buildInputs = darwinBuildInputs;
+            cratePath = ./dyna-server;
           };
+          dyna-server = serverResult.package;
 
           # ── WASM package ───────────────────────────────────────────────
-          #
-          # We build dyna-wasm using crane with the wasm32 toolchain,
-          # then run wasm-bindgen-cli to produce the JS/TS glue.
-          dyna-wasm-raw = craneLibWasm.buildPackage {
-            pname = "dyna-wasm";
-            src = wasmSrc;
-            strictDeps = true;
-            cargoArtifacts = wasmCargoArtifacts;
-            cargoExtraArgs = "-p dyna-wasm --target wasm32-unknown-unknown";
-            doCheck = false;
-            buildInputs = darwinBuildInputs;
-            # The raw .wasm file ends up in the target directory
-            installPhaseCommand = ''
-              mkdir -p $out/lib
-              cp target/wasm32-unknown-unknown/release/dyna_wasm.wasm $out/lib/ 2>/dev/null || \
-              cp target/wasm32-unknown-unknown/release/*.wasm $out/lib/ 2>/dev/null || true
-            '';
-          };
 
-          dyna-wasm = pkgs.stdenv.mkDerivation {
+          wasmResult = mkWasmPackage {
             pname = "dyna-wasm";
-            version = "0.1.0";
-            dontUnpack = true;
-            nativeBuildInputs = [ pkgs.wasm-bindgen-cli ];
-            buildPhase = ''
-              wasm-bindgen \
-                --target web \
-                --out-dir $out \
-                --out-name dyna_wasm \
-                ${dyna-wasm-raw}/lib/dyna_wasm.wasm
-            '';
-            installPhase = "true"; # output already in $out
+            cratePath = ./dyna-wasm;
+            wasmFileName = "dyna_wasm";
           };
+          dyna-wasm = wasmResult.package;
 
           # ── Elm package ────────────────────────────────────────────────
           dyna-app = pkgs.stdenv.mkDerivation {
@@ -205,7 +277,6 @@
             src = ./dyna-app;
             nativeBuildInputs = [ pkgs.elmPackages.elm ];
 
-            # Elm needs a writable home for its cache
             HOME = "$TMPDIR";
 
             buildPhase = ''
@@ -226,23 +297,14 @@
           };
 
           # ── Python package (dyna-py via maturin) ────────────────────
-          #
-          # Builds the PyO3 cdylib and installs it as a Python package.
-          # Uses importCargoLock which already provides its own granular
-          # dependency resolution from the lock file.
           dyna-py = pkgs.python3Packages.buildPythonPackage {
             pname = "dyna-py";
             version = "0.1.0";
             format = "pyproject";
 
-            src = lib.fileset.toSource {
-              root = ./.;
-              fileset = lib.fileset.unions [
-                ./Cargo.toml
-                ./Cargo.lock
-                (craneLib.fileset.commonCargoSources ./dyna-core)
-                (craneLib.fileset.commonCargoSources ./dyna-cli)
-                (craneLib.fileset.commonCargoSources ./dyna-py)
+            src = mkCrateSrc {
+              cratePath = ./dyna-py;
+              extraPaths = [
                 ./dyna-py/pyproject.toml
                 ./dyna-py/python
               ];
@@ -271,15 +333,12 @@
           };
 
           # ── Go package (dyna-go) ──────────────────────────────────────
-          #
-          # Builds the Go client library and runs its test suite.
           dyna-go = pkgs.buildGoModule {
             pname = "dyna-go";
             version = "0.1.0";
             src = ./dyna-go;
-            vendorHash = null;  # uses go.sum for dependency resolution
+            vendorHash = null;
             subPackages = [ "dynago" ];
-            # Build the library; tests run in checkPhase
             buildPhase = ''
               runHook preBuild
               go build ./dynago/...
@@ -330,10 +389,6 @@
           };
 
           # ── dyna-app-serve script ─────────────────────────────────
-          #
-          # A convenience wrapper that builds the Elm app (if needed),
-          # bundles the WASM package, and serves the result locally.
-          # Python helper script for serving with correct MIME types
           dyna-serve-py = pkgs.writeText "dyna-serve.py" ''
             import http.server, functools, os
 
@@ -395,10 +450,6 @@
         in
         {
           # ── Checks ───────────────────────────────────────────────────
-          #
-          # Workspace-wide checks use the full source and workspace-level
-          # cargo artifacts so that clippy, fmt, and nextest can see all
-          # crates at once.
           checks = {
             inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-go;
 
@@ -456,13 +507,6 @@
           };
 
           # ── Dev shell ────────────────────────────────────────────────
-          #
-          # `nix develop` drops you into a shell with all tools available:
-          #   - Rust toolchain (with wasm32 target, clippy, rustfmt, rust-analyzer)
-          #   - wasm-pack, wasm-bindgen-cli
-          #   - Elm compiler
-          #   - cargo-nextest, cargo-watch
-          #   - Built dyna-cli and dyna-server on PATH
           devShells.default = pkgs.mkShell {
             inputsFrom = [ dyna-cli dyna-server ];
 
@@ -535,7 +579,6 @@
               echo ""
             '';
 
-            # Ensure openssl is found by Rust builds
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
           };
         };
