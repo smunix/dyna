@@ -108,6 +108,7 @@ impl DynaClient {
     #[wasm_bindgen(constructor)]
     pub fn new() -> DynaClient {
         // Set up console_error_panic_hook for better error messages in the browser
+        console_error_panic_hook::set_once();
         DynaClient {
             repo: Repository::new(),
             remote_url: None,

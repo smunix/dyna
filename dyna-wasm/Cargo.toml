@@ -23,6 +23,7 @@ vfs = "0.12"
 
 # WASM-specific — getrandom 0.4 requires explicit wasm_js feature for browser RNG
 getrandom = { version = "0.4", features = ["wasm_js"] }
+console_error_panic_hook = "0.1"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
