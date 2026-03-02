@@ -190,6 +190,11 @@ type alias Model =
     , flashMessage : Maybe String
     , flashIsError : Bool
 
+    -- Collapsible sections
+    , stagedSectionOpen : Bool
+    , workingSectionOpen : Bool
+    , committedSectionOpen : Bool
+
     -- Resource filtering/sorting
     , resourceFilter : String
     , resourceSort : ResourceSort
@@ -259,6 +264,9 @@ init flags =
       , notificationsVisible = True
       , flashMessage = Nothing
       , flashIsError = False
+      , stagedSectionOpen = True
+      , workingSectionOpen = True
+      , committedSectionOpen = False
       , resourceFilter = ""
       , resourceSort = SortByIdAsc
       , channelFilter = ""
@@ -373,6 +381,13 @@ type Msg
     | GotPullChannelResult Decode.Value
       -- User
     | UpdateUserId String
+      -- Stage All / Commit All
+    | StageAllWorking
+    | GotStageAllResult Decode.Value
+      -- Collapsible sections
+    | ToggleStagedSection
+    | ToggleWorkingSection
+    | ToggleCommittedSection
       -- Resource filter/sort
     | UpdateResourceFilter String
     | SetResourceSort ResourceSort
@@ -1077,6 +1092,44 @@ update msg model =
 
         ToggleShowAllChannels ->
             ( { model | showAllChannels = not model.showAllChannels }, Cmd.none )
+
+        -- Stage All / Commit All
+        StageAllWorking ->
+            ( { model | flashMessage = Just "Staging all working files...", flashIsError = False }
+            , Ports.stageAll ()
+            )
+
+        GotStageAllResult val ->
+            case Decode.decodeValue (Decode.field "success" Decode.bool) val of
+                Ok True ->
+                    let
+                        count =
+                            val
+                                |> Decode.decodeValue (Decode.field "count" Decode.int)
+                                |> Result.withDefault 0
+                    in
+                    ( { model | flashMessage = Just ("Staged " ++ String.fromInt count ++ " file(s)"), flashIsError = False }
+                    , Cmd.batch [ Ports.requestStatus (), Ports.listFiles () ]
+                    )
+
+                _ ->
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "Stage all failed"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
+
+        -- Collapsible sections
+        ToggleStagedSection ->
+            ( { model | stagedSectionOpen = not model.stagedSectionOpen }, Cmd.none )
+
+        ToggleWorkingSection ->
+            ( { model | workingSectionOpen = not model.workingSectionOpen }, Cmd.none )
+
+        ToggleCommittedSection ->
+            ( { model | committedSectionOpen = not model.committedSectionOpen }, Cmd.none )
 
         DismissFlash ->
             ( { model | flashMessage = Nothing }, Cmd.none )
@@ -1802,15 +1855,32 @@ viewResources model =
         -- Section 1: Staged Resources
         , if not (List.isEmpty filteredStaged) then
             div [ class "panel" ]
-                [ div [ class "panel-header" ]
-                    [ h2 [ style "color" "#fbbf24" ]
-                        [ text ("Staged (" ++ String.fromInt (List.length filteredStaged) ++ ")")
+                [ div
+                    [ class "panel-header"
+                    , style "cursor" "pointer"
+                    , onClick ToggleStagedSection
+                    ]
+                    [ div [ style "display" "flex", style "align-items" "center", style "gap" "8px" ]
+                        [ span [ style "font-size" "12px", style "color" "#fbbf24" ]
+                            [ text (if model.stagedSectionOpen then "\u{25BC}" else "\u{25B6}") ]
+                        , h2 [ style "color" "#fbbf24", style "margin" "0" ]
+                            [ text ("Staged (" ++ String.fromInt (List.length filteredStaged) ++ ")") ]
+                        ]
+                    , div [ style "display" "flex", style "gap" "8px" ]
+                        [ button
+                            [ class "btn btn-sm btn-primary"
+                            , onClick ShowCommitDialog
+                            ]
+                            [ text "Commit All" ]
                         ]
                     ]
-                , div [ class "panel-body" ]
-                    [ ul [ class "resource-list" ]
-                        (List.map (viewStagedResourceItem model) filteredStaged)
-                    ]
+                , if model.stagedSectionOpen then
+                    div [ class "panel-body" ]
+                        [ ul [ class "resource-list" ]
+                            (List.map (viewStagedResourceItem model) filteredStaged)
+                        ]
+                  else
+                    text ""
                 ]
           else
             text ""
@@ -1818,17 +1888,34 @@ viewResources model =
         -- Section 2: Working Directory
         , if not (List.isEmpty filteredWorking) || not (List.isEmpty filteredDeleted) then
             div [ class "panel" ]
-                [ div [ class "panel-header" ]
-                    [ h2 [ style "color" "#60a5fa" ]
-                        [ text ("Working Directory (" ++ String.fromInt (List.length filteredWorking + List.length filteredDeleted) ++ ")")
+                [ div
+                    [ class "panel-header"
+                    , style "cursor" "pointer"
+                    , onClick ToggleWorkingSection
+                    ]
+                    [ div [ style "display" "flex", style "align-items" "center", style "gap" "8px" ]
+                        [ span [ style "font-size" "12px", style "color" "#60a5fa" ]
+                            [ text (if model.workingSectionOpen then "\u{25BC}" else "\u{25B6}") ]
+                        , h2 [ style "color" "#60a5fa", style "margin" "0" ]
+                            [ text ("Working Directory (" ++ String.fromInt (List.length filteredWorking + List.length filteredDeleted) ++ ")") ]
+                        ]
+                    , div [ style "display" "flex", style "gap" "8px" ]
+                        [ button
+                            [ class "btn btn-sm btn-primary"
+                            , onClick StageAllWorking
+                            ]
+                            [ text "Stage All" ]
                         ]
                     ]
-                , div [ class "panel-body" ]
-                    [ ul [ class "resource-list" ]
-                        (List.map (viewWorkingResourceItem model) filteredWorking
-                            ++ List.map viewDeletedItem filteredDeleted
-                        )
-                    ]
+                , if model.workingSectionOpen then
+                    div [ class "panel-body" ]
+                        [ ul [ class "resource-list" ]
+                            (List.map (viewWorkingResourceItem model) filteredWorking
+                                ++ List.map viewDeletedItem filteredDeleted
+                            )
+                        ]
+                  else
+                    text ""
                 ]
           else
             text ""
@@ -1836,15 +1923,25 @@ viewResources model =
         -- Section 3: Committed Resources
         , if not (List.isEmpty filteredCommitted) then
             div [ class "panel" ]
-                [ div [ class "panel-header" ]
-                    [ h2 [ style "color" "#34d399" ]
-                        [ text ("Committed (" ++ String.fromInt (List.length filteredCommitted) ++ ")")
+                [ div
+                    [ class "panel-header"
+                    , style "cursor" "pointer"
+                    , onClick ToggleCommittedSection
+                    ]
+                    [ div [ style "display" "flex", style "align-items" "center", style "gap" "8px" ]
+                        [ span [ style "font-size" "12px", style "color" "#34d399" ]
+                            [ text (if model.committedSectionOpen then "\u{25BC}" else "\u{25B6}") ]
+                        , h2 [ style "color" "#34d399", style "margin" "0" ]
+                            [ text ("Committed (" ++ String.fromInt (List.length filteredCommitted) ++ ")") ]
                         ]
                     ]
-                , div [ class "panel-body", style "max-height" "calc(100vh - 400px)", style "overflow-y" "auto" ]
-                    [ ul [ class "resource-list" ]
-                        (List.map (viewCommittedResourceItem model) filteredCommitted)
-                    ]
+                , if model.committedSectionOpen then
+                    div [ class "panel-body", style "max-height" "calc(100vh - 400px)", style "overflow-y" "auto" ]
+                        [ ul [ class "resource-list" ]
+                            (List.map (viewCommittedResourceItem model) filteredCommitted)
+                        ]
+                  else
+                    text ""
                 ]
           else
             text ""
@@ -2746,6 +2843,7 @@ subscriptions _ =
         , Ports.onChannelResourcesResult GotChannelResources
         , Ports.onRemoteChannelsResult GotRemoteChannels
         , Ports.onPullChannelResult GotPullChannelResult
+        , Ports.onStageAllResult GotStageAllResult
         ]
 
 

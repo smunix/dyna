@@ -36,6 +36,9 @@ port addFile : String -> Cmd msg
 port addDelete : String -> Cmd msg
 
 
+port stageAll : () -> Cmd msg
+
+
 port requestStatus : () -> Cmd msg
 
 
@@ -195,3 +198,6 @@ port onRemoteChannelsResult : (Decode.Value -> msg) -> Sub msg
 
 
 port onPullChannelResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onStageAllResult : (Decode.Value -> msg) -> Sub msg

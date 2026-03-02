@@ -158,6 +158,45 @@
             }
         });
 
+        safeSub('stageAll', async function(_) {
+            await wasmReady;
+            if (!requireClient(app.ports.onStageAllResult)) return;
+            try {
+                // Get all working directory files
+                const filesJson = client.list_files();
+                const files = JSON.parse(filesJson);
+                // Get current status to know which are already staged
+                const statusJson = client.status();
+                const status = JSON.parse(statusJson);
+                const stagedPaths = (status.staged || []).map(s => s.file_path);
+                let count = 0;
+                // Stage each working file that isn't already staged
+                for (const filePath of files) {
+                    if (!stagedPaths.includes(filePath)) {
+                        try {
+                            client.add(filePath);
+                            count++;
+                        } catch (e) {
+                            console.warn('Failed to stage ' + filePath + ': ' + e.message);
+                        }
+                    }
+                }
+                // Also stage deletions
+                for (const resourceId of (status.deleted || [])) {
+                    try {
+                        const path = resourceId.replace(/\./g, '/') + '.json';
+                        client.add_delete(path);
+                        count++;
+                    } catch (e) {
+                        console.warn('Failed to stage deletion ' + resourceId + ': ' + e.message);
+                    }
+                }
+                app.ports.onStageAllResult.send({ success: true, count: count, error: null });
+            } catch (e) {
+                app.ports.onStageAllResult.send({ success: false, count: 0, error: e.message });
+            }
+        });
+
         safeSub('requestStatus', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {
