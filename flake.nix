@@ -171,6 +171,11 @@
           # Helper: build filtered source tree for a crate
           # ════════════════════════════════════════════════════════════════
 
+          # ── Patched crates referenced by [patch.crates-io] ──────────
+          # These must be included in every filtered source tree so that
+          # cargo can resolve the workspace-level patch table.
+          patchedCratePaths = [ ./vfs-patch ];
+
           mkCrateSrc =
             { cratePath
             , extraPaths ? []
@@ -200,7 +205,10 @@
                 fileset = lib.fileset.unions ([
                   ./Cargo.toml
                   ./Cargo.lock
-                ] ++ crateFilesets ++ extraFilesets ++ stubFilesets);
+                ] ++ crateFilesets ++ extraFilesets ++ stubFilesets
+                  # Include patched crates from [patch.crates-io] so cargo
+                  # can resolve them inside the Nix store.
+                  ++ patchedCratePaths);
               };
 
           # ════════════════════════════════════════════════════════════════
@@ -324,7 +332,9 @@
               ./Cargo.lock
             ] ++ map
               (name: craneLib.fileset.commonCargoSources (./. + "/${name}"))
-              workspaceMembers);
+              workspaceMembers
+              # Include patched crates from [patch.crates-io]
+              ++ patchedCratePaths);
           };
 
           workspaceCargoArtifacts = craneLib.buildDepsOnly {
