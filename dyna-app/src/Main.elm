@@ -105,6 +105,9 @@ type alias Model =
     -- Log
     , logEntries : List LogEntry
 
+    -- User
+    , userId : String
+
     -- Dialogs
     , showCommitDialog : Bool
     , commitMessage : String
@@ -156,6 +159,7 @@ init flags =
       , historyResourceId = ""
       , historyEntries = []
       , logEntries = []
+      , userId = ""
       , showCommitDialog = False
       , commitMessage = ""
       , showNewChannelDialog = False
@@ -235,6 +239,8 @@ type Msg
       -- Notifications
     | GotNotification String
     | DismissNotification Int
+      -- User
+    | UpdateUserId String
       -- Flash
     | DismissFlash
       -- Misc
@@ -255,6 +261,7 @@ update msg model =
                         ResourcesPage ->
                             Cmd.batch
                                 [ Ports.listSnapshots ()
+                                , Ports.listFiles ()
                                 , Ports.requestStatus ()
                                 , Ports.requestChannels ()
                                 ]
@@ -321,6 +328,7 @@ update msg model =
             ( model
             , Cmd.batch
                 [ Ports.listSnapshots ()
+                , Ports.listFiles ()
                 , Ports.requestStatus ()
                 , Ports.requestChannels ()
                 ]
@@ -624,6 +632,14 @@ update msg model =
         DismissNotification nid ->
             ( { model | notifications = List.filter (\n -> n.id /= nid) model.notifications }, Cmd.none )
 
+        UpdateUserId uid ->
+            ( { model | userId = uid }
+            , if String.isEmpty uid then
+                Cmd.none
+              else
+                Ports.setUser { name = uid, email = uid ++ "@dyna" }
+            )
+
         DismissFlash ->
             ( { model | flashMessage = Nothing }, Cmd.none )
 
@@ -910,6 +926,29 @@ viewStagedItem sf =
 
 viewResources : Model -> Html Msg
 viewResources model =
+    let
+        -- Build a unified list of all known resource IDs
+        snapshotIds =
+            model.snapshots
+
+        stagedIds =
+            List.map .resourceId model.status.staged
+
+        modifiedIds =
+            model.status.modified
+
+        -- Deduplicate: start with snapshots, add staged/modified that aren't already there
+        allIds =
+            List.foldl
+                (\rid acc ->
+                    if List.member rid acc then
+                        acc
+                    else
+                        acc ++ [ rid ]
+                )
+                snapshotIds
+                (stagedIds ++ modifiedIds)
+    in
     div []
         [ div [ class "panel" ]
             [ div [ class "panel-header" ]
@@ -920,7 +959,7 @@ viewResources model =
                     ]
                 ]
             , div [ class "panel-body" ]
-                [ if List.isEmpty model.snapshots then
+                [ if List.isEmpty allIds then
                     div [ class "empty-state" ]
                         [ h3 [] [ text "No resources yet" ]
                         , p [] [ text "Create a new resource or clone from a remote server." ]
@@ -928,20 +967,9 @@ viewResources model =
 
                   else
                     ul [ class "resource-list" ]
-                        (List.map (viewResourceItem model.status) model.snapshots)
+                        (List.map (viewResourceItem model.status) allIds)
                 ]
             ]
-        , if not (List.isEmpty model.status.modified) then
-            div [ class "panel" ]
-                [ div [ class "panel-header" ] [ h2 [] [ text "Modified (unstaged)" ] ]
-                , div [ class "panel-body" ]
-                    [ ul [ class "resource-list" ]
-                        (List.map viewModifiedItem model.status.modified)
-                    ]
-                ]
-
-          else
-            text ""
         , if not (List.isEmpty model.status.deleted) then
             div [ class "panel" ]
                 [ div [ class "panel-header" ] [ h2 [] [ text "Deleted (unstaged)" ] ]
@@ -964,12 +992,33 @@ viewResourceItem status resourceId =
 
         isModified =
             List.member resourceId status.modified
+
+        stagedKind =
+            status.staged
+                |> List.filter (\s -> s.resourceId == resourceId)
+                |> List.head
+                |> Maybe.map .kind
     in
     li [ class "resource-item" ]
         [ div []
             [ span [ class "resource-id" ] [ text resourceId ]
             , if isStaged then
-                span [ class "badge badge-staged", style "margin-left" "8px" ] [ text "staged" ]
+                span
+                    [ class "badge"
+                    , class
+                        (case stagedKind of
+                            Just "new" ->
+                                "badge-new"
+
+                            Just "deleted" ->
+                                "badge-deleted"
+
+                            _ ->
+                                "badge-staged"
+                        )
+                    , style "margin-left" "8px"
+                    ]
+                    [ text "staged" ]
 
               else if isModified then
                 span [ class "badge badge-modified", style "margin-left" "8px" ] [ text "modified" ]
@@ -1211,6 +1260,17 @@ viewCommitDialog model =
         [ div [ class "modal", stopPropagationOn "click" (Decode.succeed ( NoOp, True )) ]
             [ h3 [] [ text "Commit Changes" ]
             , div [ class "form-group" ]
+                [ label [] [ text "User ID" ]
+                , input
+                    [ type_ "text"
+                    , value model.userId
+                    , onInput UpdateUserId
+                    , placeholder "e.g. alice, bob"
+                    , style "font-family" "var(--font-mono)"
+                    ]
+                    []
+                ]
+            , div [ class "form-group" ]
                 [ label [] [ text "Commit Message" ]
                 , input
                     [ type_ "text"
@@ -1221,7 +1281,12 @@ viewCommitDialog model =
                     []
                 ]
             , div [ style "font-size" "12px", style "color" "#8b90a0", style "margin-bottom" "12px" ]
-                [ text (String.fromInt (List.length model.status.staged) ++ " staged change(s)") ]
+                [ text (String.fromInt (List.length model.status.staged) ++ " staged change(s)")
+                , if not (String.isEmpty model.userId) then
+                    text (" · Author: " ++ model.userId)
+                  else
+                    text " · Author: unknown"
+                ]
             , div [ class "modal-actions" ]
                 [ button [ class "btn btn-ghost", onClick HideCommitDialog ] [ text "Cancel" ]
                 , button

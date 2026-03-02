@@ -69,6 +69,9 @@ port listFiles : () -> Cmd msg
 port listSnapshots : () -> Cmd msg
 
 
+port setUser : { name : String, email : String } -> Cmd msg
+
+
 port connectNotifications : () -> Cmd msg
 
 

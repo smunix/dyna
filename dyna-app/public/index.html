@@ -306,6 +306,17 @@
             }
         });
 
+        safeSub('setUser', async function(args) {
+            await wasmReady;
+            if (!requireClient(null)) return;
+            try {
+                client.set_user(args.name, args.email);
+                console.log('[dyna] User set to:', args.name);
+            } catch (e) {
+                console.error('[dyna] Failed to set user:', e.message);
+            }
+        });
+
         safeSub('listSnapshots', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {

@@ -134,6 +134,15 @@ impl DynaClient {
         self.repo.is_initialized()
     }
 
+    /// Set the user name and email for commit authorship.
+    #[wasm_bindgen]
+    pub fn set_user(&mut self, name: &str, email: &str) -> Result<(), JsError> {
+        let mut config = self.repo.load_config().map_err(to_js_error)?;
+        config.user.name = name.to_string();
+        config.user.email = email.to_string();
+        self.repo.save_config(&config).map_err(to_js_error)
+    }
+
     /// Set or update the remote URL.
     #[wasm_bindgen]
     pub fn set_remote(&mut self, url: &str) -> Result<(), JsError> {

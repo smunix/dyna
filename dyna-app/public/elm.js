@@ -784,11 +784,11 @@ function _Debug_crash_UNUSED(identifier, fact1, fact2, fact3, fact4)
 
 function _Debug_regionToString(region)
 {
-	if (region.aq.T === region.ay.T)
+	if (region.ar.U === region.az.U)
 	{
-		return 'on line ' + region.aq.T;
+		return 'on line ' + region.ar.U;
 	}
-	return 'on lines ' + region.aq.T + ' through ' + region.ay.T;
+	return 'on lines ' + region.ar.U + ' through ' + region.az.U;
 }
 
 
@@ -1857,9 +1857,9 @@ var _Platform_worker = F4(function(impl, flagDecoder, debugMetadata, args)
 	return _Platform_initialize(
 		flagDecoder,
 		args,
-		impl.a8,
-		impl.bh,
-		impl.bg,
+		impl.ba,
+		impl.bj,
+		impl.bi,
 		function() { return function() {} }
 	);
 });
@@ -2720,8 +2720,8 @@ var _VirtualDom_mapEventRecord = F2(function(func, record)
 {
 	return {
 		aj: func(record.aj),
-		ar: record.ar,
-		am: record.am
+		as: record.as,
+		ao: record.ao
 	}
 });
 
@@ -2990,10 +2990,10 @@ function _VirtualDom_makeCallback(eventNode, initialHandler)
 
 		var value = result.a;
 		var message = !tag ? value : tag < 3 ? value.a : value.aj;
-		var stopPropagation = tag == 1 ? value.b : tag == 3 && value.ar;
+		var stopPropagation = tag == 1 ? value.b : tag == 3 && value.as;
 		var currentEventNode = (
 			stopPropagation && event.stopPropagation(),
-			(tag == 2 ? value.b : tag == 3 && value.am) && event.preventDefault(),
+			(tag == 2 ? value.b : tag == 3 && value.ao) && event.preventDefault(),
 			eventNode
 		);
 		var tagger;
@@ -3943,11 +3943,11 @@ var _Browser_element = _Debugger_element || F4(function(impl, flagDecoder, debug
 	return _Platform_initialize(
 		flagDecoder,
 		args,
-		impl.a8,
-		impl.bh,
-		impl.bg,
+		impl.ba,
+		impl.bj,
+		impl.bi,
 		function(sendToApp, initialModel) {
-			var view = impl.bi;
+			var view = impl.bk;
 			/**/
 			var domNode = args['node'];
 			//*/
@@ -3979,12 +3979,12 @@ var _Browser_document = _Debugger_document || F4(function(impl, flagDecoder, deb
 	return _Platform_initialize(
 		flagDecoder,
 		args,
-		impl.a8,
-		impl.bh,
-		impl.bg,
+		impl.ba,
+		impl.bj,
+		impl.bi,
 		function(sendToApp, initialModel) {
-			var divertHrefToApp = impl.ap && impl.ap(sendToApp)
-			var view = impl.bi;
+			var divertHrefToApp = impl.aq && impl.aq(sendToApp)
+			var view = impl.bk;
 			var title = _VirtualDom_doc.title;
 			var bodyNode = _VirtualDom_doc.body;
 			var currNode = _VirtualDom_virtualize(bodyNode);
@@ -3992,7 +3992,7 @@ var _Browser_document = _Debugger_document || F4(function(impl, flagDecoder, deb
 			{
 				_VirtualDom_divertHrefToApp = divertHrefToApp;
 				var doc = view(model);
-				var nextNode = _VirtualDom_node('body')(_List_Nil)(doc.S);
+				var nextNode = _VirtualDom_node('body')(_List_Nil)(doc.T);
 				var patches = _VirtualDom_diff(currNode, nextNode);
 				bodyNode = _VirtualDom_applyPatches(bodyNode, currNode, patches, sendToApp);
 				currNode = nextNode;
@@ -4053,12 +4053,12 @@ function _Browser_makeAnimator(model, draw)
 
 function _Browser_application(impl)
 {
-	var onUrlChange = impl.ba;
-	var onUrlRequest = impl.bb;
+	var onUrlChange = impl.bc;
+	var onUrlRequest = impl.bd;
 	var key = function() { key.a(onUrlChange(_Browser_getUrl())); };
 
 	return _Browser_document({
-		ap: function(sendToApp)
+		aq: function(sendToApp)
 		{
 			key.a = sendToApp;
 			_Browser_window.addEventListener('popstate', key);
@@ -4074,9 +4074,9 @@ function _Browser_application(impl)
 					var next = $elm$url$Url$fromString(href).a;
 					sendToApp(onUrlRequest(
 						(next
-							&& curr.aM === next.aM
-							&& curr.aC === next.aC
-							&& curr.aJ.a === next.aJ.a
+							&& curr.aN === next.aN
+							&& curr.aD === next.aD
+							&& curr.aK.a === next.aK.a
 						)
 							? $elm$browser$Browser$Internal(next)
 							: $elm$browser$Browser$External(href)
@@ -4084,13 +4084,13 @@ function _Browser_application(impl)
 				}
 			});
 		},
-		a8: function(flags)
+		ba: function(flags)
 		{
-			return A3(impl.a8, flags, _Browser_getUrl(), key);
+			return A3(impl.ba, flags, _Browser_getUrl(), key);
 		},
-		bi: impl.bi,
-		bh: impl.bh,
-		bg: impl.bg
+		bk: impl.bk,
+		bj: impl.bj,
+		bi: impl.bi
 	});
 }
 
@@ -4156,17 +4156,17 @@ var _Browser_decodeEvent = F2(function(decoder, event)
 function _Browser_visibilityInfo()
 {
 	return (typeof _VirtualDom_doc.hidden !== 'undefined')
-		? { a6: 'hidden', a$: 'visibilitychange' }
+		? { a8: 'hidden', a0: 'visibilitychange' }
 		:
 	(typeof _VirtualDom_doc.mozHidden !== 'undefined')
-		? { a6: 'mozHidden', a$: 'mozvisibilitychange' }
+		? { a8: 'mozHidden', a0: 'mozvisibilitychange' }
 		:
 	(typeof _VirtualDom_doc.msHidden !== 'undefined')
-		? { a6: 'msHidden', a$: 'msvisibilitychange' }
+		? { a8: 'msHidden', a0: 'msvisibilitychange' }
 		:
 	(typeof _VirtualDom_doc.webkitHidden !== 'undefined')
-		? { a6: 'webkitHidden', a$: 'webkitvisibilitychange' }
-		: { a6: 'hidden', a$: 'visibilitychange' };
+		? { a8: 'webkitHidden', a0: 'webkitvisibilitychange' }
+		: { a8: 'hidden', a0: 'visibilitychange' };
 }
 
 
@@ -4247,12 +4247,12 @@ var _Browser_call = F2(function(functionName, id)
 function _Browser_getViewport()
 {
 	return {
-		aQ: _Browser_getScene(),
-		aV: {
-			aX: _Browser_window.pageXOffset,
-			aY: _Browser_window.pageYOffset,
-			aW: _Browser_doc.documentElement.clientWidth,
-			aB: _Browser_doc.documentElement.clientHeight
+		aR: _Browser_getScene(),
+		aW: {
+			aY: _Browser_window.pageXOffset,
+			aZ: _Browser_window.pageYOffset,
+			aX: _Browser_doc.documentElement.clientWidth,
+			aC: _Browser_doc.documentElement.clientHeight
 		}
 	};
 }
@@ -4262,8 +4262,8 @@ function _Browser_getScene()
 	var body = _Browser_doc.body;
 	var elem = _Browser_doc.documentElement;
 	return {
-		aW: Math.max(body.scrollWidth, body.offsetWidth, elem.scrollWidth, elem.offsetWidth, elem.clientWidth),
-		aB: Math.max(body.scrollHeight, body.offsetHeight, elem.scrollHeight, elem.offsetHeight, elem.clientHeight)
+		aX: Math.max(body.scrollWidth, body.offsetWidth, elem.scrollWidth, elem.offsetWidth, elem.clientWidth),
+		aC: Math.max(body.scrollHeight, body.offsetHeight, elem.scrollHeight, elem.offsetHeight, elem.clientHeight)
 	};
 }
 
@@ -4286,15 +4286,15 @@ function _Browser_getViewportOf(id)
 	return _Browser_withNode(id, function(node)
 	{
 		return {
-			aQ: {
-				aW: node.scrollWidth,
-				aB: node.scrollHeight
+			aR: {
+				aX: node.scrollWidth,
+				aC: node.scrollHeight
 			},
-			aV: {
-				aX: node.scrollLeft,
-				aY: node.scrollTop,
-				aW: node.clientWidth,
-				aB: node.clientHeight
+			aW: {
+				aY: node.scrollLeft,
+				aZ: node.scrollTop,
+				aX: node.clientWidth,
+				aC: node.clientHeight
 			}
 		};
 	});
@@ -4324,18 +4324,18 @@ function _Browser_getElement(id)
 		var x = _Browser_window.pageXOffset;
 		var y = _Browser_window.pageYOffset;
 		return {
-			aQ: _Browser_getScene(),
-			aV: {
-				aX: x,
-				aY: y,
-				aW: _Browser_doc.documentElement.clientWidth,
-				aB: _Browser_doc.documentElement.clientHeight
+			aR: _Browser_getScene(),
+			aW: {
+				aY: x,
+				aZ: y,
+				aX: _Browser_doc.documentElement.clientWidth,
+				aC: _Browser_doc.documentElement.clientHeight
 			},
-			a3: {
-				aX: x + rect.left,
-				aY: y + rect.top,
-				aW: rect.width,
-				aB: rect.height
+			a4: {
+				aY: x + rect.left,
+				aZ: y + rect.top,
+				aX: rect.width,
+				aC: rect.height
 			}
 		};
 	});
@@ -4874,7 +4874,7 @@ var $elm$url$Url$Http = 0;
 var $elm$url$Url$Https = 1;
 var $elm$url$Url$Url = F6(
 	function (protocol, host, port_, path, query, fragment) {
-		return {aA: fragment, aC: host, be: path, aJ: port_, aM: protocol, aN: query};
+		return {aB: fragment, aD: host, bg: path, aK: port_, aN: protocol, aO: query};
 	});
 var $elm$core$String$contains = _String_contains;
 var $elm$core$String$length = _String_length;
@@ -5155,7 +5155,7 @@ var $elm$core$Task$perform = F2(
 var $elm$browser$Browser$element = _Browser_element;
 var $author$project$Main$SetupPage = 0;
 var $elm$json$Json$Decode$decodeValue = _Json_run;
-var $author$project$Main$emptyStatus = {r: 'main', av: _List_Nil, ag: _List_Nil, V: _List_Nil, H: _List_Nil, aU: _List_Nil};
+var $author$project$Main$emptyStatus = {r: 'main', aw: _List_Nil, ag: _List_Nil, ak: _List_Nil, v: _List_Nil, aV: _List_Nil};
 var $elm$json$Json$Decode$field = _Json_decodeField;
 var $elm$core$Platform$Cmd$batch = _Platform_batch;
 var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
@@ -5178,7 +5178,7 @@ var $author$project$Main$init = function (flags) {
 			A2($elm$json$Json$Decode$field, 'serverUrl', $elm$json$Json$Decode$string),
 			flags));
 	return _Utils_Tuple2(
-		{ad: _List_Nil, B: '', af: false, s: '', o: false, w: $elm$core$Maybe$Nothing, i: '', a: false, b: $elm$core$Maybe$Nothing, K: _List_Nil, ah: '', U: _List_Nil, y: '', W: 0, E: _List_Nil, k: 0, L: '', ao: _List_Nil, M: serverUrl, N: false, O: false, P: false, X: _List_Nil, g: $author$project$Main$emptyStatus},
+		{ad: _List_Nil, D: '', af: false, s: '', o: false, y: $elm$core$Maybe$Nothing, i: '', a: false, b: $elm$core$Maybe$Nothing, K: _List_Nil, ah: '', V: _List_Nil, A: '', W: 0, F: _List_Nil, k: 0, L: '', ap: _List_Nil, M: serverUrl, N: false, O: false, P: false, al: _List_Nil, g: $author$project$Main$emptyStatus, Q: ''},
 		$elm$core$Platform$Cmd$none);
 };
 var $author$project$Main$GotAddResult = function (a) {
@@ -5297,7 +5297,7 @@ var $author$project$Ports$connectNotifications = _Platform_outgoingPort(
 var $author$project$Ports$createChannel = _Platform_outgoingPort('createChannel', $elm$json$Json$Encode$string);
 var $author$project$Main$ChannelInfo = F4(
 	function (name, changesetCount, head, isCurrent) {
-		return {a0: changesetCount, a5: head, a9: isCurrent, D: name};
+		return {a1: changesetCount, a7: head, bb: isCurrent, z: name};
 	});
 var $elm$json$Json$Decode$int = _Json_decodeInt;
 var $elm$json$Json$Decode$map4 = _Json_map4;
@@ -5323,7 +5323,7 @@ var $author$project$Main$decodeChannelInfo = A5(
 	A2($elm$json$Json$Decode$field, 'is_current', $elm$json$Json$Decode$bool));
 var $author$project$Main$HistoryEntry = F6(
 	function (changeId, commitHash, message, author, timestamp, channel) {
-		return {ac: author, at: changeId, r: channel, ae: commitHash, aj: message, aT: timestamp};
+		return {ac: author, au: changeId, r: channel, ae: commitHash, aj: message, aU: timestamp};
 	});
 var $elm$json$Json$Decode$list = _Json_decodeList;
 var $elm$json$Json$Decode$map6 = _Json_map6;
@@ -5342,7 +5342,7 @@ var $author$project$Main$decodeHistoryResponse = A2(
 			A2($elm$json$Json$Decode$field, 'channel', $elm$json$Json$Decode$string))));
 var $author$project$Main$LogEntry = F7(
 	function (changeId, commitHash, message, author, createdAt, patchCount, immutable) {
-		return {ac: author, at: changeId, ae: commitHash, aw: createdAt, aD: immutable, aj: message, aH: patchCount};
+		return {ac: author, au: changeId, ae: commitHash, ax: createdAt, aE: immutable, aj: message, aI: patchCount};
 	});
 var $elm$json$Json$Decode$map7 = _Json_map7;
 var $author$project$Main$decodeLogEntry = A8(
@@ -5357,7 +5357,7 @@ var $author$project$Main$decodeLogEntry = A8(
 	A2($elm$json$Json$Decode$field, 'immutable', $elm$json$Json$Decode$bool));
 var $author$project$Main$NotificationPayload = F3(
 	function (kind, title, body) {
-		return {S: body, x: kind, _: title};
+		return {T: body, t: kind, _: title};
 	});
 var $elm$json$Json$Decode$map3 = _Json_map3;
 var $author$project$Main$decodeNotificationPayload = A4(
@@ -5374,11 +5374,11 @@ var $author$project$Main$decodeNotificationPayload = A4(
 			])));
 var $author$project$Main$StatusInfo = F6(
 	function (channel, staged, modified, deleted, unstagedOnStaged, conflicts) {
-		return {r: channel, av: conflicts, ag: deleted, V: modified, H: staged, aU: unstagedOnStaged};
+		return {r: channel, aw: conflicts, ag: deleted, ak: modified, v: staged, aV: unstagedOnStaged};
 	});
 var $author$project$Main$StagedFile = F3(
 	function (resourceId, ops, kind) {
-		return {x: kind, bd: ops, an: resourceId};
+		return {t: kind, bf: ops, X: resourceId};
 	});
 var $author$project$Main$decodeStagedFile = A4(
 	$elm$json$Json$Decode$map3,
@@ -5425,6 +5425,11 @@ var $elm$core$List$filter = F2(
 			list);
 	});
 var $author$project$Ports$initRepo = _Platform_outgoingPort('initRepo', $elm$json$Json$Encode$string);
+var $author$project$Ports$listFiles = _Platform_outgoingPort(
+	'listFiles',
+	function ($) {
+		return $elm$json$Json$Encode$null;
+	});
 var $author$project$Ports$listSnapshots = _Platform_outgoingPort(
 	'listSnapshots',
 	function ($) {
@@ -5457,6 +5462,33 @@ var $author$project$Ports$requestStatus = _Platform_outgoingPort(
 	'requestStatus',
 	function ($) {
 		return $elm$json$Json$Encode$null;
+	});
+var $elm$json$Json$Encode$object = function (pairs) {
+	return _Json_wrap(
+		A3(
+			$elm$core$List$foldl,
+			F2(
+				function (_v0, obj) {
+					var k = _v0.a;
+					var v = _v0.b;
+					return A3(_Json_addField, k, v, obj);
+				}),
+			_Json_emptyObject(0),
+			pairs));
+};
+var $author$project$Ports$setUser = _Platform_outgoingPort(
+	'setUser',
+	function ($) {
+		return $elm$json$Json$Encode$object(
+			_List_fromArray(
+				[
+					_Utils_Tuple2(
+					'email',
+					$elm$json$Json$Encode$string($.a5)),
+					_Utils_Tuple2(
+					'name',
+					$elm$json$Json$Encode$string($.z))
+				]));
 	});
 var $author$project$Ports$switchChannel = _Platform_outgoingPort('switchChannel', $elm$json$Json$Encode$string);
 var $elm$core$List$takeReverse = F3(
@@ -5585,19 +5617,6 @@ var $elm$core$List$take = F2(
 	function (n, list) {
 		return A3($elm$core$List$takeFast, 0, n, list);
 	});
-var $elm$json$Json$Encode$object = function (pairs) {
-	return _Json_wrap(
-		A3(
-			$elm$core$List$foldl,
-			F2(
-				function (_v0, obj) {
-					var k = _v0.a;
-					var v = _v0.b;
-					return A3(_Json_addField, k, v, obj);
-				}),
-			_Json_emptyObject(0),
-			pairs));
-};
 var $author$project$Ports$writeFile = _Platform_outgoingPort(
 	'writeFile',
 	function ($) {
@@ -5606,10 +5625,10 @@ var $author$project$Ports$writeFile = _Platform_outgoingPort(
 				[
 					_Utils_Tuple2(
 					'content',
-					$elm$json$Json$Encode$string($.a1)),
+					$elm$json$Json$Encode$string($.a2)),
 					_Utils_Tuple2(
 					'path',
-					$elm$json$Json$Encode$string($.be))
+					$elm$json$Json$Encode$string($.bg))
 				]));
 	});
 var $author$project$Main$update = F2(
@@ -5626,6 +5645,7 @@ var $author$project$Main$update = F2(
 								_List_fromArray(
 									[
 										$author$project$Ports$listSnapshots(0),
+										$author$project$Ports$listFiles(0),
 										$author$project$Ports$requestStatus(0),
 										$author$project$Ports$requestChannels(0)
 									]));
@@ -5732,6 +5752,7 @@ var $author$project$Main$update = F2(
 						_List_fromArray(
 							[
 								$author$project$Ports$listSnapshots(0),
+								$author$project$Ports$listFiles(0),
 								$author$project$Ports$requestStatus(0),
 								$author$project$Ports$requestChannels(0)
 							])));
@@ -5746,7 +5767,7 @@ var $author$project$Main$update = F2(
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{ao: files}),
+							{ap: files}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
@@ -5762,7 +5783,7 @@ var $author$project$Main$update = F2(
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{X: ids}),
+							{al: ids}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
@@ -5801,13 +5822,13 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{s: '', o: false, w: $elm$core$Maybe$Nothing, i: resourceId, k: 2}),
+						{s: '', o: false, y: $elm$core$Maybe$Nothing, i: resourceId, k: 2}),
 					$author$project$Ports$readFile(resourceId));
 			case 12:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{s: '{\n  \n}', o: true, w: $elm$core$Maybe$Nothing, i: '', k: 2}),
+						{s: '{\n  \n}', o: true, y: $elm$core$Maybe$Nothing, i: '', k: 2}),
 					$elm$core$Platform$Cmd$none);
 			case 13:
 				var rid = msg.a;
@@ -5831,7 +5852,7 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{s: content, w: jsonError}),
+						{s: content, y: jsonError}),
 					$elm$core$Platform$Cmd$none);
 			case 15:
 				if ($elm$core$String$isEmpty(model.i)) {
@@ -5844,7 +5865,7 @@ var $author$project$Main$update = F2(
 							}),
 						$elm$core$Platform$Cmd$none);
 				} else {
-					var _v9 = model.w;
+					var _v9 = model.y;
 					if (!_v9.$) {
 						return _Utils_Tuple2(
 							_Utils_update(
@@ -5859,7 +5880,7 @@ var $author$project$Main$update = F2(
 						return _Utils_Tuple2(
 							model,
 							$author$project$Ports$writeFile(
-								{a1: model.s, be: path}));
+								{a2: model.s, bg: path}));
 					}
 				}
 			case 16:
@@ -5991,7 +6012,7 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{B: '', N: true}),
+						{D: '', N: true}),
 					$elm$core$Platform$Cmd$none);
 			case 24:
 				return _Utils_Tuple2(
@@ -6004,14 +6025,14 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{B: m}),
+						{D: m}),
 					$elm$core$Platform$Cmd$none);
 			case 26:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
 						{N: false}),
-					$author$project$Ports$commitChanges(model.B));
+					$author$project$Ports$commitChanges(model.D));
 			case 27:
 				var val = msg.a;
 				var _v14 = A2(
@@ -6130,7 +6151,7 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{y: '', O: true}),
+						{A: '', O: true}),
 					$elm$core$Platform$Cmd$none);
 			case 36:
 				return _Utils_Tuple2(
@@ -6143,14 +6164,14 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{y: n}),
+						{A: n}),
 					$elm$core$Platform$Cmd$none);
 			case 38:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
 						{O: false}),
-					$author$project$Ports$createChannel(model.y));
+					$author$project$Ports$createChannel(model.A));
 			case 39:
 				var val = msg.a;
 				var _v17 = A2(
@@ -6169,7 +6190,7 @@ var $author$project$Main$update = F2(
 							_List_fromArray(
 								[
 									$author$project$Ports$requestChannels(0),
-									$author$project$Ports$switchChannel(model.y)
+									$author$project$Ports$switchChannel(model.A)
 								])));
 				} else {
 					return _Utils_Tuple2(
@@ -6252,7 +6273,7 @@ var $author$project$Main$update = F2(
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{U: entries}),
+							{V: entries}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
@@ -6262,16 +6283,16 @@ var $author$project$Main$update = F2(
 				var _v21 = A2($elm$json$Json$Decode$decodeString, $author$project$Main$decodeNotificationPayload, json);
 				if (!_v21.$) {
 					var notif = _v21.a;
-					var newNotif = {S: notif.S, ai: model.W, x: notif.x, _: notif._};
+					var newNotif = {T: notif.T, ai: model.W, t: notif.t, _: notif._};
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
 								W: model.W + 1,
-								E: A2(
+								F: A2(
 									$elm$core$List$cons,
 									newNotif,
-									A2($elm$core$List$take, 4, model.E))
+									A2($elm$core$List$take, 4, model.F))
 							}),
 						$elm$core$Platform$Cmd$none);
 				} else {
@@ -6283,15 +6304,23 @@ var $author$project$Main$update = F2(
 					_Utils_update(
 						model,
 						{
-							E: A2(
+							F: A2(
 								$elm$core$List$filter,
 								function (n) {
 									return !_Utils_eq(n.ai, nid);
 								},
-								model.E)
+								model.F)
 						}),
 					$elm$core$Platform$Cmd$none);
 			case 48:
+				var uid = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{Q: uid}),
+					$elm$core$String$isEmpty(uid) ? $elm$core$Platform$Cmd$none : $author$project$Ports$setUser(
+						{a5: uid + '@dyna', z: uid}));
+			case 49:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
@@ -6314,9 +6343,12 @@ var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
 var $author$project$Main$DoCommit = {$: 26};
 var $author$project$Main$HideCommitDialog = {$: 24};
-var $author$project$Main$NoOp = {$: 49};
+var $author$project$Main$NoOp = {$: 50};
 var $author$project$Main$UpdateCommitMessage = function (a) {
 	return {$: 25, a: a};
+};
+var $author$project$Main$UpdateUserId = function (a) {
+	return {$: 48, a: a};
 };
 var $elm$html$Html$button = _VirtualDom_node('button');
 var $elm$json$Json$Encode$bool = _Json_wrap;
@@ -6331,6 +6363,7 @@ var $elm$html$Html$Attributes$disabled = $elm$html$Html$Attributes$boolProperty(
 var $elm$html$Html$h3 = _VirtualDom_node('h3');
 var $elm$html$Html$input = _VirtualDom_node('input');
 var $elm$html$Html$label = _VirtualDom_node('label');
+var $elm$core$Basics$not = _Basics_not;
 var $elm$virtual_dom$VirtualDom$Normal = function (a) {
 	return {$: 0, a: a};
 };
@@ -6427,6 +6460,33 @@ var $author$project$Main$viewCommitDialog = function (model) {
 								_List_Nil,
 								_List_fromArray(
 									[
+										$elm$html$Html$text('User ID')
+									])),
+								A2(
+								$elm$html$Html$input,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$type_('text'),
+										$elm$html$Html$Attributes$value(model.Q),
+										$elm$html$Html$Events$onInput($author$project$Main$UpdateUserId),
+										$elm$html$Html$Attributes$placeholder('e.g. alice, bob'),
+										A2($elm$html$Html$Attributes$style, 'font-family', 'var(--font-mono)')
+									]),
+								_List_Nil)
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('form-group')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$label,
+								_List_Nil,
+								_List_fromArray(
+									[
 										$elm$html$Html$text('Commit Message')
 									])),
 								A2(
@@ -6434,7 +6494,7 @@ var $author$project$Main$viewCommitDialog = function (model) {
 								_List_fromArray(
 									[
 										$elm$html$Html$Attributes$type_('text'),
-										$elm$html$Html$Attributes$value(model.B),
+										$elm$html$Html$Attributes$value(model.D),
 										$elm$html$Html$Events$onInput($author$project$Main$UpdateCommitMessage),
 										$elm$html$Html$Attributes$placeholder('Describe your changes...')
 									]),
@@ -6452,7 +6512,8 @@ var $author$project$Main$viewCommitDialog = function (model) {
 							[
 								$elm$html$Html$text(
 								$elm$core$String$fromInt(
-									$elm$core$List$length(model.g.H)) + ' staged change(s)')
+									$elm$core$List$length(model.g.v)) + ' staged change(s)'),
+								(!$elm$core$String$isEmpty(model.Q)) ? $elm$html$Html$text(' · Author: ' + model.Q) : $elm$html$Html$text(' · Author: unknown')
 							])),
 						A2(
 						$elm$html$Html$div,
@@ -6480,7 +6541,7 @@ var $author$project$Main$viewCommitDialog = function (model) {
 										$elm$html$Html$Attributes$class('btn btn-primary'),
 										$elm$html$Html$Events$onClick($author$project$Main$DoCommit),
 										$elm$html$Html$Attributes$disabled(
-										$elm$core$String$isEmpty(model.B))
+										$elm$core$String$isEmpty(model.D))
 									]),
 								_List_fromArray(
 									[
@@ -6558,7 +6619,7 @@ var $author$project$Main$viewNewChannelDialog = function (model) {
 								_List_fromArray(
 									[
 										$elm$html$Html$Attributes$type_('text'),
-										$elm$html$Html$Attributes$value(model.y),
+										$elm$html$Html$Attributes$value(model.A),
 										$elm$html$Html$Events$onInput($author$project$Main$UpdateNewChannelName),
 										$elm$html$Html$Attributes$placeholder('feature/user-schema')
 									]),
@@ -6590,7 +6651,7 @@ var $author$project$Main$viewNewChannelDialog = function (model) {
 										$elm$html$Html$Attributes$class('btn btn-primary'),
 										$elm$html$Html$Events$onClick($author$project$Main$DoCreateChannel),
 										$elm$html$Html$Attributes$disabled(
-										$elm$core$String$isEmpty(model.y))
+										$elm$core$String$isEmpty(model.A))
 									]),
 								_List_fromArray(
 									[
@@ -6706,7 +6767,6 @@ var $author$project$Main$UpdateResourceId = function (a) {
 	return {$: 13, a: a};
 };
 var $elm$html$Html$h2 = _VirtualDom_node('h2');
-var $elm$core$Basics$not = _Basics_not;
 var $elm$html$Html$span = _VirtualDom_node('span');
 var $elm$html$Html$textarea = _VirtualDom_node('textarea');
 var $author$project$Main$viewEditor = function (model) {
@@ -6843,7 +6903,7 @@ var $author$project$Main$viewEditor = function (model) {
 													]),
 												_List_Nil),
 												function () {
-												var _v0 = model.w;
+												var _v0 = model.y;
 												if (!_v0.$) {
 													var err = _v0.a;
 													return A2(
@@ -6879,7 +6939,7 @@ var $author$project$Main$viewEditor = function (model) {
 												$elm$html$Html$Attributes$class('btn btn-primary'),
 												$elm$html$Html$Events$onClick($author$project$Main$SaveResource),
 												$elm$html$Html$Attributes$disabled(
-												(!_Utils_eq(model.w, $elm$core$Maybe$Nothing)) || $elm$core$String$isEmpty(model.i))
+												(!_Utils_eq(model.y, $elm$core$Maybe$Nothing)) || $elm$core$String$isEmpty(model.i))
 											]),
 										_List_fromArray(
 											[
@@ -6941,7 +7001,7 @@ var $author$project$Main$viewEditor = function (model) {
 					]))
 			]));
 };
-var $author$project$Main$DismissFlash = {$: 48};
+var $author$project$Main$DismissFlash = {$: 49};
 var $author$project$Main$viewFlash = function (model) {
 	var _v0 = model.b;
 	if (!_v0.$) {
@@ -7033,7 +7093,7 @@ var $author$project$Main$viewHeader = function (model) {
 								$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
 								$elm$html$Html$Events$onClick($author$project$Main$ShowCommitDialog),
 								$elm$html$Html$Attributes$disabled(
-								$elm$core$List$isEmpty(model.g.H))
+								$elm$core$List$isEmpty(model.g.v))
 							]),
 						_List_fromArray(
 							[
@@ -7123,7 +7183,7 @@ var $author$project$Main$viewHistoryEntry = function (entry) {
 				_List_fromArray(
 					[
 						$elm$html$Html$text(
-						entry.ac + (' · ' + A2($elm$core$String$left, 19, entry.aT)))
+						entry.ac + (' · ' + A2($elm$core$String$left, 19, entry.aU)))
 					]))
 			]));
 };
@@ -7239,7 +7299,7 @@ var $author$project$Main$viewLogEntry = function (entry) {
 								$elm$html$Html$text(
 								A2($elm$core$String$left, 8, entry.ae))
 							])),
-						entry.aD ? A2(
+						entry.aE ? A2(
 						$elm$html$Html$span,
 						_List_fromArray(
 							[
@@ -7259,7 +7319,7 @@ var $author$project$Main$viewLogEntry = function (entry) {
 						_List_fromArray(
 							[
 								$elm$html$Html$text(
-								$elm$core$String$fromInt(entry.aH) + ' patch(es)')
+								$elm$core$String$fromInt(entry.aI) + ' patch(es)')
 							]))
 					])),
 				A2(
@@ -7281,7 +7341,7 @@ var $author$project$Main$viewLogEntry = function (entry) {
 				_List_fromArray(
 					[
 						$elm$html$Html$text(
-						entry.ac + (' · ' + A2($elm$core$String$left, 19, entry.aw)))
+						entry.ac + (' · ' + A2($elm$core$String$left, 19, entry.ax)))
 					]))
 			]));
 };
@@ -7334,7 +7394,7 @@ var $author$project$Main$viewLog = function (model) {
 							]),
 						_List_fromArray(
 							[
-								$elm$core$List$isEmpty(model.U) ? A2(
+								$elm$core$List$isEmpty(model.V) ? A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -7362,7 +7422,7 @@ var $author$project$Main$viewLog = function (model) {
 									[
 										$elm$html$Html$Attributes$class('timeline')
 									]),
-								A2($elm$core$List$map, $author$project$Main$viewLogEntry, model.U))
+								A2($elm$core$List$map, $author$project$Main$viewLogEntry, model.V))
 							]))
 					]))
 			]));
@@ -7375,7 +7435,7 @@ var $author$project$Main$viewNotificationToast = function (notif) {
 		$elm$html$Html$div,
 		_List_fromArray(
 			[
-				$elm$html$Html$Attributes$class('notification-toast ' + notif.x),
+				$elm$html$Html$Attributes$class('notification-toast ' + notif.t),
 				$elm$html$Html$Events$onClick(
 				$author$project$Main$DismissNotification(notif.ai))
 			]),
@@ -7399,7 +7459,7 @@ var $author$project$Main$viewNotificationToast = function (notif) {
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(notif.S)
+						$elm$html$Html$text(notif.T)
 					]))
 			]));
 };
@@ -7410,10 +7470,40 @@ var $author$project$Main$viewNotifications = function (model) {
 			[
 				$elm$html$Html$Attributes$class('notifications')
 			]),
-		A2($elm$core$List$map, $author$project$Main$viewNotificationToast, model.E));
+		A2($elm$core$List$map, $author$project$Main$viewNotificationToast, model.F));
 };
 var $author$project$Main$OpenNewResource = {$: 12};
 var $author$project$Main$RefreshAll = {$: 6};
+var $elm$core$List$any = F2(
+	function (isOkay, list) {
+		any:
+		while (true) {
+			if (!list.b) {
+				return false;
+			} else {
+				var x = list.a;
+				var xs = list.b;
+				if (isOkay(x)) {
+					return true;
+				} else {
+					var $temp$isOkay = isOkay,
+						$temp$list = xs;
+					isOkay = $temp$isOkay;
+					list = $temp$list;
+					continue any;
+				}
+			}
+		}
+	});
+var $elm$core$List$member = F2(
+	function (x, xs) {
+		return A2(
+			$elm$core$List$any,
+			function (a) {
+				return _Utils_eq(a, x);
+			},
+			xs);
+	});
 var $elm$html$Html$ul = _VirtualDom_node('ul');
 var $author$project$Main$StageDelete = {$: 18};
 var $elm$html$Html$li = _VirtualDom_node('li');
@@ -7461,87 +7551,46 @@ var $author$project$Main$viewDeletedItem = function (resourceId) {
 var $author$project$Main$OpenResource = function (a) {
 	return {$: 11, a: a};
 };
-var $author$project$Main$viewModifiedItem = function (resourceId) {
-	return A2(
-		$elm$html$Html$li,
-		_List_fromArray(
-			[
-				$elm$html$Html$Attributes$class('resource-item')
-			]),
-		_List_fromArray(
-			[
-				A2(
-				$elm$html$Html$span,
-				_List_fromArray(
-					[
-						$elm$html$Html$Attributes$class('resource-id')
-					]),
-				_List_fromArray(
-					[
-						$elm$html$Html$text(resourceId)
-					])),
-				A2(
-				$elm$html$Html$div,
-				_List_fromArray(
-					[
-						$elm$html$Html$Attributes$class('resource-actions')
-					]),
-				_List_fromArray(
-					[
-						A2(
-						$elm$html$Html$button,
-						_List_fromArray(
-							[
-								$elm$html$Html$Attributes$class('btn btn-sm btn-primary'),
-								$elm$html$Html$Events$onClick(
-								$author$project$Main$OpenResource(resourceId))
-							]),
-						_List_fromArray(
-							[
-								$elm$html$Html$text('Edit & Stage')
-							]))
-					]))
-			]));
+var $elm$core$List$head = function (list) {
+	if (list.b) {
+		var x = list.a;
+		var xs = list.b;
+		return $elm$core$Maybe$Just(x);
+	} else {
+		return $elm$core$Maybe$Nothing;
+	}
 };
-var $elm$core$List$any = F2(
-	function (isOkay, list) {
-		any:
-		while (true) {
-			if (!list.b) {
-				return false;
-			} else {
-				var x = list.a;
-				var xs = list.b;
-				if (isOkay(x)) {
-					return true;
-				} else {
-					var $temp$isOkay = isOkay,
-						$temp$list = xs;
-					isOkay = $temp$isOkay;
-					list = $temp$list;
-					continue any;
-				}
-			}
+var $elm$core$Maybe$map = F2(
+	function (f, maybe) {
+		if (!maybe.$) {
+			var value = maybe.a;
+			return $elm$core$Maybe$Just(
+				f(value));
+		} else {
+			return $elm$core$Maybe$Nothing;
 		}
-	});
-var $elm$core$List$member = F2(
-	function (x, xs) {
-		return A2(
-			$elm$core$List$any,
-			function (a) {
-				return _Utils_eq(a, x);
-			},
-			xs);
 	});
 var $author$project$Main$viewResourceItem = F2(
 	function (status, resourceId) {
+		var stagedKind = A2(
+			$elm$core$Maybe$map,
+			function ($) {
+				return $.t;
+			},
+			$elm$core$List$head(
+				A2(
+					$elm$core$List$filter,
+					function (s) {
+						return _Utils_eq(s.X, resourceId);
+					},
+					status.v)));
 		var isStaged = A2(
 			$elm$core$List$any,
 			function (s) {
-				return _Utils_eq(s.an, resourceId);
+				return _Utils_eq(s.X, resourceId);
 			},
-			status.H);
-		var isModified = A2($elm$core$List$member, resourceId, status.V);
+			status.v);
+		var isModified = A2($elm$core$List$member, resourceId, status.ak);
 		return A2(
 			$elm$html$Html$li,
 			_List_fromArray(
@@ -7569,7 +7618,26 @@ var $author$project$Main$viewResourceItem = F2(
 							$elm$html$Html$span,
 							_List_fromArray(
 								[
-									$elm$html$Html$Attributes$class('badge badge-staged'),
+									$elm$html$Html$Attributes$class('badge'),
+									$elm$html$Html$Attributes$class(
+									function () {
+										_v0$2:
+										while (true) {
+											if (!stagedKind.$) {
+												switch (stagedKind.a) {
+													case 'new':
+														return 'badge-new';
+													case 'deleted':
+														return 'badge-deleted';
+													default:
+														break _v0$2;
+												}
+											} else {
+												break _v0$2;
+											}
+										}
+										return 'badge-staged';
+									}()),
 									A2($elm$html$Html$Attributes$style, 'margin-left', '8px')
 								]),
 							_List_fromArray(
@@ -7623,6 +7691,25 @@ var $author$project$Main$viewResourceItem = F2(
 				]));
 	});
 var $author$project$Main$viewResources = function (model) {
+	var stagedIds = A2(
+		$elm$core$List$map,
+		function ($) {
+			return $.X;
+		},
+		model.g.v);
+	var snapshotIds = model.al;
+	var modifiedIds = model.g.ak;
+	var allIds = A3(
+		$elm$core$List$foldl,
+		F2(
+			function (rid, acc) {
+				return A2($elm$core$List$member, rid, acc) ? acc : _Utils_ap(
+					acc,
+					_List_fromArray(
+						[rid]));
+			}),
+		snapshotIds,
+		_Utils_ap(stagedIds, modifiedIds));
 	return A2(
 		$elm$html$Html$div,
 		_List_Nil,
@@ -7692,7 +7779,7 @@ var $author$project$Main$viewResources = function (model) {
 							]),
 						_List_fromArray(
 							[
-								$elm$core$List$isEmpty(model.X) ? A2(
+								$elm$core$List$isEmpty(allIds) ? A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -7723,50 +7810,9 @@ var $author$project$Main$viewResources = function (model) {
 								A2(
 									$elm$core$List$map,
 									$author$project$Main$viewResourceItem(model.g),
-									model.X))
+									allIds))
 							]))
 					])),
-				(!$elm$core$List$isEmpty(model.g.V)) ? A2(
-				$elm$html$Html$div,
-				_List_fromArray(
-					[
-						$elm$html$Html$Attributes$class('panel')
-					]),
-				_List_fromArray(
-					[
-						A2(
-						$elm$html$Html$div,
-						_List_fromArray(
-							[
-								$elm$html$Html$Attributes$class('panel-header')
-							]),
-						_List_fromArray(
-							[
-								A2(
-								$elm$html$Html$h2,
-								_List_Nil,
-								_List_fromArray(
-									[
-										$elm$html$Html$text('Modified (unstaged)')
-									]))
-							])),
-						A2(
-						$elm$html$Html$div,
-						_List_fromArray(
-							[
-								$elm$html$Html$Attributes$class('panel-body')
-							]),
-						_List_fromArray(
-							[
-								A2(
-								$elm$html$Html$ul,
-								_List_fromArray(
-									[
-										$elm$html$Html$Attributes$class('resource-list')
-									]),
-								A2($elm$core$List$map, $author$project$Main$viewModifiedItem, model.g.V))
-							]))
-					])) : $elm$html$Html$text(''),
 				(!$elm$core$List$isEmpty(model.g.ag)) ? A2(
 				$elm$html$Html$div,
 				_List_fromArray(
@@ -7821,9 +7867,9 @@ var $author$project$Main$viewChannelItem = F2(
 			_List_fromArray(
 				[
 					$elm$html$Html$Attributes$class(
-					_Utils_eq(ch.D, currentChannel) ? 'sidebar-item active' : 'sidebar-item'),
+					_Utils_eq(ch.z, currentChannel) ? 'sidebar-item active' : 'sidebar-item'),
 					$elm$html$Html$Events$onClick(
-					$author$project$Main$DoSwitchChannel(ch.D))
+					$author$project$Main$DoSwitchChannel(ch.z))
 				]),
 			_List_fromArray(
 				[
@@ -7833,11 +7879,11 @@ var $author$project$Main$viewChannelItem = F2(
 						[
 							$elm$html$Html$Attributes$class('dot'),
 							$elm$html$Html$Attributes$class(
-							(ch.D === 'main') ? 'main' : (_Utils_eq(ch.D, currentChannel) ? 'current' : 'branch'))
+							(ch.z === 'main') ? 'main' : (_Utils_eq(ch.z, currentChannel) ? 'current' : 'branch'))
 						]),
 					_List_Nil),
-					$elm$html$Html$text(ch.D),
-					_Utils_eq(ch.D, currentChannel) ? A2(
+					$elm$html$Html$text(ch.z),
+					_Utils_eq(ch.z, currentChannel) ? A2(
 					$elm$html$Html$span,
 					_List_fromArray(
 						[
@@ -7874,7 +7920,7 @@ var $author$project$Main$viewStagedItem = function (sf) {
 						$elm$html$Html$Attributes$class('badge'),
 						$elm$html$Html$Attributes$class(
 						function () {
-							var _v0 = sf.x;
+							var _v0 = sf.t;
 							switch (_v0) {
 								case 'new':
 									return 'badge-new';
@@ -7887,7 +7933,7 @@ var $author$project$Main$viewStagedItem = function (sf) {
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(sf.x)
+						$elm$html$Html$text(sf.t)
 					])),
 				A2(
 				$elm$html$Html$span,
@@ -7899,7 +7945,7 @@ var $author$project$Main$viewStagedItem = function (sf) {
 				_List_fromArray(
 					[
 						$elm$html$Html$text(
-						A2($author$project$Main$truncateId, sf.an, 24))
+						A2($author$project$Main$truncateId, sf.X, 24))
 					]))
 			]));
 };
@@ -8012,7 +8058,7 @@ var $author$project$Main$viewSidebar = function (model) {
 							[
 								$elm$html$Html$text('Staged Changes')
 							])),
-						$elm$core$List$isEmpty(model.g.H) ? A2(
+						$elm$core$List$isEmpty(model.g.v) ? A2(
 						$elm$html$Html$div,
 						_List_fromArray(
 							[
@@ -8026,7 +8072,7 @@ var $author$project$Main$viewSidebar = function (model) {
 							])) : A2(
 						$elm$html$Html$div,
 						_List_Nil,
-						A2($elm$core$List$map, $author$project$Main$viewStagedItem, model.g.H))
+						A2($elm$core$List$map, $author$project$Main$viewStagedItem, model.g.v))
 					]))
 			]));
 };
@@ -8186,5 +8232,5 @@ var $author$project$Main$view = function (model) {
 	}
 };
 var $author$project$Main$main = $elm$browser$Browser$element(
-	{a8: $author$project$Main$init, bg: $author$project$Main$subscriptions, bh: $author$project$Main$update, bi: $author$project$Main$view});
+	{ba: $author$project$Main$init, bi: $author$project$Main$subscriptions, bj: $author$project$Main$update, bk: $author$project$Main$view});
 _Platform_export({'Main':{'init':$author$project$Main$main($elm$json$Json$Decode$value)(0)}});}(this));
