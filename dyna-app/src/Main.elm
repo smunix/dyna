@@ -77,11 +77,23 @@ type alias HistoryEntry =
     }
 
 
+type alias ChangesetSummary =
+    { changeId : String
+    , message : String
+    , author : String
+    , patchCount : Int
+    , affectedResources : List String
+    }
+
+
 type alias Notification =
     { kind : String
+    , channel : String
     , title : String
     , body : String
+    , changesets : List ChangesetSummary
     , id : Int
+    , dismissed : Bool
     }
 
 
@@ -313,6 +325,8 @@ type Msg
       -- Notifications
     | GotNotification String
     | DismissNotification Int
+    | PullNotifChannel String
+    | ImportNotifChangeset String String
       -- User
     | UpdateUserId String
       -- Flash
@@ -849,18 +863,10 @@ update msg model =
 
         -- Notifications
         GotNotification json ->
-            case Decode.decodeString decodeNotificationPayload json of
+            case Decode.decodeString decodeServerNotification json of
                 Ok notif ->
-                    let
-                        newNotif =
-                            { kind = notif.kind
-                            , title = notif.title
-                            , body = notif.body
-                            , id = model.nextNotifId
-                            }
-                    in
                     ( { model
-                        | notifications = newNotif :: List.take 4 model.notifications
+                        | notifications = notif model.nextNotifId :: List.take 9 model.notifications
                         , nextNotifId = model.nextNotifId + 1
                       }
                     , Cmd.none
@@ -871,6 +877,24 @@ update msg model =
 
         DismissNotification nid ->
             ( { model | notifications = List.filter (\n -> n.id /= nid) model.notifications }, Cmd.none )
+
+        PullNotifChannel channel ->
+            -- Navigate to Import page with the channel pre-selected
+            ( { model
+                | page = ImportPage
+                , importSourceChannel = channel
+                , importChannelResources = []
+                , importChannelLog = []
+              }
+            , Cmd.batch
+                [ Ports.requestChannels ()
+                , Ports.listChannelResources channel
+                , Ports.logForChannel channel
+                ]
+            )
+
+        ImportNotifChangeset changeId channel ->
+            ( model, Ports.cherryPick changeId )
 
         UpdateUserId uid ->
             ( { model | userId = uid }
@@ -976,21 +1000,100 @@ decodeChangesetDetail =
         )
 
 
-type alias NotificationPayload =
-    { kind : String, title : String, body : String }
+decodeChangesetSummary : Decode.Decoder ChangesetSummary
+decodeChangesetSummary =
+    Decode.map5 ChangesetSummary
+        (Decode.field "change_id" Decode.string)
+        (Decode.field "message" Decode.string)
+        (Decode.field "author" Decode.string)
+        (Decode.field "patch_count" Decode.int)
+        (Decode.field "affected_resources" (Decode.list Decode.string))
 
 
-decodeNotificationPayload : Decode.Decoder NotificationPayload
-decodeNotificationPayload =
-    Decode.map3 NotificationPayload
-        (Decode.field "event_type" Decode.string)
-        (Decode.field "event_type" Decode.string)
-        (Decode.oneOf
-            [ Decode.field "message" Decode.string
-            , Decode.field "details" Decode.string
-            , Decode.succeed "New event"
-            ]
-        )
+{-| Decode a server notification into a function that takes an ID and returns a Notification.
+
+Handles both "push" and "promotion" notification kinds from the server.
+-}
+decodeServerNotification : Decode.Decoder (Int -> Notification)
+decodeServerNotification =
+    Decode.oneOf
+        [ -- Push notification
+          Decode.map4
+            (\kind channel changesets timestamp id ->
+                let
+                    authorList =
+                        changesets
+                            |> List.map .author
+                            |> List.filter (\a -> a /= "")
+                            |> unique
+
+                    authorStr =
+                        if List.isEmpty authorList then
+                            "someone"
+                        else
+                            String.join ", " authorList
+
+                    title =
+                        "Push to " ++ channel
+
+                    body =
+                        authorStr
+                            ++ " pushed "
+                            ++ String.fromInt (List.length changesets)
+                            ++ " changeset(s)"
+                in
+                { kind = kind
+                , channel = channel
+                , title = title
+                , body = body
+                , changesets = changesets
+                , id = id
+                , dismissed = False
+                }
+            )
+            (Decode.field "kind" Decode.string)
+            (Decode.at [ "payload", "channel" ] Decode.string)
+            (Decode.at [ "payload", "changesets" ] (Decode.list decodeChangesetSummary))
+            (Decode.field "timestamp" Decode.string)
+        , -- Promotion notification
+          Decode.map4
+            (\kind sourceChannel targetChannel changesets id ->
+                let
+                    title =
+                        "Promotion: " ++ sourceChannel ++ " \u{2192} " ++ targetChannel
+
+                    body =
+                        String.fromInt (List.length changesets)
+                            ++ " changeset(s) promoted"
+                in
+                { kind = kind
+                , channel = targetChannel
+                , title = title
+                , body = body
+                , changesets = changesets
+                , id = id
+                , dismissed = False
+                }
+            )
+            (Decode.field "kind" Decode.string)
+            (Decode.at [ "payload", "source_channel" ] Decode.string)
+            (Decode.at [ "payload", "target_channel" ] Decode.string)
+            (Decode.at [ "payload", "promoted_changesets" ] (Decode.list decodeChangesetSummary))
+        , -- Fallback: generic notification
+          Decode.map2
+            (\kind timestamp id ->
+                { kind = kind
+                , channel = ""
+                , title = kind
+                , body = "New event at " ++ String.left 19 timestamp
+                , changesets = []
+                , id = id
+                , dismissed = False
+                }
+            )
+            (Decode.field "kind" Decode.string)
+            (Decode.field "timestamp" Decode.string)
+        ]
 
 
 
@@ -1667,18 +1770,74 @@ viewPatchItem changeId patch =
 
 viewNotifications : Model -> Html Msg
 viewNotifications model =
-    div [ class "notifications" ]
-        (List.map viewNotificationToast model.notifications)
+    if List.isEmpty model.notifications then
+        text ""
+    else
+        div [ class "notifications" ]
+            (List.map viewNotificationToast model.notifications)
 
 
 viewNotificationToast : Notification -> Html Msg
 viewNotificationToast notif =
     div
-        [ class ("notification-toast " ++ notif.kind)
-        , onClick (DismissNotification notif.id)
+        [ class ("notification-toast " ++ notif.kind) ]
+        [ div [ style "display" "flex", style "justify-content" "space-between", style "align-items" "flex-start" ]
+            [ div []
+                [ div [ class "toast-title" ] [ text notif.title ]
+                , div [ class "toast-body" ] [ text notif.body ]
+                ]
+            , span
+                [ style "cursor" "pointer"
+                , style "opacity" "0.6"
+                , style "font-size" "16px"
+                , style "padding" "0 4px"
+                , onClick (DismissNotification notif.id)
+                ]
+                [ text "\u{2715}" ]
+            ]
+        , if not (List.isEmpty notif.changesets) then
+            div [ style "margin-top" "8px", style "font-size" "11px" ]
+                (List.map (viewNotifChangeset notif.channel) notif.changesets)
+          else
+            text ""
+        , div [ style "margin-top" "8px", style "display" "flex", style "gap" "6px" ]
+            [ if not (String.isEmpty notif.channel) then
+                button
+                    [ class "btn btn-sm btn-primary"
+                    , onClick (PullNotifChannel notif.channel)
+                    ]
+                    [ text ("Import from " ++ notif.channel) ]
+              else
+                text ""
+            ]
         ]
-        [ div [ class "toast-title" ] [ text notif.title ]
-        , div [ class "toast-body" ] [ text notif.body ]
+
+
+viewNotifChangeset : String -> ChangesetSummary -> Html Msg
+viewNotifChangeset channel cs =
+    div
+        [ style "padding" "4px 0"
+        , style "border-top" "1px solid rgba(255,255,255,0.08)"
+        ]
+        [ div [ style "display" "flex", style "gap" "6px", style "align-items" "center" ]
+            [ span [ style "font-family" "var(--font-mono)", style "color" "#a78bfa" ]
+                [ text (String.left 8 cs.changeId) ]
+            , span [ style "font-weight" "500" ] [ text cs.message ]
+            , span [ style "color" "#8b90a0" ]
+                [ text ("by " ++ cs.author ++ " \u{00B7} " ++ String.fromInt cs.patchCount ++ " patch(es)") ]
+            ]
+        , if not (List.isEmpty cs.affectedResources) then
+            div [ style "margin-top" "2px", style "color" "#8b90a0" ]
+                [ text ("Resources: " ++ String.join ", " cs.affectedResources) ]
+          else
+            text ""
+        , div [ style "margin-top" "4px" ]
+            [ button
+                [ class "btn btn-sm btn-ghost"
+                , onClick (ImportNotifChangeset cs.changeId channel)
+                ]
+                [ text "Cherry-pick this changeset" ]
+            ]
         ]
 
 
@@ -1940,6 +2099,19 @@ truncateContent s maxLen =
 
     else
         s
+
+
+unique : List String -> List String
+unique list =
+    List.foldl
+        (\item acc ->
+            if List.member item acc then
+                acc
+            else
+                acc ++ [ item ]
+        )
+        []
+        list
 
 
 

@@ -5441,22 +5441,166 @@ var $author$project$Main$decodeLogEntry = A8(
 	A2($elm$json$Json$Decode$field, 'created_at', $elm$json$Json$Decode$string),
 	A2($elm$json$Json$Decode$field, 'patch_count', $elm$json$Json$Decode$int),
 	A2($elm$json$Json$Decode$field, 'immutable', $elm$json$Json$Decode$bool));
-var $author$project$Main$NotificationPayload = F3(
-	function (kind, title, body) {
-		return {body: body, kind: kind, title: title};
+var $elm$json$Json$Decode$at = F2(
+	function (fields, decoder) {
+		return A3($elm$core$List$foldr, $elm$json$Json$Decode$field, decoder, fields);
 	});
-var $author$project$Main$decodeNotificationPayload = A4(
-	$elm$json$Json$Decode$map3,
-	$author$project$Main$NotificationPayload,
-	A2($elm$json$Json$Decode$field, 'event_type', $elm$json$Json$Decode$string),
-	A2($elm$json$Json$Decode$field, 'event_type', $elm$json$Json$Decode$string),
-	$elm$json$Json$Decode$oneOf(
-		_List_fromArray(
-			[
-				A2($elm$json$Json$Decode$field, 'message', $elm$json$Json$Decode$string),
-				A2($elm$json$Json$Decode$field, 'details', $elm$json$Json$Decode$string),
-				$elm$json$Json$Decode$succeed('New event')
-			])));
+var $author$project$Main$ChangesetSummary = F5(
+	function (changeId, message, author, patchCount, affectedResources) {
+		return {affectedResources: affectedResources, author: author, changeId: changeId, message: message, patchCount: patchCount};
+	});
+var $elm$json$Json$Decode$map5 = _Json_map5;
+var $author$project$Main$decodeChangesetSummary = A6(
+	$elm$json$Json$Decode$map5,
+	$author$project$Main$ChangesetSummary,
+	A2($elm$json$Json$Decode$field, 'change_id', $elm$json$Json$Decode$string),
+	A2($elm$json$Json$Decode$field, 'message', $elm$json$Json$Decode$string),
+	A2($elm$json$Json$Decode$field, 'author', $elm$json$Json$Decode$string),
+	A2($elm$json$Json$Decode$field, 'patch_count', $elm$json$Json$Decode$int),
+	A2(
+		$elm$json$Json$Decode$field,
+		'affected_resources',
+		$elm$json$Json$Decode$list($elm$json$Json$Decode$string)));
+var $elm$core$List$filter = F2(
+	function (isGood, list) {
+		return A3(
+			$elm$core$List$foldr,
+			F2(
+				function (x, xs) {
+					return isGood(x) ? A2($elm$core$List$cons, x, xs) : xs;
+				}),
+			_List_Nil,
+			list);
+	});
+var $elm$core$List$isEmpty = function (xs) {
+	if (!xs.b) {
+		return true;
+	} else {
+		return false;
+	}
+};
+var $elm$core$List$any = F2(
+	function (isOkay, list) {
+		any:
+		while (true) {
+			if (!list.b) {
+				return false;
+			} else {
+				var x = list.a;
+				var xs = list.b;
+				if (isOkay(x)) {
+					return true;
+				} else {
+					var $temp$isOkay = isOkay,
+						$temp$list = xs;
+					isOkay = $temp$isOkay;
+					list = $temp$list;
+					continue any;
+				}
+			}
+		}
+	});
+var $elm$core$List$member = F2(
+	function (x, xs) {
+		return A2(
+			$elm$core$List$any,
+			function (a) {
+				return _Utils_eq(a, x);
+			},
+			xs);
+	});
+var $author$project$Main$unique = function (list) {
+	return A3(
+		$elm$core$List$foldl,
+		F2(
+			function (item, acc) {
+				return A2($elm$core$List$member, item, acc) ? acc : _Utils_ap(
+					acc,
+					_List_fromArray(
+						[item]));
+			}),
+		_List_Nil,
+		list);
+};
+var $author$project$Main$decodeServerNotification = $elm$json$Json$Decode$oneOf(
+	_List_fromArray(
+		[
+			A5(
+			$elm$json$Json$Decode$map4,
+			F5(
+				function (kind, channel, changesets, timestamp, id) {
+					var title = 'Push to ' + channel;
+					var authorList = $author$project$Main$unique(
+						A2(
+							$elm$core$List$filter,
+							function (a) {
+								return a !== '';
+							},
+							A2(
+								$elm$core$List$map,
+								function ($) {
+									return $.author;
+								},
+								changesets)));
+					var authorStr = $elm$core$List$isEmpty(authorList) ? 'someone' : A2($elm$core$String$join, ', ', authorList);
+					var body = authorStr + (' pushed ' + ($elm$core$String$fromInt(
+						$elm$core$List$length(changesets)) + ' changeset(s)'));
+					return {body: body, changesets: changesets, channel: channel, dismissed: false, id: id, kind: kind, title: title};
+				}),
+			A2($elm$json$Json$Decode$field, 'kind', $elm$json$Json$Decode$string),
+			A2(
+				$elm$json$Json$Decode$at,
+				_List_fromArray(
+					['payload', 'channel']),
+				$elm$json$Json$Decode$string),
+			A2(
+				$elm$json$Json$Decode$at,
+				_List_fromArray(
+					['payload', 'changesets']),
+				$elm$json$Json$Decode$list($author$project$Main$decodeChangesetSummary)),
+			A2($elm$json$Json$Decode$field, 'timestamp', $elm$json$Json$Decode$string)),
+			A5(
+			$elm$json$Json$Decode$map4,
+			F5(
+				function (kind, sourceChannel, targetChannel, changesets, id) {
+					var title = 'Promotion: ' + (sourceChannel + (' \u2192 ' + targetChannel));
+					var body = $elm$core$String$fromInt(
+						$elm$core$List$length(changesets)) + ' changeset(s) promoted';
+					return {body: body, changesets: changesets, channel: targetChannel, dismissed: false, id: id, kind: kind, title: title};
+				}),
+			A2($elm$json$Json$Decode$field, 'kind', $elm$json$Json$Decode$string),
+			A2(
+				$elm$json$Json$Decode$at,
+				_List_fromArray(
+					['payload', 'source_channel']),
+				$elm$json$Json$Decode$string),
+			A2(
+				$elm$json$Json$Decode$at,
+				_List_fromArray(
+					['payload', 'target_channel']),
+				$elm$json$Json$Decode$string),
+			A2(
+				$elm$json$Json$Decode$at,
+				_List_fromArray(
+					['payload', 'promoted_changesets']),
+				$elm$json$Json$Decode$list($author$project$Main$decodeChangesetSummary))),
+			A3(
+			$elm$json$Json$Decode$map2,
+			F3(
+				function (kind, timestamp, id) {
+					return {
+						body: 'New event at ' + A2($elm$core$String$left, 19, timestamp),
+						changesets: _List_Nil,
+						channel: '',
+						dismissed: false,
+						id: id,
+						kind: kind,
+						title: kind
+					};
+				}),
+			A2($elm$json$Json$Decode$field, 'kind', $elm$json$Json$Decode$string),
+			A2($elm$json$Json$Decode$field, 'timestamp', $elm$json$Json$Decode$string))
+		]));
 var $author$project$Main$StatusInfo = F6(
 	function (channel, staged, modified, deleted, unstagedOnStaged, conflicts) {
 		return {channel: channel, conflicts: conflicts, deleted: deleted, modified: modified, staged: staged, unstagedOnStaged: unstagedOnStaged};
@@ -5498,17 +5642,6 @@ var $author$project$Main$decodeStatus = $elm$json$Json$Decode$decodeValue(
 			$elm$json$Json$Decode$list($elm$json$Json$Decode$string))));
 var $elm$json$Json$Decode$decodeString = _Json_runOnString;
 var $author$project$Ports$deleteFile = _Platform_outgoingPort('deleteFile', $elm$json$Json$Encode$string);
-var $elm$core$List$filter = F2(
-	function (isGood, list) {
-		return A3(
-			$elm$core$List$foldr,
-			F2(
-				function (x, xs) {
-					return isGood(x) ? A2($elm$core$List$cons, x, xs) : xs;
-				}),
-			_List_Nil,
-			list);
-	});
 var $author$project$Ports$getChangeset = _Platform_outgoingPort('getChangeset', $elm$json$Json$Encode$string);
 var $author$project$Ports$getSnapshot = _Platform_outgoingPort('getSnapshot', $elm$json$Json$Encode$string);
 var $author$project$Ports$initRepo = _Platform_outgoingPort('initRepo', $elm$json$Json$Encode$string);
@@ -6680,10 +6813,9 @@ var $author$project$Main$update = F2(
 				}
 			case 'GotNotification':
 				var json = msg.a;
-				var _v27 = A2($elm$json$Json$Decode$decodeString, $author$project$Main$decodeNotificationPayload, json);
+				var _v27 = A2($elm$json$Json$Decode$decodeString, $author$project$Main$decodeServerNotification, json);
 				if (_v27.$ === 'Ok') {
 					var notif = _v27.a;
-					var newNotif = {body: notif.body, id: model.nextNotifId, kind: notif.kind, title: notif.title};
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
@@ -6691,8 +6823,8 @@ var $author$project$Main$update = F2(
 								nextNotifId: model.nextNotifId + 1,
 								notifications: A2(
 									$elm$core$List$cons,
-									newNotif,
-									A2($elm$core$List$take, 4, model.notifications))
+									notif(model.nextNotifId),
+									A2($elm$core$List$take, 9, model.notifications))
 							}),
 						$elm$core$Platform$Cmd$none);
 				} else {
@@ -6712,6 +6844,25 @@ var $author$project$Main$update = F2(
 								model.notifications)
 						}),
 					$elm$core$Platform$Cmd$none);
+			case 'PullNotifChannel':
+				var channel = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{importChannelLog: _List_Nil, importChannelResources: _List_Nil, importSourceChannel: channel, page: $author$project$Main$ImportPage}),
+					$elm$core$Platform$Cmd$batch(
+						_List_fromArray(
+							[
+								$author$project$Ports$requestChannels(_Utils_Tuple0),
+								$author$project$Ports$listChannelResources(channel),
+								$author$project$Ports$logForChannel(channel)
+							])));
+			case 'ImportNotifChangeset':
+				var changeId = msg.a;
+				var channel = msg.b;
+				return _Utils_Tuple2(
+					model,
+					$author$project$Ports$cherryPick(changeId));
 			case 'UpdateUserId':
 				var uid = msg.a;
 				return _Utils_Tuple2(
@@ -7053,10 +7204,6 @@ var $elm$html$Html$Events$stopPropagationOn = F2(
 			$elm$virtual_dom$VirtualDom$on,
 			event,
 			$elm$virtual_dom$VirtualDom$MayStopPropagation(decoder));
-	});
-var $elm$json$Json$Decode$at = F2(
-	function (fields, decoder) {
-		return A3($elm$core$List$foldr, $elm$json$Json$Decode$field, decoder, fields);
 	});
 var $elm$html$Html$Events$targetValue = A2(
 	$elm$json$Json$Decode$at,
@@ -7964,13 +8111,6 @@ var $author$project$Main$DoPush = {$: 'DoPush'};
 var $author$project$Main$ShowCommitDialog = {$: 'ShowCommitDialog'};
 var $author$project$Main$ShowPromoteDialog = {$: 'ShowPromoteDialog'};
 var $elm$html$Html$h1 = _VirtualDom_node('h1');
-var $elm$core$List$isEmpty = function (xs) {
-	if (!xs.b) {
-		return true;
-	} else {
-		return false;
-	}
-};
 var $author$project$Main$viewHeader = function (model) {
 	return A2(
 		$elm$html$Html$div,
@@ -8805,14 +8945,109 @@ var $author$project$Main$viewLog = function (model) {
 var $author$project$Main$DismissNotification = function (a) {
 	return {$: 'DismissNotification', a: a};
 };
+var $author$project$Main$PullNotifChannel = function (a) {
+	return {$: 'PullNotifChannel', a: a};
+};
+var $author$project$Main$ImportNotifChangeset = F2(
+	function (a, b) {
+		return {$: 'ImportNotifChangeset', a: a, b: b};
+	});
+var $author$project$Main$viewNotifChangeset = F2(
+	function (channel, cs) {
+		return A2(
+			$elm$html$Html$div,
+			_List_fromArray(
+				[
+					A2($elm$html$Html$Attributes$style, 'padding', '4px 0'),
+					A2($elm$html$Html$Attributes$style, 'border-top', '1px solid rgba(255,255,255,0.08)')
+				]),
+			_List_fromArray(
+				[
+					A2(
+					$elm$html$Html$div,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+							A2($elm$html$Html$Attributes$style, 'gap', '6px'),
+							A2($elm$html$Html$Attributes$style, 'align-items', 'center')
+						]),
+					_List_fromArray(
+						[
+							A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									A2($elm$html$Html$Attributes$style, 'font-family', 'var(--font-mono)'),
+									A2($elm$html$Html$Attributes$style, 'color', '#a78bfa')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(
+									A2($elm$core$String$left, 8, cs.changeId))
+								])),
+							A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									A2($elm$html$Html$Attributes$style, 'font-weight', '500')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(cs.message)
+								])),
+							A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									A2($elm$html$Html$Attributes$style, 'color', '#8b90a0')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(
+									'by ' + (cs.author + (' \u00B7 ' + ($elm$core$String$fromInt(cs.patchCount) + ' patch(es)'))))
+								]))
+						])),
+					(!$elm$core$List$isEmpty(cs.affectedResources)) ? A2(
+					$elm$html$Html$div,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'margin-top', '2px'),
+							A2($elm$html$Html$Attributes$style, 'color', '#8b90a0')
+						]),
+					_List_fromArray(
+						[
+							$elm$html$Html$text(
+							'Resources: ' + A2($elm$core$String$join, ', ', cs.affectedResources))
+						])) : $elm$html$Html$text(''),
+					A2(
+					$elm$html$Html$div,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'margin-top', '4px')
+						]),
+					_List_fromArray(
+						[
+							A2(
+							$elm$html$Html$button,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+									$elm$html$Html$Events$onClick(
+									A2($author$project$Main$ImportNotifChangeset, cs.changeId, channel))
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('Cherry-pick this changeset')
+								]))
+						]))
+				]));
+	});
 var $author$project$Main$viewNotificationToast = function (notif) {
 	return A2(
 		$elm$html$Html$div,
 		_List_fromArray(
 			[
-				$elm$html$Html$Attributes$class('notification-toast ' + notif.kind),
-				$elm$html$Html$Events$onClick(
-				$author$project$Main$DismissNotification(notif.id))
+				$elm$html$Html$Attributes$class('notification-toast ' + notif.kind)
 			]),
 		_List_fromArray(
 			[
@@ -8820,26 +9055,92 @@ var $author$project$Main$viewNotificationToast = function (notif) {
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
-						$elm$html$Html$Attributes$class('toast-title')
+						A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+						A2($elm$html$Html$Attributes$style, 'justify-content', 'space-between'),
+						A2($elm$html$Html$Attributes$style, 'align-items', 'flex-start')
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(notif.title)
+						A2(
+						$elm$html$Html$div,
+						_List_Nil,
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$div,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('toast-title')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text(notif.title)
+									])),
+								A2(
+								$elm$html$Html$div,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('toast-body')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text(notif.body)
+									]))
+							])),
+						A2(
+						$elm$html$Html$span,
+						_List_fromArray(
+							[
+								A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
+								A2($elm$html$Html$Attributes$style, 'opacity', '0.6'),
+								A2($elm$html$Html$Attributes$style, 'font-size', '16px'),
+								A2($elm$html$Html$Attributes$style, 'padding', '0 4px'),
+								$elm$html$Html$Events$onClick(
+								$author$project$Main$DismissNotification(notif.id))
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text('\u2715')
+							]))
 					])),
+				(!$elm$core$List$isEmpty(notif.changesets)) ? A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'margin-top', '8px'),
+						A2($elm$html$Html$Attributes$style, 'font-size', '11px')
+					]),
+				A2(
+					$elm$core$List$map,
+					$author$project$Main$viewNotifChangeset(notif.channel),
+					notif.changesets)) : $elm$html$Html$text(''),
 				A2(
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
-						$elm$html$Html$Attributes$class('toast-body')
+						A2($elm$html$Html$Attributes$style, 'margin-top', '8px'),
+						A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+						A2($elm$html$Html$Attributes$style, 'gap', '6px')
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(notif.body)
+						(!$elm$core$String$isEmpty(notif.channel)) ? A2(
+						$elm$html$Html$button,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('btn btn-sm btn-primary'),
+								$elm$html$Html$Events$onClick(
+								$author$project$Main$PullNotifChannel(notif.channel))
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Import from ' + notif.channel)
+							])) : $elm$html$Html$text('')
 					]))
 			]));
 };
 var $author$project$Main$viewNotifications = function (model) {
-	return A2(
+	return $elm$core$List$isEmpty(model.notifications) ? $elm$html$Html$text('') : A2(
 		$elm$html$Html$div,
 		_List_fromArray(
 			[
@@ -8849,36 +9150,6 @@ var $author$project$Main$viewNotifications = function (model) {
 };
 var $author$project$Main$OpenNewResource = {$: 'OpenNewResource'};
 var $author$project$Main$RefreshAll = {$: 'RefreshAll'};
-var $elm$core$List$any = F2(
-	function (isOkay, list) {
-		any:
-		while (true) {
-			if (!list.b) {
-				return false;
-			} else {
-				var x = list.a;
-				var xs = list.b;
-				if (isOkay(x)) {
-					return true;
-				} else {
-					var $temp$isOkay = isOkay,
-						$temp$list = xs;
-					isOkay = $temp$isOkay;
-					list = $temp$list;
-					continue any;
-				}
-			}
-		}
-	});
-var $elm$core$List$member = F2(
-	function (x, xs) {
-		return A2(
-			$elm$core$List$any,
-			function (a) {
-				return _Utils_eq(a, x);
-			},
-			xs);
-	});
 var $author$project$Main$StageDelete = {$: 'StageDelete'};
 var $author$project$Main$viewDeletedItem = function (resourceId) {
 	return A2(

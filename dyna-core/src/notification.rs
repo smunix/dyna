@@ -1,13 +1,38 @@
 //! WebSocket notification types for real-time event broadcasting.
 //!
-//! When a promotion occurs on the server, a [`Notification`] is broadcast
-//! to all connected WebSocket clients. The notification contains detailed
-//! information about the promotion: which changesets were promoted, from
-//! which channel, to which channel, and the affected resources.
+//! When a push or promotion occurs on the server, a [`Notification`] is
+//! broadcast to all connected WebSocket clients. The notification contains
+//! detailed information about the event: which changesets were affected,
+//! which channel, the author, and the affected resources.
 //!
 //! ## Wire Format
 //!
 //! Notifications are serialized as JSON and sent as WebSocket text frames.
+//!
+//! ### Push notification
+//!
+//! ```json
+//! {
+//!   "kind": "push",
+//!   "timestamp": "2026-03-01T12:00:00Z",
+//!   "payload": {
+//!     "channel": "alice-1",
+//!     "changeset_count": 2,
+//!     "new_head": "a7f3bc12",
+//!     "changesets": [
+//!       {
+//!         "change_id": "a7f3bc12",
+//!         "message": "Add user management",
+//!         "author": "alice",
+//!         "patch_count": 3,
+//!         "affected_resources": ["acme.entity.User", "acme.entity.Role"]
+//!       }
+//!     ]
+//!   }
+//! }
+//! ```
+//!
+//! ### Promotion notification
 //!
 //! ```json
 //! {
@@ -72,16 +97,19 @@ pub struct PromotionPayload {
     /// The target channel to which changesets were promoted.
     pub target_channel: String,
     /// Details of each promoted changeset.
-    pub promoted_changesets: Vec<PromotedChangesetInfo>,
+    pub promoted_changesets: Vec<ChangesetInfo>,
     /// The new head change_id of the target channel.
     pub new_head: Option<String>,
     /// Total number of unique resources affected across all promoted changesets.
     pub total_resources_affected: usize,
 }
 
-/// Summary information about a single promoted changeset.
+/// Summary information about a changeset in a notification.
+///
+/// Used in both push and promotion notifications to describe each changeset
+/// that was affected by the operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PromotedChangesetInfo {
+pub struct ChangesetInfo {
     /// The changeset's unique change_id.
     pub change_id: String,
     /// The commit message.
@@ -103,14 +131,19 @@ pub struct PushPayload {
     pub changeset_count: usize,
     /// The new head change_id of the channel.
     pub new_head: Option<String>,
+    /// Details of each pushed changeset.
+    pub changesets: Vec<ChangesetInfo>,
 }
+
+// Keep the old type alias for backward compatibility
+pub type PromotedChangesetInfo = ChangesetInfo;
 
 impl Notification {
     /// Create a promotion notification from a completed promote operation.
     pub fn promotion(
         source_channel: String,
         target_channel: String,
-        promoted_changesets: Vec<PromotedChangesetInfo>,
+        promoted_changesets: Vec<ChangesetInfo>,
         new_head: Option<String>,
     ) -> Self {
         let total_resources_affected = promoted_changesets
@@ -132,8 +165,13 @@ impl Notification {
         }
     }
 
-    /// Create a push notification.
-    pub fn push(channel: String, changeset_count: usize, new_head: Option<String>) -> Self {
+    /// Create a push notification with detailed changeset information.
+    pub fn push(
+        channel: String,
+        changeset_count: usize,
+        new_head: Option<String>,
+        changesets: Vec<ChangesetInfo>,
+    ) -> Self {
         Self {
             kind: NotificationKind::Push,
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -141,6 +179,7 @@ impl Notification {
                 channel,
                 changeset_count,
                 new_head,
+                changesets,
             }),
         }
     }

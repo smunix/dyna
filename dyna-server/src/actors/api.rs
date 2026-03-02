@@ -40,7 +40,7 @@ use axum::{
     Json, Router,
 };
 use dyna_core::compression;
-use dyna_core::notification::{Notification, PromotedChangesetInfo};
+use dyna_core::notification::{ChangesetInfo, Notification, PromotedChangesetInfo};
 use dyna_core::protocol::*;
 use elfo::prelude::*;
 use std::sync::Arc;
@@ -412,13 +412,36 @@ async fn push_handler(
     let channel_name = body.channel.clone();
     let changeset_count = body.changesets.len();
 
+    // Build detailed changeset info from the push request before sending
+    let changeset_infos: Vec<ChangesetInfo> = body
+        .changesets
+        .iter()
+        .map(|cs| ChangesetInfo {
+            change_id: cs.change_id.clone(),
+            message: cs.message.clone(),
+            author: cs.author.clone(),
+            patch_count: cs.patches.len(),
+            affected_resources: cs
+                .patches
+                .iter()
+                .map(|p| p.target_resource.clone())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect(),
+        })
+        .collect();
+
     send_and_recv(&state, |reply| ApiRequest::Push { body, reply })
         .await
         .map(|r| {
-            // Broadcast push notification on success
+            // Broadcast push notification with detailed changeset info on success
             if r.success {
-                let notification =
-                    Notification::push(channel_name, changeset_count, r.new_head.clone());
+                let notification = Notification::push(
+                    channel_name,
+                    changeset_count,
+                    r.new_head.clone(),
+                    changeset_infos,
+                );
                 let clients = state.notification_hub.broadcast(&notification);
                 tracing::debug!(clients, "Broadcast push notification");
             }

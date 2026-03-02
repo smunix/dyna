@@ -575,6 +575,7 @@ dependencies = [
  "dyna-core",
  "glob",
  "itertools",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

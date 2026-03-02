@@ -239,6 +239,27 @@ pub enum Commands {
         channel: Option<String>,
     },
 
+    /// Load resources from a JSON file into the working directory and stage them.
+    ///
+    /// The file must contain a JSON array of objects. Each object must have a
+    /// `res_id` field specifying the resource ID; the remaining fields form the
+    /// resource content. Each matching resource is written to the working
+    /// directory and staged for the next commit.
+    ///
+    /// Use `--limit` to cap the number of resources loaded, and `--filter` to
+    /// restrict loading to resource IDs matching a regex pattern.
+    #[command(name = "load-file")]
+    LoadFile {
+        /// Path to the JSON file containing the resource array.
+        file: PathBuf,
+        /// Maximum number of resources to load.
+        #[arg(short, long)]
+        limit: Option<usize>,
+        /// Regex pattern to filter resource IDs.
+        #[arg(short, long)]
+        filter: Option<String>,
+    },
+
     /// Describe (amend the message of) a changeset.
     ///
     /// Defaults to the current working changeset if no change_id is given.

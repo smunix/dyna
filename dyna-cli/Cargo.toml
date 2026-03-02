@@ -35,4 +35,5 @@ colored = "2"
 dirs = "6"
 itertools = { workspace = true }
 glob = "0.3"
+regex = "1"
 vfs = "0.12"

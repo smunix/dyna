@@ -30,3 +30,4 @@ pub mod describe;
 pub mod history;
 pub mod revert;
 pub mod cherry_pick;
+pub mod load_file;

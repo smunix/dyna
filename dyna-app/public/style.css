@@ -399,7 +399,9 @@ textarea {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-width: 380px;
+    max-width: 440px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
 }
 
 .notification-toast {

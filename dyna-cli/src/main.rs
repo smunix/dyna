@@ -70,6 +70,11 @@ async fn main() -> anyhow::Result<()> {
         Commands::CherryPick { change_id, channel } => {
             commands::cherry_pick::execute(change_id, channel).await
         }
+        Commands::LoadFile {
+            file,
+            limit,
+            filter,
+        } => commands::load_file::execute(file, limit, filter).await,
         Commands::Describe { change_id, message } => {
             commands::describe::execute(change_id, message).await
         }
