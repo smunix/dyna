@@ -275,6 +275,7 @@
                 inherit src;
                 strictDeps = true;
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
+                CARGO_BUILD_RUSTFLAGS = "--cfg getrandom_backend=\"wasm_js\"";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
                 postPatch = stubScript;
@@ -284,6 +285,7 @@
                 inherit pname src cargoArtifacts;
                 strictDeps = true;
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
+                CARGO_BUILD_RUSTFLAGS = "--cfg getrandom_backend=\"wasm_js\"";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
                 postPatch = stubScript;
