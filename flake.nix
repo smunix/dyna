@@ -123,15 +123,29 @@
             }:
             let
               localDeps = resolveAllLocalDeps cratePath;
+              # Full source for the crate and its transitive local deps
               crateFilesets = map (p: useCraneLib.fileset.commonCargoSources p) ([ cratePath ] ++ localDeps);
               extraFilesets = map (p: p) extraPaths;
+              # Include Cargo.toml for ALL workspace members so that
+              # `cargo metadata` can always resolve the workspace.
+              # Without this, cargo fails with "failed to load manifest
+              # for workspace member" for members not in the dep tree.
+              # We only include the Cargo.toml (not full sources) for
+              # members outside the dependency tree, keeping the source
+              # tree minimal.
+              presentNames = [ (builtins.baseNameOf (builtins.toString cratePath)) ]
+                ++ map (p: builtins.baseNameOf (builtins.toString p)) localDeps;
+              missingMembers = builtins.filter
+                (name: !(builtins.elem name presentNames))
+                workspaceMembers;
+              stubFilesets = map (name: ./. + "/${name}/Cargo.toml") missingMembers;
             in
               lib.fileset.toSource {
                 root = ./.;
                 fileset = lib.fileset.unions ([
                   ./Cargo.toml
                   ./Cargo.lock
-                ] ++ crateFilesets ++ extraFilesets);
+                ] ++ crateFilesets ++ extraFilesets ++ stubFilesets);
               };
 
           # ════════════════════════════════════════════════════════════════
