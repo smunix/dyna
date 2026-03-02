@@ -78,7 +78,7 @@ port connectNotifications : () -> Cmd msg
 port disconnectNotifications : () -> Cmd msg
 
 
--- New ports for features
+-- Feature ports
 
 port getSnapshot : String -> Cmd msg
 
@@ -102,6 +102,9 @@ port listChannelResources : String -> Cmd msg
 
 
 port getSnapshotFromChannel : { resourceId : String, channel : String } -> Cmd msg
+
+
+port listRemoteChannels : () -> Cmd msg
 
 
 
@@ -164,8 +167,6 @@ port onListSnapshotsResult : (Decode.Value -> msg) -> Sub msg
 port onNotification : (String -> msg) -> Sub msg
 
 
--- New incoming ports
-
 port onSnapshotResult : (Decode.Value -> msg) -> Sub msg
 
 
@@ -185,3 +186,6 @@ port onChannelResourcesResult : (Decode.Value -> msg) -> Sub msg
 
 
 port onSnapshotFromChannelResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onRemoteChannelsResult : (Decode.Value -> msg) -> Sub msg

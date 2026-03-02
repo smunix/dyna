@@ -5159,7 +5159,9 @@ var $elm$core$Task$perform = F2(
 				A2($elm$core$Task$map, toMessage, task)));
 	});
 var $elm$browser$Browser$element = _Browser_element;
+var $author$project$Main$ChannelSortAlpha = {$: 'ChannelSortAlpha'};
 var $author$project$Main$SetupPage = {$: 'SetupPage'};
+var $author$project$Main$SortByIdAsc = {$: 'SortByIdAsc'};
 var $elm$json$Json$Decode$decodeValue = _Json_run;
 var $author$project$Main$emptyStatus = {channel: 'main', conflicts: _List_Nil, deleted: _List_Nil, modified: _List_Nil, staged: _List_Nil, unstagedOnStaged: _List_Nil};
 var $elm$json$Json$Decode$field = _Json_decodeField;
@@ -5184,7 +5186,7 @@ var $author$project$Main$init = function (flags) {
 			A2($elm$json$Json$Decode$field, 'serverUrl', $elm$json$Json$Decode$string),
 			flags));
 	return _Utils_Tuple2(
-		{changesetDetail: $elm$core$Maybe$Nothing, channels: _List_Nil, commitMessage: '', connected: false, editContent: '', editIsNew: false, editJsonError: $elm$core$Maybe$Nothing, editResourceId: '', flashIsError: false, flashMessage: $elm$core$Maybe$Nothing, historyEntries: _List_Nil, historyResourceId: '', importChannelLog: _List_Nil, importChannelResources: _List_Nil, importSourceChannel: '', logEntries: _List_Nil, newChannelName: '', nextNotifId: 0, notifications: _List_Nil, page: $author$project$Main$SetupPage, promoteChannel: '', resources: _List_Nil, restoreChangeId: '', restoreChannel: '', restoreMode: 'channel', restoreResourceId: '', serverUrl: serverUrl, showCommitDialog: false, showNewChannelDialog: false, showPromoteDialog: false, showRestoreDialog: false, snapshots: _List_Nil, status: $author$project$Main$emptyStatus, tooltipContent: '', tooltipResourceId: '', userId: ''},
+		{changesetDetail: $elm$core$Maybe$Nothing, channelFilter: '', channelSort: $author$project$Main$ChannelSortAlpha, channelTooltipName: '', channels: _List_Nil, commitMessage: '', connected: false, editContent: '', editIsNew: false, editJsonError: $elm$core$Maybe$Nothing, editResourceId: '', flashIsError: false, flashMessage: $elm$core$Maybe$Nothing, historyEntries: _List_Nil, historyResourceId: '', importChannelLog: _List_Nil, importChannelResources: _List_Nil, importSourceChannel: '', logEntries: _List_Nil, newChannelName: '', nextNotifId: 0, notifications: _List_Nil, notificationsVisible: true, page: $author$project$Main$SetupPage, promoteChannel: '', remoteChannels: _List_Nil, resourceFilter: '', resourceSort: $author$project$Main$SortByIdAsc, resources: _List_Nil, restoreChangeId: '', restoreChannel: '', restoreMode: 'channel', restoreResourceId: '', serverUrl: serverUrl, showAllChannels: false, showCommitDialog: false, showNewChannelDialog: false, showPromoteDialog: false, showRestoreDialog: false, snapshots: _List_Nil, status: $author$project$Main$emptyStatus, tooltipContent: '', tooltipResourceId: '', userId: ''},
 		$elm$core$Platform$Cmd$none);
 };
 var $author$project$Main$GotAddResult = function (a) {
@@ -5244,6 +5246,9 @@ var $author$project$Main$GotPushResult = function (a) {
 var $author$project$Main$GotReadResult = function (a) {
 	return {$: 'GotReadResult', a: a};
 };
+var $author$project$Main$GotRemoteChannels = function (a) {
+	return {$: 'GotRemoteChannels', a: a};
+};
 var $author$project$Main$GotRestoreResult = function (a) {
 	return {$: 'GotRestoreResult', a: a};
 };
@@ -5280,6 +5285,7 @@ var $author$project$Ports$onNotification = _Platform_incomingPort('onNotificatio
 var $author$project$Ports$onPromoteResult = _Platform_incomingPort('onPromoteResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onPushResult = _Platform_incomingPort('onPushResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onReadResult = _Platform_incomingPort('onReadResult', $elm$json$Json$Decode$value);
+var $author$project$Ports$onRemoteChannelsResult = _Platform_incomingPort('onRemoteChannelsResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onRestoreResult = _Platform_incomingPort('onRestoreResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onSnapshotResult = _Platform_incomingPort('onSnapshotResult', $elm$json$Json$Decode$value);
 var $author$project$Ports$onStatusResult = _Platform_incomingPort('onStatusResult', $elm$json$Json$Decode$value);
@@ -5312,7 +5318,8 @@ var $author$project$Main$subscriptions = function (_v0) {
 				$author$project$Ports$onRestoreResult($author$project$Main$GotRestoreResult),
 				$author$project$Ports$onChangesetResult($author$project$Main$GotChangesetResult),
 				$author$project$Ports$onChannelLogResult($author$project$Main$GotChannelLog),
-				$author$project$Ports$onChannelResourcesResult($author$project$Main$GotChannelResources)
+				$author$project$Ports$onChannelResourcesResult($author$project$Main$GotChannelResources),
+				$author$project$Ports$onRemoteChannelsResult($author$project$Main$GotRemoteChannels)
 			]));
 };
 var $author$project$Main$ChangesetDetailPage = {$: 'ChangesetDetailPage'};
@@ -5545,7 +5552,7 @@ var $author$project$Main$decodeServerNotification = $elm$json$Json$Decode$oneOf(
 					var authorStr = $elm$core$List$isEmpty(authorList) ? 'someone' : A2($elm$core$String$join, ', ', authorList);
 					var body = authorStr + (' pushed ' + ($elm$core$String$fromInt(
 						$elm$core$List$length(changesets)) + ' changeset(s)'));
-					return {body: body, changesets: changesets, channel: channel, dismissed: false, id: id, kind: kind, title: title};
+					return {body: body, changesets: changesets, channel: channel, dismissed: false, hidden: false, id: id, kind: kind, title: title};
 				}),
 			A2($elm$json$Json$Decode$field, 'kind', $elm$json$Json$Decode$string),
 			A2(
@@ -5566,7 +5573,7 @@ var $author$project$Main$decodeServerNotification = $elm$json$Json$Decode$oneOf(
 					var title = 'Promotion: ' + (sourceChannel + (' \u2192 ' + targetChannel));
 					var body = $elm$core$String$fromInt(
 						$elm$core$List$length(changesets)) + ' changeset(s) promoted';
-					return {body: body, changesets: changesets, channel: targetChannel, dismissed: false, id: id, kind: kind, title: title};
+					return {body: body, changesets: changesets, channel: targetChannel, dismissed: false, hidden: false, id: id, kind: kind, title: title};
 				}),
 			A2($elm$json$Json$Decode$field, 'kind', $elm$json$Json$Decode$string),
 			A2(
@@ -5593,6 +5600,7 @@ var $author$project$Main$decodeServerNotification = $elm$json$Json$Decode$oneOf(
 						changesets: _List_Nil,
 						channel: '',
 						dismissed: false,
+						hidden: false,
 						id: id,
 						kind: kind,
 						title: kind
@@ -5648,6 +5656,11 @@ var $author$project$Ports$initRepo = _Platform_outgoingPort('initRepo', $elm$jso
 var $author$project$Ports$listChannelResources = _Platform_outgoingPort('listChannelResources', $elm$json$Json$Encode$string);
 var $author$project$Ports$listFiles = _Platform_outgoingPort(
 	'listFiles',
+	function ($) {
+		return $elm$json$Json$Encode$null;
+	});
+var $author$project$Ports$listRemoteChannels = _Platform_outgoingPort(
+	'listRemoteChannels',
 	function ($) {
 		return $elm$json$Json$Encode$null;
 	});
@@ -6576,7 +6589,6 @@ var $author$project$Main$update = F2(
 						A2($elm$json$Json$Decode$field, 'content', $elm$json$Json$Decode$string),
 						val));
 				if (error.$ === 'Just') {
-					var e = error.a;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
@@ -6589,6 +6601,19 @@ var $author$project$Main$update = F2(
 							{tooltipContent: content}),
 						$elm$core$Platform$Cmd$none);
 				}
+			case 'ShowChannelTooltip':
+				var name = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{channelTooltipName: name}),
+					$elm$core$Platform$Cmd$none);
+			case 'HideChannelTooltip':
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{channelTooltipName: ''}),
+					$elm$core$Platform$Cmd$none);
 			case 'GoToImport':
 				return _Utils_Tuple2(
 					_Utils_update(
@@ -6824,9 +6849,10 @@ var $author$project$Main$update = F2(
 								notifications: A2(
 									$elm$core$List$cons,
 									notif(model.nextNotifId),
-									A2($elm$core$List$take, 9, model.notifications))
+									A2($elm$core$List$take, 9, model.notifications)),
+								notificationsVisible: true
 							}),
-						$elm$core$Platform$Cmd$none);
+						$author$project$Ports$requestChannels(_Utils_Tuple0));
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
@@ -6844,6 +6870,34 @@ var $author$project$Main$update = F2(
 								model.notifications)
 						}),
 					$elm$core$Platform$Cmd$none);
+			case 'HideNotification':
+				var nid = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{
+							notifications: A2(
+								$elm$core$List$map,
+								function (n) {
+									return _Utils_eq(n.id, nid) ? _Utils_update(
+										n,
+										{hidden: true}) : n;
+								},
+								model.notifications)
+						}),
+					$elm$core$Platform$Cmd$none);
+			case 'ToggleNotificationsVisible':
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{notificationsVisible: !model.notificationsVisible}),
+					$elm$core$Platform$Cmd$none);
+			case 'DismissAllNotifications':
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{notifications: _List_Nil}),
+					$elm$core$Platform$Cmd$none);
 			case 'PullNotifChannel':
 				var channel = msg.a;
 				return _Utils_Tuple2(
@@ -6859,10 +6913,29 @@ var $author$project$Main$update = F2(
 							])));
 			case 'ImportNotifChangeset':
 				var changeId = msg.a;
-				var channel = msg.b;
 				return _Utils_Tuple2(
 					model,
 					$author$project$Ports$cherryPick(changeId));
+			case 'SearchRemoteChannels':
+				return _Utils_Tuple2(
+					model,
+					$author$project$Ports$listRemoteChannels(_Utils_Tuple0));
+			case 'GotRemoteChannels':
+				var val = msg.a;
+				var _v28 = A2(
+					$elm$json$Json$Decode$decodeValue,
+					$elm$json$Json$Decode$list($elm$json$Json$Decode$string),
+					val);
+				if (_v28.$ === 'Ok') {
+					var chans = _v28.a;
+					return _Utils_Tuple2(
+						_Utils_update(
+							model,
+							{remoteChannels: chans}),
+						$elm$core$Platform$Cmd$none);
+				} else {
+					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
+				}
 			case 'UpdateUserId':
 				var uid = msg.a;
 				return _Utils_Tuple2(
@@ -6871,6 +6944,40 @@ var $author$project$Main$update = F2(
 						{userId: uid}),
 					$elm$core$String$isEmpty(uid) ? $elm$core$Platform$Cmd$none : $author$project$Ports$setUser(
 						{email: uid + '@dyna', name: uid}));
+			case 'UpdateResourceFilter':
+				var f = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{resourceFilter: f}),
+					$elm$core$Platform$Cmd$none);
+			case 'SetResourceSort':
+				var s = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{resourceSort: s}),
+					$elm$core$Platform$Cmd$none);
+			case 'UpdateChannelFilter':
+				var f = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{channelFilter: f}),
+					$elm$core$Platform$Cmd$none);
+			case 'SetChannelSort':
+				var s = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{channelSort: s}),
+					$elm$core$Platform$Cmd$none);
+			case 'ToggleShowAllChannels':
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{showAllChannels: !model.showAllChannels}),
+					$elm$core$Platform$Cmd$none);
 			case 'DismissFlash':
 				return _Utils_Tuple2(
 					_Utils_update(
@@ -7705,10 +7812,10 @@ var $author$project$Main$viewRestoreDialog = function (model) {
 										$elm$html$Html$Events$onInput($author$project$Main$UpdateRestoreChannel),
 										A2($elm$html$Html$Attributes$style, 'width', '100%'),
 										A2($elm$html$Html$Attributes$style, 'padding', '8px 12px'),
-										A2($elm$html$Html$Attributes$style, 'background', 'var(--surface-2)'),
-										A2($elm$html$Html$Attributes$style, 'border', '1px solid var(--border)'),
+										A2($elm$html$Html$Attributes$style, 'background', 'var(--color-bg)'),
+										A2($elm$html$Html$Attributes$style, 'border', '1px solid var(--color-border)'),
 										A2($elm$html$Html$Attributes$style, 'border-radius', '8px'),
-										A2($elm$html$Html$Attributes$style, 'color', 'var(--text-primary)'),
+										A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text)'),
 										A2($elm$html$Html$Attributes$style, 'font-size', '13px')
 									]),
 								A2(
@@ -8110,8 +8217,16 @@ var $author$project$Main$viewFlash = function (model) {
 var $author$project$Main$DoPush = {$: 'DoPush'};
 var $author$project$Main$ShowCommitDialog = {$: 'ShowCommitDialog'};
 var $author$project$Main$ShowPromoteDialog = {$: 'ShowPromoteDialog'};
+var $author$project$Main$ToggleNotificationsVisible = {$: 'ToggleNotificationsVisible'};
 var $elm$html$Html$h1 = _VirtualDom_node('h1');
 var $author$project$Main$viewHeader = function (model) {
+	var notifCount = $elm$core$List$length(
+		A2(
+			$elm$core$List$filter,
+			function (n) {
+				return !n.hidden;
+			},
+			model.notifications));
 	return A2(
 		$elm$html$Html$div,
 		_List_fromArray(
@@ -8188,6 +8303,49 @@ var $author$project$Main$viewHeader = function (model) {
 						_List_fromArray(
 							[
 								$elm$html$Html$text('Promote')
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								A2($elm$html$Html$Attributes$style, 'position', 'relative'),
+								A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
+								$elm$html$Html$Events$onClick($author$project$Main$ToggleNotificationsVisible)
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$span,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'font-size', '18px'),
+										A2($elm$html$Html$Attributes$style, 'color', '#8b90a0')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text('\uD83D\uDD14')
+									])),
+								(notifCount > 0) ? A2(
+								$elm$html$Html$span,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'position', 'absolute'),
+										A2($elm$html$Html$Attributes$style, 'top', '-4px'),
+										A2($elm$html$Html$Attributes$style, 'right', '-6px'),
+										A2($elm$html$Html$Attributes$style, 'background', '#f87171'),
+										A2($elm$html$Html$Attributes$style, 'color', 'white'),
+										A2($elm$html$Html$Attributes$style, 'font-size', '10px'),
+										A2($elm$html$Html$Attributes$style, 'font-weight', '700'),
+										A2($elm$html$Html$Attributes$style, 'padding', '1px 5px'),
+										A2($elm$html$Html$Attributes$style, 'border-radius', '999px'),
+										A2($elm$html$Html$Attributes$style, 'min-width', '16px'),
+										A2($elm$html$Html$Attributes$style, 'text-align', 'center')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text(
+										$elm$core$String$fromInt(notifCount))
+									])) : $elm$html$Html$text('')
 							]))
 					]))
 			]));
@@ -8625,10 +8783,10 @@ var $author$project$Main$viewImport = function (model) {
 														$elm$html$Html$Events$onInput($author$project$Main$UpdateImportChannel),
 														A2($elm$html$Html$Attributes$style, 'flex', '1'),
 														A2($elm$html$Html$Attributes$style, 'padding', '8px 12px'),
-														A2($elm$html$Html$Attributes$style, 'background', 'var(--surface-2)'),
-														A2($elm$html$Html$Attributes$style, 'border', '1px solid var(--border)'),
+														A2($elm$html$Html$Attributes$style, 'background', 'var(--color-bg)'),
+														A2($elm$html$Html$Attributes$style, 'border', '1px solid var(--color-border)'),
 														A2($elm$html$Html$Attributes$style, 'border-radius', '8px'),
-														A2($elm$html$Html$Attributes$style, 'color', 'var(--text-primary)'),
+														A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text)'),
 														A2($elm$html$Html$Attributes$style, 'font-size', '13px')
 													]),
 												A2(
@@ -8942,12 +9100,17 @@ var $author$project$Main$viewLog = function (model) {
 					]))
 			]));
 };
+var $author$project$Main$DismissAllNotifications = {$: 'DismissAllNotifications'};
 var $author$project$Main$DismissNotification = function (a) {
 	return {$: 'DismissNotification', a: a};
+};
+var $author$project$Main$HideNotification = function (a) {
+	return {$: 'HideNotification', a: a};
 };
 var $author$project$Main$PullNotifChannel = function (a) {
 	return {$: 'PullNotifChannel', a: a};
 };
+var $elm$html$Html$Attributes$title = $elm$html$Html$Attributes$stringProperty('title');
 var $author$project$Main$ImportNotifChangeset = F2(
 	function (a, b) {
 		return {$: 'ImportNotifChangeset', a: a, b: b};
@@ -8969,7 +9132,8 @@ var $author$project$Main$viewNotifChangeset = F2(
 						[
 							A2($elm$html$Html$Attributes$style, 'display', 'flex'),
 							A2($elm$html$Html$Attributes$style, 'gap', '6px'),
-							A2($elm$html$Html$Attributes$style, 'align-items', 'center')
+							A2($elm$html$Html$Attributes$style, 'align-items', 'center'),
+							A2($elm$html$Html$Attributes$style, 'flex-wrap', 'wrap')
 						]),
 					_List_fromArray(
 						[
@@ -9088,19 +9252,46 @@ var $author$project$Main$viewNotificationToast = function (notif) {
 									]))
 							])),
 						A2(
-						$elm$html$Html$span,
+						$elm$html$Html$div,
 						_List_fromArray(
 							[
-								A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
-								A2($elm$html$Html$Attributes$style, 'opacity', '0.6'),
-								A2($elm$html$Html$Attributes$style, 'font-size', '16px'),
-								A2($elm$html$Html$Attributes$style, 'padding', '0 4px'),
-								$elm$html$Html$Events$onClick(
-								$author$project$Main$DismissNotification(notif.id))
+								A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+								A2($elm$html$Html$Attributes$style, 'gap', '4px')
 							]),
 						_List_fromArray(
 							[
-								$elm$html$Html$text('\u2715')
+								A2(
+								$elm$html$Html$span,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
+										A2($elm$html$Html$Attributes$style, 'opacity', '0.6'),
+										A2($elm$html$Html$Attributes$style, 'font-size', '12px'),
+										A2($elm$html$Html$Attributes$style, 'padding', '0 4px'),
+										$elm$html$Html$Attributes$title('Hide'),
+										$elm$html$Html$Events$onClick(
+										$author$project$Main$HideNotification(notif.id))
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text('\u2212')
+									])),
+								A2(
+								$elm$html$Html$span,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
+										A2($elm$html$Html$Attributes$style, 'opacity', '0.6'),
+										A2($elm$html$Html$Attributes$style, 'font-size', '14px'),
+										A2($elm$html$Html$Attributes$style, 'padding', '0 4px'),
+										$elm$html$Html$Attributes$title('Dismiss'),
+										$elm$html$Html$Events$onClick(
+										$author$project$Main$DismissNotification(notif.id))
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text('\u2715')
+									]))
 							]))
 					])),
 				(!$elm$core$List$isEmpty(notif.changesets)) ? A2(
@@ -9140,16 +9331,79 @@ var $author$project$Main$viewNotificationToast = function (notif) {
 			]));
 };
 var $author$project$Main$viewNotifications = function (model) {
-	return $elm$core$List$isEmpty(model.notifications) ? $elm$html$Html$text('') : A2(
+	var visibleNotifs = A2(
+		$elm$core$List$filter,
+		function (n) {
+			return !n.hidden;
+		},
+		model.notifications);
+	return ((!model.notificationsVisible) || $elm$core$List$isEmpty(visibleNotifs)) ? $elm$html$Html$text('') : A2(
 		$elm$html$Html$div,
 		_List_fromArray(
 			[
 				$elm$html$Html$Attributes$class('notifications')
 			]),
-		A2($elm$core$List$map, $author$project$Main$viewNotificationToast, model.notifications));
+		A2(
+			$elm$core$List$cons,
+			A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+						A2($elm$html$Html$Attributes$style, 'justify-content', 'flex-end'),
+						A2($elm$html$Html$Attributes$style, 'margin-bottom', '4px'),
+						A2($elm$html$Html$Attributes$style, 'gap', '6px')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$button,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+								A2($elm$html$Html$Attributes$style, 'font-size', '10px'),
+								$elm$html$Html$Events$onClick($author$project$Main$DismissAllNotifications)
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Dismiss all')
+							])),
+						A2(
+						$elm$html$Html$button,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+								A2($elm$html$Html$Attributes$style, 'font-size', '10px'),
+								$elm$html$Html$Events$onClick($author$project$Main$ToggleNotificationsVisible)
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Hide')
+							]))
+					])),
+			A2($elm$core$List$map, $author$project$Main$viewNotificationToast, visibleNotifs)));
 };
 var $author$project$Main$OpenNewResource = {$: 'OpenNewResource'};
 var $author$project$Main$RefreshAll = {$: 'RefreshAll'};
+var $author$project$Main$SetResourceSort = function (a) {
+	return {$: 'SetResourceSort', a: a};
+};
+var $author$project$Main$SortByIdDesc = {$: 'SortByIdDesc'};
+var $author$project$Main$UpdateResourceFilter = function (a) {
+	return {$: 'UpdateResourceFilter', a: a};
+};
+var $elm$core$String$toLower = _String_toLower;
+var $author$project$Main$simpleMatch = F2(
+	function (pattern, str) {
+		return A2(
+			$elm$core$String$contains,
+			$elm$core$String$toLower(pattern),
+			$elm$core$String$toLower(str));
+	});
+var $elm$core$List$sortBy = _List_sortBy;
+var $elm$core$List$sort = function (xs) {
+	return A2($elm$core$List$sortBy, $elm$core$Basics$identity, xs);
+};
 var $author$project$Main$StageDelete = {$: 'StageDelete'};
 var $author$project$Main$viewDeletedItem = function (resourceId) {
 	return A2(
@@ -9259,6 +9513,7 @@ var $author$project$Main$viewResourceItem = F2(
 			},
 			model.status.staged);
 		var isModified = A2($elm$core$List$member, resourceId, model.status.modified);
+		var isInWorkingDir = A2($elm$core$List$member, resourceId, model.resources);
 		return A2(
 			$elm$html$Html$li,
 			_List_fromArray(
@@ -9273,14 +9528,24 @@ var $author$project$Main$viewResourceItem = F2(
 				[
 					A2(
 					$elm$html$Html$div,
-					_List_Nil,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+							A2($elm$html$Html$Attributes$style, 'align-items', 'center'),
+							A2($elm$html$Html$Attributes$style, 'gap', '6px'),
+							A2($elm$html$Html$Attributes$style, 'flex', '1'),
+							A2($elm$html$Html$Attributes$style, 'min-width', '0')
+						]),
 					_List_fromArray(
 						[
 							A2(
 							$elm$html$Html$span,
 							_List_fromArray(
 								[
-									$elm$html$Html$Attributes$class('resource-id')
+									$elm$html$Html$Attributes$class('resource-id'),
+									A2($elm$html$Html$Attributes$style, 'overflow', 'hidden'),
+									A2($elm$html$Html$Attributes$style, 'text-overflow', 'ellipsis'),
+									A2($elm$html$Html$Attributes$style, 'white-space', 'nowrap')
 								]),
 							_List_fromArray(
 								[
@@ -9309,8 +9574,7 @@ var $author$project$Main$viewResourceItem = F2(
 											}
 										}
 										return 'badge-modified';
-									}()),
-									A2($elm$html$Html$Attributes$style, 'margin-left', '8px')
+									}())
 								]),
 							_List_fromArray(
 								[
@@ -9319,13 +9583,21 @@ var $author$project$Main$viewResourceItem = F2(
 							$elm$html$Html$span,
 							_List_fromArray(
 								[
-									$elm$html$Html$Attributes$class('badge badge-modified'),
-									A2($elm$html$Html$Attributes$style, 'margin-left', '8px')
+									$elm$html$Html$Attributes$class('badge badge-modified')
 								]),
 							_List_fromArray(
 								[
 									$elm$html$Html$text('modified')
-								])) : $elm$html$Html$text(''))
+								])) : ((isInWorkingDir && (!A2($elm$core$List$member, resourceId, model.snapshots))) ? A2(
+							$elm$html$Html$span,
+							_List_fromArray(
+								[
+									$elm$html$Html$Attributes$class('badge badge-new')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('working')
+								])) : $elm$html$Html$text('')))
 						])),
 					A2(
 					$elm$html$Html$div,
@@ -9415,7 +9687,24 @@ var $author$project$Main$viewResources = function (model) {
 						[rid]));
 			}),
 		snapshotIds,
-		_Utils_ap(stagedIds, modifiedIds));
+		_Utils_ap(
+			stagedIds,
+			_Utils_ap(modifiedIds, model.resources)));
+	var filteredIds = $elm$core$String$isEmpty(model.resourceFilter) ? allIds : A2(
+		$elm$core$List$filter,
+		function (rid) {
+			return A2($author$project$Main$simpleMatch, model.resourceFilter, rid);
+		},
+		allIds);
+	var sortedIds = function () {
+		var _v0 = model.resourceSort;
+		if (_v0.$ === 'SortByIdAsc') {
+			return $elm$core$List$sort(filteredIds);
+		} else {
+			return $elm$core$List$reverse(
+				$elm$core$List$sort(filteredIds));
+		}
+	}();
 	return A2(
 		$elm$html$Html$div,
 		_List_Nil,
@@ -9442,7 +9731,9 @@ var $author$project$Main$viewResources = function (model) {
 								_List_Nil,
 								_List_fromArray(
 									[
-										$elm$html$Html$text('Resources')
+										$elm$html$Html$text(
+										'Resources (' + ($elm$core$String$fromInt(
+											$elm$core$List$length(sortedIds)) + ')'))
 									])),
 								A2(
 								$elm$html$Html$div,
@@ -9481,11 +9772,71 @@ var $author$project$Main$viewResources = function (model) {
 						$elm$html$Html$div,
 						_List_fromArray(
 							[
-								$elm$html$Html$Attributes$class('panel-body')
+								A2($elm$html$Html$Attributes$style, 'padding', '12px 18px 0 18px'),
+								A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+								A2($elm$html$Html$Attributes$style, 'gap', '8px'),
+								A2($elm$html$Html$Attributes$style, 'align-items', 'center')
 							]),
 						_List_fromArray(
 							[
-								$elm$core$List$isEmpty(allIds) ? A2(
+								A2(
+								$elm$html$Html$input,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$type_('text'),
+										$elm$html$Html$Attributes$placeholder('Filter resources (regex on IDs)...'),
+										$elm$html$Html$Attributes$value(model.resourceFilter),
+										$elm$html$Html$Events$onInput($author$project$Main$UpdateResourceFilter),
+										A2($elm$html$Html$Attributes$style, 'flex', '1'),
+										A2($elm$html$Html$Attributes$style, 'padding', '6px 10px'),
+										A2($elm$html$Html$Attributes$style, 'font-size', '12px'),
+										A2($elm$html$Html$Attributes$style, 'font-family', 'var(--font-mono)')
+									]),
+								_List_Nil),
+								A2(
+								$elm$html$Html$button,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+										$elm$html$Html$Events$onClick(
+										$author$project$Main$SetResourceSort($author$project$Main$SortByIdAsc)),
+										A2(
+										$elm$html$Html$Attributes$style,
+										'opacity',
+										_Utils_eq(model.resourceSort, $author$project$Main$SortByIdAsc) ? '1' : '0.5')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text('A\u2191')
+									])),
+								A2(
+								$elm$html$Html$button,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
+										$elm$html$Html$Events$onClick(
+										$author$project$Main$SetResourceSort($author$project$Main$SortByIdDesc)),
+										A2(
+										$elm$html$Html$Attributes$style,
+										'opacity',
+										_Utils_eq(model.resourceSort, $author$project$Main$SortByIdDesc) ? '1' : '0.5')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text('A\u2193')
+									]))
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('panel-body'),
+								A2($elm$html$Html$Attributes$style, 'max-height', 'calc(100vh - 240px)'),
+								A2($elm$html$Html$Attributes$style, 'overflow-y', 'auto')
+							]),
+						_List_fromArray(
+							[
+								$elm$core$List$isEmpty(sortedIds) ? A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -9498,14 +9849,15 @@ var $author$project$Main$viewResources = function (model) {
 										_List_Nil,
 										_List_fromArray(
 											[
-												$elm$html$Html$text('No resources yet')
+												$elm$html$Html$text('No resources found')
 											])),
 										A2(
 										$elm$html$Html$p,
 										_List_Nil,
 										_List_fromArray(
 											[
-												$elm$html$Html$text('Create a new resource or clone from a remote server.')
+												$elm$html$Html$text(
+												$elm$core$String$isEmpty(model.resourceFilter) ? 'Create a new resource or clone from a remote server.' : ('No resources match the filter \"' + (model.resourceFilter + '\".')))
 											]))
 									])) : A2(
 								$elm$html$Html$ul,
@@ -9516,7 +9868,7 @@ var $author$project$Main$viewResources = function (model) {
 								A2(
 									$elm$core$List$map,
 									$author$project$Main$viewResourceItem(model),
-									allIds))
+									sortedIds))
 							]))
 					])),
 				(!$elm$core$List$isEmpty(model.status.deleted)) ? A2(
@@ -9562,20 +9914,44 @@ var $author$project$Main$viewResources = function (model) {
 					])) : $elm$html$Html$text('')
 			]));
 };
+var $author$project$Main$ChannelSortByChangesets = {$: 'ChannelSortByChangesets'};
 var $author$project$Main$GoToImport = {$: 'GoToImport'};
+var $author$project$Main$SearchRemoteChannels = {$: 'SearchRemoteChannels'};
+var $author$project$Main$SetChannelSort = function (a) {
+	return {$: 'SetChannelSort', a: a};
+};
+var $author$project$Main$ToggleShowAllChannels = {$: 'ToggleShowAllChannels'};
+var $author$project$Main$UpdateChannelFilter = function (a) {
+	return {$: 'UpdateChannelFilter', a: a};
+};
+var $elm$core$Basics$negate = function (n) {
+	return -n;
+};
+var $author$project$Main$negate = function (n) {
+	return -n;
+};
 var $author$project$Main$DoSwitchChannel = function (a) {
 	return {$: 'DoSwitchChannel', a: a};
 };
+var $author$project$Main$HideChannelTooltip = {$: 'HideChannelTooltip'};
+var $author$project$Main$ShowChannelTooltip = function (a) {
+	return {$: 'ShowChannelTooltip', a: a};
+};
 var $author$project$Main$viewChannelItem = F2(
-	function (currentChannel, ch) {
+	function (model, ch) {
+		var showTooltip = _Utils_eq(model.channelTooltipName, ch.name);
 		return A2(
 			$elm$html$Html$div,
 			_List_fromArray(
 				[
 					$elm$html$Html$Attributes$class(
-					_Utils_eq(ch.name, currentChannel) ? 'sidebar-item active' : 'sidebar-item'),
+					ch.isCurrent ? 'sidebar-item active' : 'sidebar-item'),
 					$elm$html$Html$Events$onClick(
-					$author$project$Main$DoSwitchChannel(ch.name))
+					$author$project$Main$DoSwitchChannel(ch.name)),
+					$elm$html$Html$Events$onMouseEnter(
+					$author$project$Main$ShowChannelTooltip(ch.name)),
+					$elm$html$Html$Events$onMouseLeave($author$project$Main$HideChannelTooltip),
+					A2($elm$html$Html$Attributes$style, 'position', 'relative')
 				]),
 			_List_fromArray(
 				[
@@ -9585,24 +9961,159 @@ var $author$project$Main$viewChannelItem = F2(
 						[
 							$elm$html$Html$Attributes$class('dot'),
 							$elm$html$Html$Attributes$class(
-							(ch.name === 'main') ? 'main' : (_Utils_eq(ch.name, currentChannel) ? 'current' : 'branch'))
+							(ch.name === 'main') ? 'main' : (ch.isCurrent ? 'current' : 'branch'))
 						]),
 					_List_Nil),
-					$elm$html$Html$text(ch.name),
-					_Utils_eq(ch.name, currentChannel) ? A2(
+					A2(
 					$elm$html$Html$span,
 					_List_fromArray(
 						[
+							A2($elm$html$Html$Attributes$style, 'flex', '1'),
+							A2($elm$html$Html$Attributes$style, 'overflow', 'hidden'),
+							A2($elm$html$Html$Attributes$style, 'text-overflow', 'ellipsis'),
+							A2($elm$html$Html$Attributes$style, 'white-space', 'nowrap')
+						]),
+					_List_fromArray(
+						[
+							$elm$html$Html$text(ch.name)
+						])),
+					A2(
+					$elm$html$Html$span,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'font-size', '10px'),
+							A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-dim)'),
 							A2($elm$html$Html$Attributes$style, 'margin-left', 'auto'),
+							A2($elm$html$Html$Attributes$style, 'flex-shrink', '0')
+						]),
+					_List_fromArray(
+						[
+							$elm$html$Html$text(
+							$elm$core$String$fromInt(ch.changesetCount))
+						])),
+					ch.isCurrent ? A2(
+					$elm$html$Html$span,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'margin-left', '4px'),
 							A2($elm$html$Html$Attributes$style, 'font-size', '10px'),
 							A2($elm$html$Html$Attributes$style, 'color', '#fbbf24')
 						]),
 					_List_fromArray(
 						[
 							$elm$html$Html$text('\u25CF')
+						])) : $elm$html$Html$text(''),
+					showTooltip ? A2(
+					$elm$html$Html$div,
+					_List_fromArray(
+						[
+							$elm$html$Html$Attributes$class('channel-tooltip')
+						]),
+					_List_fromArray(
+						[
+							A2(
+							$elm$html$Html$div,
+							_List_fromArray(
+								[
+									A2($elm$html$Html$Attributes$style, 'font-weight', '600'),
+									A2($elm$html$Html$Attributes$style, 'margin-bottom', '4px')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(ch.name)
+								])),
+							A2(
+							$elm$html$Html$div,
+							_List_fromArray(
+								[
+									A2($elm$html$Html$Attributes$style, 'font-size', '11px'),
+									A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-muted)')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(
+									'Changesets: ' + $elm$core$String$fromInt(ch.changesetCount))
+								])),
+							A2(
+							$elm$html$Html$div,
+							_List_fromArray(
+								[
+									A2($elm$html$Html$Attributes$style, 'font-size', '11px'),
+									A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-muted)')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text(
+									'Head: ' + function () {
+										var _v0 = ch.head;
+										if (_v0.$ === 'Just') {
+											var h = _v0.a;
+											return A2($elm$core$String$left, 8, h);
+										} else {
+											return 'none';
+										}
+									}())
+								])),
+							ch.isCurrent ? A2(
+							$elm$html$Html$div,
+							_List_fromArray(
+								[
+									A2($elm$html$Html$Attributes$style, 'font-size', '11px'),
+									A2($elm$html$Html$Attributes$style, 'color', '#fbbf24'),
+									A2($elm$html$Html$Attributes$style, 'margin-top', '2px')
+								]),
+							_List_fromArray(
+								[
+									$elm$html$Html$text('Current channel')
+								])) : $elm$html$Html$text('')
 						])) : $elm$html$Html$text('')
 				]));
 	});
+var $author$project$Main$viewRemoteChannelItem = function (name) {
+	return A2(
+		$elm$html$Html$div,
+		_List_fromArray(
+			[
+				$elm$html$Html$Attributes$class('sidebar-item'),
+				A2($elm$html$Html$Attributes$style, 'font-size', '12px'),
+				A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-dim)')
+			]),
+		_List_fromArray(
+			[
+				A2(
+				$elm$html$Html$span,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('dot'),
+						A2($elm$html$Html$Attributes$style, 'background', '#6366f1')
+					]),
+				_List_Nil),
+				A2(
+				$elm$html$Html$span,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'flex', '1'),
+						A2($elm$html$Html$Attributes$style, 'overflow', 'hidden'),
+						A2($elm$html$Html$Attributes$style, 'text-overflow', 'ellipsis'),
+						A2($elm$html$Html$Attributes$style, 'white-space', 'nowrap')
+					]),
+				_List_fromArray(
+					[
+						$elm$html$Html$text(name)
+					])),
+				A2(
+				$elm$html$Html$span,
+				_List_fromArray(
+					[
+						A2($elm$html$Html$Attributes$style, 'font-size', '10px'),
+						A2($elm$html$Html$Attributes$style, 'color', 'var(--color-info)')
+					]),
+				_List_fromArray(
+					[
+						$elm$html$Html$text('remote')
+					]))
+			]));
+};
 var $author$project$Main$truncateId = F2(
 	function (s, maxLen) {
 		return (_Utils_cmp(
@@ -9655,7 +10166,103 @@ var $author$project$Main$viewStagedItem = function (sf) {
 					]))
 			]));
 };
+var $author$project$Main$viewWorkingDirItem = F2(
+	function (status, rid) {
+		var isModified = A2($elm$core$List$member, rid, status.modified);
+		var isDeleted = A2($elm$core$List$member, rid, status.deleted);
+		var label = isDeleted ? 'deleted' : (isModified ? 'modified' : 'unstaged');
+		var badgeClass = isDeleted ? 'badge-deleted' : (isModified ? 'badge-modified' : 'badge-staged');
+		return A2(
+			$elm$html$Html$div,
+			_List_fromArray(
+				[
+					$elm$html$Html$Attributes$class('sidebar-item'),
+					A2($elm$html$Html$Attributes$style, 'font-size', '12px')
+				]),
+			_List_fromArray(
+				[
+					A2(
+					$elm$html$Html$span,
+					_List_fromArray(
+						[
+							$elm$html$Html$Attributes$class('badge'),
+							$elm$html$Html$Attributes$class(badgeClass)
+						]),
+					_List_fromArray(
+						[
+							$elm$html$Html$text(label)
+						])),
+					A2(
+					$elm$html$Html$span,
+					_List_fromArray(
+						[
+							A2($elm$html$Html$Attributes$style, 'margin-left', '6px'),
+							A2($elm$html$Html$Attributes$style, 'font-family', 'var(--font-mono)'),
+							A2($elm$html$Html$Attributes$style, 'overflow', 'hidden'),
+							A2($elm$html$Html$Attributes$style, 'text-overflow', 'ellipsis'),
+							A2($elm$html$Html$Attributes$style, 'white-space', 'nowrap')
+						]),
+					_List_fromArray(
+						[
+							$elm$html$Html$text(
+							A2($author$project$Main$truncateId, rid, 20))
+						]))
+				]));
+	});
 var $author$project$Main$viewSidebar = function (model) {
+	var workingChanges = _Utils_ap(
+		model.status.modified,
+		_Utils_ap(model.status.deleted, model.status.unstagedOnStaged));
+	var maxChannelsToShow = 5;
+	var localNames = A2(
+		$elm$core$List$map,
+		function ($) {
+			return $.name;
+		},
+		model.channels);
+	var remoteOnlyChannels = A2(
+		$elm$core$List$filter,
+		function (rn) {
+			return $elm$core$String$isEmpty(model.channelFilter) ? true : A2(
+				$elm$core$String$contains,
+				$elm$core$String$toLower(model.channelFilter),
+				$elm$core$String$toLower(rn));
+		},
+		A2(
+			$elm$core$List$filter,
+			function (rn) {
+				return !A2($elm$core$List$member, rn, localNames);
+			},
+			model.remoteChannels));
+	var filteredChannels = $elm$core$String$isEmpty(model.channelFilter) ? model.channels : A2(
+		$elm$core$List$filter,
+		function (ch) {
+			return A2(
+				$elm$core$String$contains,
+				$elm$core$String$toLower(model.channelFilter),
+				$elm$core$String$toLower(ch.name));
+		},
+		model.channels);
+	var sortedChannels = function () {
+		var _v0 = model.channelSort;
+		if (_v0.$ === 'ChannelSortAlpha') {
+			return A2(
+				$elm$core$List$sortBy,
+				function ($) {
+					return $.name;
+				},
+				filteredChannels);
+		} else {
+			return A2(
+				$elm$core$List$sortBy,
+				function (ch) {
+					return $author$project$Main$negate(ch.changesetCount);
+				},
+				filteredChannels);
+		}
+	}();
+	var visibleChannels = model.showAllChannels ? sortedChannels : A2($elm$core$List$take, maxChannelsToShow, sortedChannels);
+	var hiddenCount = $elm$core$List$length(sortedChannels) - $elm$core$List$length(visibleChannels);
 	return A2(
 		$elm$html$Html$div,
 		_List_fromArray(
@@ -9727,37 +10334,215 @@ var $author$project$Main$viewSidebar = function (model) {
 				_List_fromArray(
 					[
 						A2(
-						$elm$html$Html$h3,
-						_List_Nil,
-						_List_fromArray(
-							[
-								$elm$html$Html$text('Channels')
-							])),
-						A2(
-						$elm$html$Html$div,
-						_List_Nil,
-						A2(
-							$elm$core$List$map,
-							$author$project$Main$viewChannelItem(model.status.channel),
-							model.channels)),
-						A2(
 						$elm$html$Html$div,
 						_List_fromArray(
 							[
-								$elm$html$Html$Attributes$class('sidebar-item'),
-								$elm$html$Html$Events$onClick($author$project$Main$ShowNewChannelDialog)
+								A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+								A2($elm$html$Html$Attributes$style, 'align-items', 'center'),
+								A2($elm$html$Html$Attributes$style, 'justify-content', 'space-between'),
+								A2($elm$html$Html$Attributes$style, 'padding', '0 8px'),
+								A2($elm$html$Html$Attributes$style, 'margin-bottom', '6px')
 							]),
 						_List_fromArray(
 							[
 								A2(
-								$elm$html$Html$span,
+								$elm$html$Html$h3,
 								_List_fromArray(
 									[
-										A2($elm$html$Html$Attributes$style, 'color', '#4a6cf7')
+										A2($elm$html$Html$Attributes$style, 'margin-bottom', '0')
 									]),
 								_List_fromArray(
 									[
-										$elm$html$Html$text('+ New Channel')
+										$elm$html$Html$text('Channels')
+									])),
+								A2(
+								$elm$html$Html$div,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+										A2($elm$html$Html$Attributes$style, 'gap', '4px')
+									]),
+								_List_fromArray(
+									[
+										A2(
+										$elm$html$Html$button,
+										_List_fromArray(
+											[
+												$elm$html$Html$Attributes$class('btn-icon'),
+												$elm$html$Html$Attributes$title('Sort alphabetically'),
+												$elm$html$Html$Events$onClick(
+												$author$project$Main$SetChannelSort($author$project$Main$ChannelSortAlpha)),
+												A2(
+												$elm$html$Html$Attributes$style,
+												'opacity',
+												_Utils_eq(model.channelSort, $author$project$Main$ChannelSortAlpha) ? '1' : '0.5')
+											]),
+										_List_fromArray(
+											[
+												$elm$html$Html$text('A\u2193')
+											])),
+										A2(
+										$elm$html$Html$button,
+										_List_fromArray(
+											[
+												$elm$html$Html$Attributes$class('btn-icon'),
+												$elm$html$Html$Attributes$title('Sort by changesets'),
+												$elm$html$Html$Events$onClick(
+												$author$project$Main$SetChannelSort($author$project$Main$ChannelSortByChangesets)),
+												A2(
+												$elm$html$Html$Attributes$style,
+												'opacity',
+												_Utils_eq(model.channelSort, $author$project$Main$ChannelSortByChangesets) ? '1' : '0.5')
+											]),
+										_List_fromArray(
+											[
+												$elm$html$Html$text('#\u2193')
+											]))
+									]))
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								A2($elm$html$Html$Attributes$style, 'padding', '0 8px'),
+								A2($elm$html$Html$Attributes$style, 'margin-bottom', '6px')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$input,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$type_('text'),
+										$elm$html$Html$Attributes$placeholder('Search channels...'),
+										$elm$html$Html$Attributes$value(model.channelFilter),
+										$elm$html$Html$Events$onInput($author$project$Main$UpdateChannelFilter),
+										A2($elm$html$Html$Attributes$style, 'width', '100%'),
+										A2($elm$html$Html$Attributes$style, 'padding', '4px 8px'),
+										A2($elm$html$Html$Attributes$style, 'font-size', '11px'),
+										A2($elm$html$Html$Attributes$style, 'background', 'var(--color-bg)'),
+										A2($elm$html$Html$Attributes$style, 'border', '1px solid var(--color-border)'),
+										A2($elm$html$Html$Attributes$style, 'border-radius', '4px'),
+										A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text)')
+									]),
+								_List_Nil)
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('channel-list')
+							]),
+						A2(
+							$elm$core$List$map,
+							$author$project$Main$viewChannelItem(model),
+							visibleChannels)),
+						(hiddenCount > 0) ? A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('sidebar-item'),
+								A2($elm$html$Html$Attributes$style, 'font-size', '11px'),
+								A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-dim)'),
+								A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
+								$elm$html$Html$Events$onClick($author$project$Main$ToggleShowAllChannels)
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text(
+								'+ ' + ($elm$core$String$fromInt(hiddenCount) + ' more channels'))
+							])) : ((model.showAllChannels && (_Utils_cmp(
+						$elm$core$List$length(sortedChannels),
+						maxChannelsToShow) > 0)) ? A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('sidebar-item'),
+								A2($elm$html$Html$Attributes$style, 'font-size', '11px'),
+								A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-dim)'),
+								A2($elm$html$Html$Attributes$style, 'cursor', 'pointer'),
+								$elm$html$Html$Events$onClick($author$project$Main$ToggleShowAllChannels)
+							]),
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Show less')
+							])) : $elm$html$Html$text('')),
+						(!$elm$core$List$isEmpty(remoteOnlyChannels)) ? A2(
+						$elm$html$Html$div,
+						_List_Nil,
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$div,
+								_List_fromArray(
+									[
+										A2($elm$html$Html$Attributes$style, 'padding', '4px 8px'),
+										A2($elm$html$Html$Attributes$style, 'font-size', '10px'),
+										A2($elm$html$Html$Attributes$style, 'color', 'var(--color-text-dim)'),
+										A2($elm$html$Html$Attributes$style, 'text-transform', 'uppercase'),
+										A2($elm$html$Html$Attributes$style, 'letter-spacing', '0.08em'),
+										A2($elm$html$Html$Attributes$style, 'margin-top', '8px')
+									]),
+								_List_fromArray(
+									[
+										$elm$html$Html$text('Remote only')
+									])),
+								A2(
+								$elm$html$Html$div,
+								_List_Nil,
+								A2($elm$core$List$map, $author$project$Main$viewRemoteChannelItem, remoteOnlyChannels))
+							])) : $elm$html$Html$text(''),
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								A2($elm$html$Html$Attributes$style, 'display', 'flex'),
+								A2($elm$html$Html$Attributes$style, 'gap', '4px'),
+								A2($elm$html$Html$Attributes$style, 'padding', '4px 8px')
+							]),
+						_List_fromArray(
+							[
+								A2(
+								$elm$html$Html$div,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('sidebar-item'),
+										$elm$html$Html$Events$onClick($author$project$Main$ShowNewChannelDialog),
+										A2($elm$html$Html$Attributes$style, 'flex', '1')
+									]),
+								_List_fromArray(
+									[
+										A2(
+										$elm$html$Html$span,
+										_List_fromArray(
+											[
+												A2($elm$html$Html$Attributes$style, 'color', '#4a6cf7')
+											]),
+										_List_fromArray(
+											[
+												$elm$html$Html$text('+ New')
+											]))
+									])),
+								A2(
+								$elm$html$Html$div,
+								_List_fromArray(
+									[
+										$elm$html$Html$Attributes$class('sidebar-item'),
+										$elm$html$Html$Events$onClick($author$project$Main$SearchRemoteChannels),
+										A2($elm$html$Html$Attributes$style, 'flex', '1')
+									]),
+								_List_fromArray(
+									[
+										A2(
+										$elm$html$Html$span,
+										_List_fromArray(
+											[
+												A2($elm$html$Html$Attributes$style, 'color', '#60a5fa')
+											]),
+										_List_fromArray(
+											[
+												$elm$html$Html$text('Fetch')
+											]))
 									]))
 							]))
 					])),
@@ -9791,7 +10576,30 @@ var $author$project$Main$viewSidebar = function (model) {
 						$elm$html$Html$div,
 						_List_Nil,
 						A2($elm$core$List$map, $author$project$Main$viewStagedItem, model.status.staged))
-					]))
+					])),
+				(!$elm$core$List$isEmpty(workingChanges)) ? A2(
+				$elm$html$Html$div,
+				_List_fromArray(
+					[
+						$elm$html$Html$Attributes$class('sidebar-section')
+					]),
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$h3,
+						_List_Nil,
+						_List_fromArray(
+							[
+								$elm$html$Html$text('Working Directory')
+							])),
+						A2(
+						$elm$html$Html$div,
+						_List_Nil,
+						A2(
+							$elm$core$List$map,
+							$author$project$Main$viewWorkingDirItem(model.status),
+							$author$project$Main$unique(workingChanges)))
+					])) : $elm$html$Html$text('')
 			]));
 };
 var $author$project$Main$viewApp = function (model) {

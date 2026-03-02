@@ -94,6 +94,7 @@ type alias Notification =
     , changesets : List ChangesetSummary
     , id : Int
     , dismissed : Bool
+    , hidden : Bool
     }
 
 
@@ -114,12 +115,23 @@ type alias PatchInfo =
     }
 
 
+type ResourceSort
+    = SortByIdAsc
+    | SortByIdDesc
+
+
+type ChannelSort
+    = ChannelSortAlpha
+    | ChannelSortByChangesets
+
+
 type alias Model =
     { page : Page
     , serverUrl : String
     , connected : Bool
     , status : StatusInfo
     , channels : List ChannelInfo
+    , remoteChannels : List String
     , resources : List String
     , snapshots : List String
 
@@ -143,6 +155,9 @@ type alias Model =
     , tooltipResourceId : String
     , tooltipContent : String
 
+    -- Channel tooltip
+    , channelTooltipName : String
+
     -- Import
     , importSourceChannel : String
     , importChannelResources : List String
@@ -154,7 +169,7 @@ type alias Model =
     -- Restore dialog
     , showRestoreDialog : Bool
     , restoreResourceId : String
-    , restoreMode : String  -- "channel" or "changeset"
+    , restoreMode : String
     , restoreChannel : String
     , restoreChangeId : String
 
@@ -169,10 +184,20 @@ type alias Model =
     -- Notifications
     , notifications : List Notification
     , nextNotifId : Int
+    , notificationsVisible : Bool
 
     -- Feedback
     , flashMessage : Maybe String
     , flashIsError : Bool
+
+    -- Resource filtering/sorting
+    , resourceFilter : String
+    , resourceSort : ResourceSort
+
+    -- Channel filtering/sorting
+    , channelFilter : String
+    , channelSort : ChannelSort
+    , showAllChannels : Bool
     }
 
 
@@ -200,6 +225,7 @@ init flags =
       , connected = False
       , status = emptyStatus
       , channels = []
+      , remoteChannels = []
       , resources = []
       , snapshots = []
       , editResourceId = ""
@@ -212,6 +238,7 @@ init flags =
       , userId = ""
       , tooltipResourceId = ""
       , tooltipContent = ""
+      , channelTooltipName = ""
       , importSourceChannel = ""
       , importChannelResources = []
       , importChannelLog = []
@@ -229,8 +256,14 @@ init flags =
       , promoteChannel = ""
       , notifications = []
       , nextNotifId = 0
+      , notificationsVisible = True
       , flashMessage = Nothing
       , flashIsError = False
+      , resourceFilter = ""
+      , resourceSort = SortByIdAsc
+      , channelFilter = ""
+      , channelSort = ChannelSortAlpha
+      , showAllChannels = False
       }
     , Cmd.none
     )
@@ -301,6 +334,9 @@ type Msg
     | RequestTooltip String
     | ClearTooltip
     | GotSnapshotResult Decode.Value
+      -- Channel tooltip
+    | ShowChannelTooltip String
+    | HideChannelTooltip
       -- Import
     | GoToImport
     | UpdateImportChannel String
@@ -325,10 +361,23 @@ type Msg
       -- Notifications
     | GotNotification String
     | DismissNotification Int
+    | HideNotification Int
+    | ToggleNotificationsVisible
+    | DismissAllNotifications
     | PullNotifChannel String
     | ImportNotifChangeset String String
+      -- Remote channels
+    | SearchRemoteChannels
+    | GotRemoteChannels Decode.Value
       -- User
     | UpdateUserId String
+      -- Resource filter/sort
+    | UpdateResourceFilter String
+    | SetResourceSort ResourceSort
+      -- Channel filter/sort
+    | UpdateChannelFilter String
+    | SetChannelSort ChannelSort
+    | ToggleShowAllChannels
       -- Flash
     | DismissFlash
       -- Misc
@@ -724,11 +773,18 @@ update msg model =
                         |> Result.toMaybe
             in
             case error of
-                Just e ->
+                Just _ ->
                     ( { model | tooltipContent = "(no snapshot)" }, Cmd.none )
 
                 Nothing ->
                     ( { model | tooltipContent = content }, Cmd.none )
+
+        -- Channel tooltip
+        ShowChannelTooltip name ->
+            ( { model | channelTooltipName = name }, Cmd.none )
+
+        HideChannelTooltip ->
+            ( { model | channelTooltipName = "" }, Cmd.none )
 
         -- Import
         GoToImport ->
@@ -868,8 +924,9 @@ update msg model =
                     ( { model
                         | notifications = notif model.nextNotifId :: List.take 9 model.notifications
                         , nextNotifId = model.nextNotifId + 1
+                        , notificationsVisible = True
                       }
-                    , Cmd.none
+                    , Ports.requestChannels ()
                     )
 
                 Err _ ->
@@ -878,8 +935,28 @@ update msg model =
         DismissNotification nid ->
             ( { model | notifications = List.filter (\n -> n.id /= nid) model.notifications }, Cmd.none )
 
+        HideNotification nid ->
+            ( { model
+                | notifications =
+                    List.map
+                        (\n ->
+                            if n.id == nid then
+                                { n | hidden = True }
+                            else
+                                n
+                        )
+                        model.notifications
+              }
+            , Cmd.none
+            )
+
+        ToggleNotificationsVisible ->
+            ( { model | notificationsVisible = not model.notificationsVisible }, Cmd.none )
+
+        DismissAllNotifications ->
+            ( { model | notifications = [] }, Cmd.none )
+
         PullNotifChannel channel ->
-            -- Navigate to Import page with the channel pre-selected
             ( { model
                 | page = ImportPage
                 , importSourceChannel = channel
@@ -893,8 +970,20 @@ update msg model =
                 ]
             )
 
-        ImportNotifChangeset changeId channel ->
+        ImportNotifChangeset changeId _ ->
             ( model, Ports.cherryPick changeId )
+
+        -- Remote channels
+        SearchRemoteChannels ->
+            ( model, Ports.listRemoteChannels () )
+
+        GotRemoteChannels val ->
+            case Decode.decodeValue (Decode.list Decode.string) val of
+                Ok chans ->
+                    ( { model | remoteChannels = chans }, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
 
         UpdateUserId uid ->
             ( { model | userId = uid }
@@ -903,6 +992,23 @@ update msg model =
               else
                 Ports.setUser { name = uid, email = uid ++ "@dyna" }
             )
+
+        -- Resource filter/sort
+        UpdateResourceFilter f ->
+            ( { model | resourceFilter = f }, Cmd.none )
+
+        SetResourceSort s ->
+            ( { model | resourceSort = s }, Cmd.none )
+
+        -- Channel filter/sort
+        UpdateChannelFilter f ->
+            ( { model | channelFilter = f }, Cmd.none )
+
+        SetChannelSort s ->
+            ( { model | channelSort = s }, Cmd.none )
+
+        ToggleShowAllChannels ->
+            ( { model | showAllChannels = not model.showAllChannels }, Cmd.none )
 
         DismissFlash ->
             ( { model | flashMessage = Nothing }, Cmd.none )
@@ -1010,10 +1116,6 @@ decodeChangesetSummary =
         (Decode.field "affected_resources" (Decode.list Decode.string))
 
 
-{-| Decode a server notification into a function that takes an ID and returns a Notification.
-
-Handles both "push" and "promotion" notification kinds from the server.
--}
 decodeServerNotification : Decode.Decoder (Int -> Notification)
 decodeServerNotification =
     Decode.oneOf
@@ -1049,6 +1151,7 @@ decodeServerNotification =
                 , changesets = changesets
                 , id = id
                 , dismissed = False
+                , hidden = False
                 }
             )
             (Decode.field "kind" Decode.string)
@@ -1073,6 +1176,7 @@ decodeServerNotification =
                 , changesets = changesets
                 , id = id
                 , dismissed = False
+                , hidden = False
                 }
             )
             (Decode.field "kind" Decode.string)
@@ -1089,6 +1193,7 @@ decodeServerNotification =
                 , changesets = []
                 , id = id
                 , dismissed = False
+                , hidden = False
                 }
             )
             (Decode.field "kind" Decode.string)
@@ -1173,6 +1278,10 @@ viewApp model =
 
 viewHeader : Model -> Html Msg
 viewHeader model =
+    let
+        notifCount =
+            List.length (List.filter (\n -> not n.hidden) model.notifications)
+    in
     div [ class "app-header" ]
         [ h1 [] [ span [] [ text "Dyna" ], text " Editor" ]
         , div [ class "header-actions" ]
@@ -1191,12 +1300,78 @@ viewHeader model =
                 , disabled (model.status.channel == "main")
                 ]
                 [ text "Promote" ]
+            , -- Notification bell
+              div [ style "position" "relative", style "cursor" "pointer", onClick ToggleNotificationsVisible ]
+                [ span [ style "font-size" "18px", style "color" "#8b90a0" ] [ text "\u{1F514}" ]
+                , if notifCount > 0 then
+                    span
+                        [ style "position" "absolute"
+                        , style "top" "-4px"
+                        , style "right" "-6px"
+                        , style "background" "#f87171"
+                        , style "color" "white"
+                        , style "font-size" "10px"
+                        , style "font-weight" "700"
+                        , style "padding" "1px 5px"
+                        , style "border-radius" "999px"
+                        , style "min-width" "16px"
+                        , style "text-align" "center"
+                        ]
+                        [ text (String.fromInt notifCount) ]
+                  else
+                    text ""
+                ]
             ]
         ]
 
 
 viewSidebar : Model -> Html Msg
 viewSidebar model =
+    let
+        maxChannelsToShow =
+            5
+
+        filteredChannels =
+            if String.isEmpty model.channelFilter then
+                model.channels
+            else
+                List.filter (\ch -> String.contains (String.toLower model.channelFilter) (String.toLower ch.name)) model.channels
+
+        sortedChannels =
+            case model.channelSort of
+                ChannelSortAlpha ->
+                    List.sortBy .name filteredChannels
+
+                ChannelSortByChangesets ->
+                    List.sortBy (\ch -> negate ch.changesetCount) filteredChannels
+
+        visibleChannels =
+            if model.showAllChannels then
+                sortedChannels
+            else
+                List.take maxChannelsToShow sortedChannels
+
+        hiddenCount =
+            List.length sortedChannels - List.length visibleChannels
+
+        -- Remote-only channels (not in local)
+        localNames =
+            List.map .name model.channels
+
+        remoteOnlyChannels =
+            model.remoteChannels
+                |> List.filter (\rn -> not (List.member rn localNames))
+                |> List.filter (\rn ->
+                    if String.isEmpty model.channelFilter then
+                        True
+                    else
+                        String.contains (String.toLower model.channelFilter) (String.toLower rn)
+                )
+
+        -- Working directory changes
+        workingChanges =
+            model.status.modified ++ model.status.deleted ++ model.status.unstagedOnStaged
+    in
     div [ class "sidebar" ]
         [ div [ class "sidebar-section" ]
             [ h3 [] [ text "Navigation" ]
@@ -1204,7 +1379,6 @@ viewSidebar model =
                 [ class
                     (if model.page == ResourcesPage then
                         "sidebar-item active"
-
                      else
                         "sidebar-item"
                     )
@@ -1215,7 +1389,6 @@ viewSidebar model =
                 [ class
                     (if model.page == LogPage then
                         "sidebar-item active"
-
                      else
                         "sidebar-item"
                     )
@@ -1226,7 +1399,6 @@ viewSidebar model =
                 [ class
                     (if model.page == ImportPage then
                         "sidebar-item active"
-
                      else
                         "sidebar-item"
                     )
@@ -1235,55 +1407,203 @@ viewSidebar model =
                 [ text "Import" ]
             ]
         , div [ class "sidebar-section" ]
-            [ h3 [] [ text "Channels" ]
-            , div [] (List.map (viewChannelItem model.status.channel) model.channels)
-            , div [ class "sidebar-item", onClick ShowNewChannelDialog ]
-                [ span [ style "color" "#4a6cf7" ] [ text "+ New Channel" ] ]
+            [ div [ style "display" "flex", style "align-items" "center", style "justify-content" "space-between", style "padding" "0 8px", style "margin-bottom" "6px" ]
+                [ h3 [ style "margin-bottom" "0" ] [ text "Channels" ]
+                , div [ style "display" "flex", style "gap" "4px" ]
+                    [ button
+                        [ class "btn-icon"
+                        , title "Sort alphabetically"
+                        , onClick (SetChannelSort ChannelSortAlpha)
+                        , style "opacity" (if model.channelSort == ChannelSortAlpha then "1" else "0.5")
+                        ]
+                        [ text "A\u{2193}" ]
+                    , button
+                        [ class "btn-icon"
+                        , title "Sort by changesets"
+                        , onClick (SetChannelSort ChannelSortByChangesets)
+                        , style "opacity" (if model.channelSort == ChannelSortByChangesets then "1" else "0.5")
+                        ]
+                        [ text "#\u{2193}" ]
+                    ]
+                ]
+            , div [ style "padding" "0 8px", style "margin-bottom" "6px" ]
+                [ input
+                    [ type_ "text"
+                    , placeholder "Search channels..."
+                    , value model.channelFilter
+                    , onInput UpdateChannelFilter
+                    , style "width" "100%"
+                    , style "padding" "4px 8px"
+                    , style "font-size" "11px"
+                    , style "background" "var(--color-bg)"
+                    , style "border" "1px solid var(--color-border)"
+                    , style "border-radius" "4px"
+                    , style "color" "var(--color-text)"
+                    ]
+                    []
+                ]
+            , div [ class "channel-list" ] (List.map (viewChannelItem model) visibleChannels)
+            , if hiddenCount > 0 then
+                div
+                    [ class "sidebar-item"
+                    , style "font-size" "11px"
+                    , style "color" "var(--color-text-dim)"
+                    , style "cursor" "pointer"
+                    , onClick ToggleShowAllChannels
+                    ]
+                    [ text ("+ " ++ String.fromInt hiddenCount ++ " more channels") ]
+              else if model.showAllChannels && List.length sortedChannels > maxChannelsToShow then
+                div
+                    [ class "sidebar-item"
+                    , style "font-size" "11px"
+                    , style "color" "var(--color-text-dim)"
+                    , style "cursor" "pointer"
+                    , onClick ToggleShowAllChannels
+                    ]
+                    [ text "Show less" ]
+              else
+                text ""
+            , if not (List.isEmpty remoteOnlyChannels) then
+                div []
+                    [ div [ style "padding" "4px 8px", style "font-size" "10px", style "color" "var(--color-text-dim)", style "text-transform" "uppercase", style "letter-spacing" "0.08em", style "margin-top" "8px" ]
+                        [ text "Remote only" ]
+                    , div [] (List.map viewRemoteChannelItem remoteOnlyChannels)
+                    ]
+              else
+                text ""
+            , div [ style "display" "flex", style "gap" "4px", style "padding" "4px 8px" ]
+                [ div [ class "sidebar-item", onClick ShowNewChannelDialog, style "flex" "1" ]
+                    [ span [ style "color" "#4a6cf7" ] [ text "+ New" ] ]
+                , div [ class "sidebar-item", onClick SearchRemoteChannels, style "flex" "1" ]
+                    [ span [ style "color" "#60a5fa" ] [ text "Fetch" ] ]
+                ]
             ]
         , div [ class "sidebar-section" ]
             [ h3 [] [ text "Staged Changes" ]
             , if List.isEmpty model.status.staged then
                 div [ style "padding" "4px 8px", style "font-size" "12px", style "color" "#5a5f73" ]
                     [ text "No staged changes" ]
-
               else
                 div [] (List.map viewStagedItem model.status.staged)
             ]
+        , if not (List.isEmpty workingChanges) then
+            div [ class "sidebar-section" ]
+                [ h3 [] [ text "Working Directory" ]
+                , div [] (List.map (viewWorkingDirItem model.status) (unique workingChanges))
+                ]
+          else
+            text ""
         ]
 
 
-viewChannelItem : String -> ChannelInfo -> Html Msg
-viewChannelItem currentChannel ch =
+viewChannelItem : Model -> ChannelInfo -> Html Msg
+viewChannelItem model ch =
+    let
+        showTooltip =
+            model.channelTooltipName == ch.name
+    in
     div
         [ class
-            (if ch.name == currentChannel then
+            (if ch.isCurrent then
                 "sidebar-item active"
-
              else
                 "sidebar-item"
             )
         , onClick (DoSwitchChannel ch.name)
+        , onMouseEnter (ShowChannelTooltip ch.name)
+        , onMouseLeave HideChannelTooltip
+        , style "position" "relative"
         ]
         [ span
             [ class "dot"
             , class
                 (if ch.name == "main" then
                     "main"
-
-                 else if ch.name == currentChannel then
+                 else if ch.isCurrent then
                     "current"
-
                  else
                     "branch"
                 )
             ]
             []
-        , text ch.name
-        , if ch.name == currentChannel then
-            span [ style "margin-left" "auto", style "font-size" "10px", style "color" "#fbbf24" ] [ text "\u{25CF}" ]
-
+        , span [ style "flex" "1", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ]
+            [ text ch.name ]
+        , span [ style "font-size" "10px", style "color" "var(--color-text-dim)", style "margin-left" "auto", style "flex-shrink" "0" ]
+            [ text (String.fromInt ch.changesetCount) ]
+        , if ch.isCurrent then
+            span [ style "margin-left" "4px", style "font-size" "10px", style "color" "#fbbf24" ] [ text "\u{25CF}" ]
           else
             text ""
+        , if showTooltip then
+            div [ class "channel-tooltip" ]
+                [ div [ style "font-weight" "600", style "margin-bottom" "4px" ] [ text ch.name ]
+                , div [ style "font-size" "11px", style "color" "var(--color-text-muted)" ]
+                    [ text ("Changesets: " ++ String.fromInt ch.changesetCount) ]
+                , div [ style "font-size" "11px", style "color" "var(--color-text-muted)" ]
+                    [ text
+                        ("Head: "
+                            ++ (case ch.head of
+                                    Just h ->
+                                        String.left 8 h
+
+                                    Nothing ->
+                                        "none"
+                               )
+                        )
+                    ]
+                , if ch.isCurrent then
+                    div [ style "font-size" "11px", style "color" "#fbbf24", style "margin-top" "2px" ] [ text "Current channel" ]
+                  else
+                    text ""
+                ]
+          else
+            text ""
+        ]
+
+
+viewRemoteChannelItem : String -> Html Msg
+viewRemoteChannelItem name =
+    div
+        [ class "sidebar-item"
+        , style "font-size" "12px"
+        , style "color" "var(--color-text-dim)"
+        ]
+        [ span [ class "dot", style "background" "#6366f1" ] []
+        , span [ style "flex" "1", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ]
+            [ text name ]
+        , span [ style "font-size" "10px", style "color" "var(--color-info)" ] [ text "remote" ]
+        ]
+
+
+viewWorkingDirItem : StatusInfo -> String -> Html Msg
+viewWorkingDirItem status rid =
+    let
+        isModified =
+            List.member rid status.modified
+
+        isDeleted =
+            List.member rid status.deleted
+
+        label =
+            if isDeleted then
+                "deleted"
+            else if isModified then
+                "modified"
+            else
+                "unstaged"
+
+        badgeClass =
+            if isDeleted then
+                "badge-deleted"
+            else if isModified then
+                "badge-modified"
+            else
+                "badge-staged"
+    in
+    div [ class "sidebar-item", style "font-size" "12px" ]
+        [ span [ class "badge", class badgeClass ] [ text label ]
+        , span [ style "margin-left" "6px", style "font-family" "var(--font-mono)", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ]
+            [ text (truncateId rid 20) ]
         ]
 
 
@@ -1331,27 +1651,72 @@ viewResources model =
                         acc ++ [ rid ]
                 )
                 snapshotIds
-                (stagedIds ++ modifiedIds)
+                (stagedIds ++ modifiedIds ++ model.resources)
+
+        filteredIds =
+            if String.isEmpty model.resourceFilter then
+                allIds
+            else
+                List.filter (\rid -> simpleMatch model.resourceFilter rid) allIds
+
+        sortedIds =
+            case model.resourceSort of
+                SortByIdAsc ->
+                    List.sort filteredIds
+
+                SortByIdDesc ->
+                    List.reverse (List.sort filteredIds)
     in
     div []
         [ div [ class "panel" ]
             [ div [ class "panel-header" ]
-                [ h2 [] [ text "Resources" ]
+                [ h2 [] [ text ("Resources (" ++ String.fromInt (List.length sortedIds) ++ ")") ]
                 , div [ style "display" "flex", style "gap" "8px" ]
                     [ button [ class "btn btn-sm btn-ghost", onClick RefreshAll ] [ text "Refresh" ]
                     , button [ class "btn btn-sm btn-primary", onClick OpenNewResource ] [ text "+ New Resource" ]
                     ]
                 ]
-            , div [ class "panel-body" ]
-                [ if List.isEmpty allIds then
+            , div [ style "padding" "12px 18px 0 18px", style "display" "flex", style "gap" "8px", style "align-items" "center" ]
+                [ input
+                    [ type_ "text"
+                    , placeholder "Filter resources (regex on IDs)..."
+                    , value model.resourceFilter
+                    , onInput UpdateResourceFilter
+                    , style "flex" "1"
+                    , style "padding" "6px 10px"
+                    , style "font-size" "12px"
+                    , style "font-family" "var(--font-mono)"
+                    ]
+                    []
+                , button
+                    [ class "btn btn-sm btn-ghost"
+                    , onClick (SetResourceSort SortByIdAsc)
+                    , style "opacity" (if model.resourceSort == SortByIdAsc then "1" else "0.5")
+                    ]
+                    [ text "A\u{2191}" ]
+                , button
+                    [ class "btn btn-sm btn-ghost"
+                    , onClick (SetResourceSort SortByIdDesc)
+                    , style "opacity" (if model.resourceSort == SortByIdDesc then "1" else "0.5")
+                    ]
+                    [ text "A\u{2193}" ]
+                ]
+            , div [ class "panel-body", style "max-height" "calc(100vh - 240px)", style "overflow-y" "auto" ]
+                [ if List.isEmpty sortedIds then
                     div [ class "empty-state" ]
-                        [ h3 [] [ text "No resources yet" ]
-                        , p [] [ text "Create a new resource or clone from a remote server." ]
+                        [ h3 [] [ text "No resources found" ]
+                        , p []
+                            [ text
+                                (if String.isEmpty model.resourceFilter then
+                                    "Create a new resource or clone from a remote server."
+                                 else
+                                    "No resources match the filter \"" ++ model.resourceFilter ++ "\"."
+                                )
+                            ]
                         ]
-
                   else
                     ul [ class "resource-list" ]
-                        (List.map (viewResourceItem model) allIds)
+                        (List.map (viewResourceItem model) sortedIds)
                 ]
             ]
         , if not (List.isEmpty model.status.deleted) then
@@ -1362,7 +1727,6 @@ viewResources model =
                         (List.map viewDeletedItem model.status.deleted)
                     ]
                 ]
-
           else
             text ""
         ]
@@ -1376,6 +1740,9 @@ viewResourceItem model resourceId =
 
         isModified =
             List.member resourceId model.status.modified
+
+        isInWorkingDir =
+            List.member resourceId model.resources
 
         stagedKind =
             model.status.staged
@@ -1392,8 +1759,8 @@ viewResourceItem model resourceId =
         , onMouseLeave ClearTooltip
         , style "position" "relative"
         ]
-        [ div []
-            [ span [ class "resource-id" ] [ text resourceId ]
+        [ div [ style "display" "flex", style "align-items" "center", style "gap" "6px", style "flex" "1", style "min-width" "0" ]
+            [ span [ class "resource-id", style "overflow" "hidden", style "text-overflow" "ellipsis", style "white-space" "nowrap" ] [ text resourceId ]
             , if isStaged then
                 span
                     [ class "badge"
@@ -1408,13 +1775,12 @@ viewResourceItem model resourceId =
                             _ ->
                                 "badge-modified"
                         )
-                    , style "margin-left" "8px"
                     ]
                     [ text "staged" ]
-
               else if isModified then
-                span [ class "badge badge-modified", style "margin-left" "8px" ] [ text "modified" ]
-
+                span [ class "badge badge-modified" ] [ text "modified" ]
+              else if isInWorkingDir && not (List.member resourceId model.snapshots) then
+                span [ class "badge badge-new" ] [ text "working" ]
               else
                 text ""
             ]
@@ -1452,7 +1818,6 @@ viewEditor model =
                     [ text
                         (if model.editIsNew then
                             "New Resource"
-
                          else
                             "Edit Resource"
                         )
@@ -1461,12 +1826,10 @@ viewEditor model =
                     [ button [ class "btn btn-sm btn-ghost", onClick (GoToPage ResourcesPage) ] [ text "\u{2190} Back" ]
                     , if not model.editIsNew then
                         button [ class "btn btn-sm btn-ghost", onClick (OpenHistory model.editResourceId) ] [ text "History" ]
-
                       else
                         text ""
                     , if not model.editIsNew then
                         button [ class "btn btn-sm btn-ghost", onClick (ShowRestoreDialog model.editResourceId) ] [ text "Restore" ]
-
                       else
                         text ""
                     ]
@@ -1516,7 +1879,6 @@ viewEditor model =
                         [ text "Stage" ]
                     , if not model.editIsNew then
                         button [ class "btn btn-danger", onClick DeleteResource ] [ text "Delete" ]
-
                       else
                         text ""
                     ]
@@ -1525,7 +1887,6 @@ viewEditor model =
                         [ text "\u{26A0} You are on the main channel. Edits should happen on a feature channel. "
                         , span [ style "text-decoration" "underline", style "cursor" "pointer", onClick ShowNewChannelDialog ] [ text "Create one" ]
                         ]
-
                   else
                     text ""
                 ]
@@ -1550,7 +1911,6 @@ viewHistory model =
                         [ h3 [] [ text "No history" ]
                         , p [] [ text "This resource has no recorded changes yet (local-only resources have no remote history)." ]
                         ]
-
                   else
                     div [ class "timeline" ]
                         (List.map (viewHistoryEntry model.historyResourceId) model.historyEntries)
@@ -1593,7 +1953,6 @@ viewLog model =
                         [ h3 [] [ text "No commits yet" ]
                         , p [] [ text "Commit some changes to see them here." ]
                         ]
-
                   else
                     div [ class "timeline" ]
                         (List.map viewLogEntry model.logEntries)
@@ -1609,7 +1968,6 @@ viewLogEntry entry =
             [ span [ class "entry-hash" ] [ text (String.left 8 entry.commitHash) ]
             , if entry.immutable then
                 span [ class "badge badge-new" ] [ text "promoted" ]
-
               else
                 text ""
             , span [ style "font-size" "11px", style "color" "#5a5f73" ]
@@ -1645,10 +2003,10 @@ viewImport model =
                             [ onInput UpdateImportChannel
                             , style "flex" "1"
                             , style "padding" "8px 12px"
-                            , style "background" "var(--surface-2)"
-                            , style "border" "1px solid var(--border)"
+                            , style "background" "var(--color-bg)"
+                            , style "border" "1px solid var(--color-border)"
                             , style "border-radius" "8px"
-                            , style "color" "var(--text-primary)"
+                            , style "color" "var(--color-text)"
                             , style "font-size" "13px"
                             ]
                             (option [ value "" ] [ text "Select a channel..." ]
@@ -1667,7 +2025,6 @@ viewImport model =
                         , ul [ class "resource-list" ]
                             (List.map viewImportResourceItem model.importChannelResources)
                         ]
-
                   else
                     text ""
                 , if not (List.isEmpty model.importChannelLog) then
@@ -1678,7 +2035,6 @@ viewImport model =
                         , div [ class "timeline" ]
                             (List.map viewImportLogEntry model.importChannelLog)
                         ]
-
                   else
                     text ""
                 ]
@@ -1770,11 +2126,30 @@ viewPatchItem changeId patch =
 
 viewNotifications : Model -> Html Msg
 viewNotifications model =
-    if List.isEmpty model.notifications then
+    let
+        visibleNotifs =
+            List.filter (\n -> not n.hidden) model.notifications
+    in
+    if not model.notificationsVisible || List.isEmpty visibleNotifs then
         text ""
     else
         div [ class "notifications" ]
-            (List.map viewNotificationToast model.notifications)
+            (div [ style "display" "flex", style "justify-content" "flex-end", style "margin-bottom" "4px", style "gap" "6px" ]
+                [ button
+                    [ class "btn btn-sm btn-ghost"
+                    , style "font-size" "10px"
+                    , onClick DismissAllNotifications
+                    ]
+                    [ text "Dismiss all" ]
+                , button
+                    [ class "btn btn-sm btn-ghost"
+                    , style "font-size" "10px"
+                    , onClick ToggleNotificationsVisible
+                    ]
+                    [ text "Hide" ]
+                ]
+                :: List.map viewNotificationToast visibleNotifs
+            )
 
 
 viewNotificationToast : Notification -> Html Msg
@@ -1786,14 +2161,26 @@ viewNotificationToast notif =
                 [ div [ class "toast-title" ] [ text notif.title ]
                 , div [ class "toast-body" ] [ text notif.body ]
                 ]
-            , span
-                [ style "cursor" "pointer"
-                , style "opacity" "0.6"
-                , style "font-size" "16px"
-                , style "padding" "0 4px"
-                , onClick (DismissNotification notif.id)
+            , div [ style "display" "flex", style "gap" "4px" ]
+                [ span
+                    [ style "cursor" "pointer"
+                    , style "opacity" "0.6"
+                    , style "font-size" "12px"
+                    , style "padding" "0 4px"
+                    , title "Hide"
+                    , onClick (HideNotification notif.id)
+                    ]
+                    [ text "\u{2212}" ]
+                , span
+                    [ style "cursor" "pointer"
+                    , style "opacity" "0.6"
+                    , style "font-size" "14px"
+                    , style "padding" "0 4px"
+                    , title "Dismiss"
+                    , onClick (DismissNotification notif.id)
+                    ]
+                    [ text "\u{2715}" ]
                 ]
-                [ text "\u{2715}" ]
             ]
         , if not (List.isEmpty notif.changesets) then
             div [ style "margin-top" "8px", style "font-size" "11px" ]
@@ -1819,7 +2206,7 @@ viewNotifChangeset channel cs =
         [ style "padding" "4px 0"
         , style "border-top" "1px solid rgba(255,255,255,0.08)"
         ]
-        [ div [ style "display" "flex", style "gap" "6px", style "align-items" "center" ]
+        [ div [ style "display" "flex", style "gap" "6px", style "align-items" "center", style "flex-wrap" "wrap" ]
             [ span [ style "font-family" "var(--font-mono)", style "color" "#a78bfa" ]
                 [ text (String.left 8 cs.changeId) ]
             , span [ style "font-weight" "500" ] [ text cs.message ]
@@ -1846,22 +2233,18 @@ viewDialogs model =
     div []
         [ if model.showCommitDialog then
             viewCommitDialog model
-
           else
             text ""
         , if model.showNewChannelDialog then
             viewNewChannelDialog model
-
           else
             text ""
         , if model.showPromoteDialog then
             viewPromoteDialog model
-
           else
             text ""
         , if model.showRestoreDialog then
             viewRestoreDialog model
-
           else
             text ""
         ]
@@ -2001,10 +2384,10 @@ viewRestoreDialog model =
                         [ onInput UpdateRestoreChannel
                         , style "width" "100%"
                         , style "padding" "8px 12px"
-                        , style "background" "var(--surface-2)"
-                        , style "border" "1px solid var(--border)"
+                        , style "background" "var(--color-bg)"
+                        , style "border" "1px solid var(--color-border)"
                         , style "border-radius" "8px"
-                        , style "color" "var(--text-primary)"
+                        , style "color" "var(--color-text)"
                         , style "font-size" "13px"
                         ]
                         (option [ value "" ] [ text "Select channel..." ]
@@ -2013,7 +2396,6 @@ viewRestoreDialog model =
                                 otherChannels
                         )
                     ]
-
               else
                 div [ class "form-group" ]
                     [ label [] [ text "Changeset ID" ]
@@ -2058,14 +2440,12 @@ viewFlash model =
                 , style "background"
                     (if model.flashIsError then
                         "rgba(248,113,113,0.12)"
-
                      else
                         "rgba(52,211,153,0.12)"
                     )
                 , style "color"
                     (if model.flashIsError then
                         "#f87171"
-
                      else
                         "#34d399"
                     )
@@ -2087,7 +2467,6 @@ truncateId : String -> Int -> String
 truncateId s maxLen =
     if String.length s > maxLen then
         String.left maxLen s ++ "\u{2026}"
-
     else
         s
 
@@ -2096,7 +2475,6 @@ truncateContent : String -> Int -> String
 truncateContent s maxLen =
     if String.length s > maxLen then
         String.left maxLen s ++ "\n..."
-
     else
         s
 
@@ -2112,6 +2490,20 @@ unique list =
         )
         []
         list
+
+
+{-| Simple substring match for resource filtering.
+Treats the filter as a case-insensitive substring match.
+For more advanced regex, we'd need elm/regex, but substring covers most use cases.
+-}
+simpleMatch : String -> String -> Bool
+simpleMatch pattern str =
+    String.contains (String.toLower pattern) (String.toLower str)
+
+
+negate : Int -> Int
+negate n =
+    -n
 
 
 
@@ -2147,6 +2539,7 @@ subscriptions _ =
         , Ports.onChangesetResult GotChangesetResult
         , Ports.onChannelLogResult GotChannelLog
         , Ports.onChannelResourcesResult GotChannelResources
+        , Ports.onRemoteChannelsResult GotRemoteChannels
         ]
 
 

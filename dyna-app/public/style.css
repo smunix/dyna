@@ -715,3 +715,386 @@ select:focus {
 .resource-list-import li .badge {
     font-size: 10px;
 }
+
+/* =========================================================================
+   Notification Controls
+   ========================================================================= */
+
+.notification-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.notification-toast .toast-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.notification-toast .toast-dismiss {
+    background: transparent;
+    border: none;
+    color: var(--color-text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+    line-height: 1;
+}
+
+.notification-toast .toast-dismiss:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+}
+
+.notification-toast.hidden {
+    display: none;
+}
+
+.notification-bell {
+    position: relative;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: background var(--transition);
+    user-select: none;
+}
+
+.notification-bell:hover {
+    background: var(--color-surface-hover);
+}
+
+.notification-badge-count {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: var(--color-danger);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+}
+
+/* =========================================================================
+   Channel Panel Enhancements
+   ========================================================================= */
+
+.channel-search {
+    padding: 0 8px;
+    margin-bottom: 8px;
+}
+
+.channel-search input {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 12px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    outline: none;
+    transition: border-color var(--transition);
+}
+
+.channel-search input:focus {
+    border-color: var(--color-border-focus);
+}
+
+.channel-sort-bar {
+    display: flex;
+    gap: 2px;
+    padding: 0 8px;
+    margin-bottom: 6px;
+}
+
+.channel-sort-btn {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-dim);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: var(--font-sans);
+}
+
+.channel-sort-btn:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+}
+
+.channel-sort-btn.active {
+    background: rgba(74, 108, 247, 0.12);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.channel-show-more {
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--color-text-dim);
+    cursor: pointer;
+    text-align: center;
+    transition: color var(--transition);
+}
+
+.channel-show-more:hover {
+    color: var(--color-primary);
+}
+
+.channel-item-meta {
+    font-size: 11px;
+    color: var(--color-text-dim);
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* Channel tooltip */
+.channel-tooltip-wrapper {
+    position: relative;
+}
+
+.channel-tooltip {
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 60;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    box-shadow: var(--shadow-lg);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--color-text);
+    white-space: nowrap;
+    pointer-events: none;
+    animation: tooltipFadeIn 150ms ease;
+    min-width: 200px;
+}
+
+.channel-tooltip dt {
+    color: var(--color-text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 6px;
+}
+
+.channel-tooltip dt:first-child {
+    margin-top: 0;
+}
+
+.channel-tooltip dd {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    margin-left: 0;
+}
+
+/* =========================================================================
+   Resource Panel Enhancements
+   ========================================================================= */
+
+.resource-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.resource-filter-bar input {
+    flex: 1;
+    padding: 5px 8px;
+    font-size: 12px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    outline: none;
+    transition: border-color var(--transition);
+    font-family: var(--font-mono);
+}
+
+.resource-filter-bar input:focus {
+    border-color: var(--color-border-focus);
+}
+
+.resource-sort-btn {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-dim);
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: var(--font-sans);
+    white-space: nowrap;
+}
+
+.resource-sort-btn:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+}
+
+.resource-sort-btn.active {
+    background: rgba(74, 108, 247, 0.12);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.resource-scroll-list {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* =========================================================================
+   Working Directory Changes Panel
+   ========================================================================= */
+
+.working-dir-section {
+    margin-top: 16px;
+}
+
+.working-dir-section h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    padding: 0 8px;
+    margin-bottom: 6px;
+}
+
+.working-dir-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    border-radius: var(--radius-sm);
+    transition: background var(--transition);
+}
+
+.working-dir-item:hover {
+    background: var(--color-surface-hover);
+}
+
+.working-dir-item .wd-status {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+}
+
+.wd-status.modified {
+    background: rgba(251, 191, 36, 0.15);
+    color: var(--color-warning);
+}
+
+.wd-status.new {
+    background: rgba(52, 211, 153, 0.15);
+    color: var(--color-success);
+}
+
+.wd-status.deleted {
+    background: rgba(248, 113, 113, 0.15);
+    color: var(--color-danger);
+}
+
+/* =========================================================================
+   Notification changeset details
+   ========================================================================= */
+
+.notif-changeset {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+.notif-changeset .cs-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.notif-changeset .cs-hash {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-primary);
+}
+
+.notif-changeset .cs-message {
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.notif-changeset .cs-meta {
+    font-size: 11px;
+    color: var(--color-text-dim);
+}
+
+.notif-changeset .cs-resources {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--color-border);
+}
+
+.notif-changeset .cs-resources span {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-muted);
+    margin-right: 8px;
+}
+
+.notif-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+/* =========================================================================
+   Badge for working directory
+   ========================================================================= */
+
+.badge-working {
+    background: rgba(96, 165, 250, 0.15);
+    color: var(--color-info);
+}
+
+/* =========================================================================
+   Fetch remote channels button
+   ========================================================================= */
+
+.sidebar-actions {
+    display: flex;
+    gap: 4px;
+    padding: 0 8px;
+    margin-bottom: 8px;
+}
+
+.sidebar-actions .btn {
+    flex: 1;
+    justify-content: center;
+    padding: 4px 8px;
+    font-size: 12px;
+}

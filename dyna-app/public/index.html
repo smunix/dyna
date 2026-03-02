@@ -446,6 +446,22 @@
             }
         });
 
+        // List remote channels
+        safeSub('listRemoteChannels', async function(_) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onRemoteChannelsResult.send([]);
+                return;
+            }
+            try {
+                const channels = JSON.parse(await client.list_remote_channels());
+                app.ports.onRemoteChannelsResult.send(channels);
+            } catch (e) {
+                console.warn('[dyna] Failed to fetch remote channels:', e.message);
+                app.ports.onRemoteChannelsResult.send([]);
+            }
+        });
+
         // -----------------------------------------------------------------
         // WebSocket notifications
         // -----------------------------------------------------------------
