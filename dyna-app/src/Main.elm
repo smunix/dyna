@@ -112,6 +112,15 @@ type alias PatchInfo =
     { targetResource : String
     , opsCount : Int
     , hasSnapshot : Bool
+    , operations : List PatchOp
+    }
+
+
+type alias PatchOp =
+    { op : String
+    , path : String
+    , value : Maybe String
+    , from : Maybe String
     }
 
 
@@ -190,6 +199,9 @@ type alias Model =
     , flashMessage : Maybe String
     , flashIsError : Bool
 
+    -- Expanded patch operations
+    , expandedPatches : List String
+
     -- Collapsible sections
     , stagedSectionOpen : Bool
     , workingSectionOpen : Bool
@@ -264,6 +276,7 @@ init flags =
       , notificationsVisible = True
       , flashMessage = Nothing
       , flashIsError = False
+      , expandedPatches = []
       , stagedSectionOpen = True
       , workingSectionOpen = True
       , committedSectionOpen = False
@@ -387,6 +400,8 @@ type Msg
       -- Sync main channel
     | SyncMain
     | GotSyncMainResult Decode.Value
+      -- Patch operations toggle
+    | TogglePatchOps String
       -- Collapsible sections
     | ToggleStagedSection
     | ToggleWorkingSection
@@ -870,7 +885,7 @@ update msg model =
 
         -- Changeset detail
         ViewChangeset changeId ->
-            ( { model | changesetDetail = Nothing, page = ChangesetDetailPage }
+            ( { model | changesetDetail = Nothing, page = ChangesetDetailPage, expandedPatches = [] }
             , Ports.getChangeset changeId
             )
 
@@ -1164,6 +1179,17 @@ update msg model =
                     -- Silent failure for background sync
                     ( model, Cmd.none )
 
+        -- Patch operations toggle
+        TogglePatchOps targetResource ->
+            let
+                newExpanded =
+                    if List.member targetResource model.expandedPatches then
+                        List.filter (\r -> r /= targetResource) model.expandedPatches
+                    else
+                        targetResource :: model.expandedPatches
+            in
+            ( { model | expandedPatches = newExpanded }, Cmd.none )
+
         -- Collapsible sections
         ToggleStagedSection ->
             ( { model | stagedSectionOpen = not model.stagedSectionOpen }, Cmd.none )
@@ -1254,7 +1280,7 @@ decodeChangesetDetail =
         (Decode.field "created_at" Decode.string)
         (Decode.field "patches"
             (Decode.list
-                (Decode.map3 PatchInfo
+                (Decode.map4 PatchInfo
                     (Decode.field "target_resource" Decode.string)
                     (Decode.field "operations"
                         (Decode.list Decode.value |> Decode.map List.length)
@@ -1265,9 +1291,21 @@ decodeChangesetDetail =
                         , Decode.succeed False
                         ]
                     )
+                    (Decode.field "operations"
+                        (Decode.list decodePatchOp)
+                    )
                 )
             )
         )
+
+
+decodePatchOp : Decode.Decoder PatchOp
+decodePatchOp =
+    Decode.map4 PatchOp
+        (Decode.field "op" Decode.string)
+        (Decode.field "path" Decode.string)
+        (Decode.maybe (Decode.field "value" (Decode.value |> Decode.map (Encode.encode 2))))
+        (Decode.maybe (Decode.field "from" Decode.string))
 
 
 decodeChangesetSummary : Decode.Decoder ChangesetSummary
@@ -2445,28 +2483,130 @@ viewChangesetDetail model =
                                 ]
                             , h3 [ style "margin-bottom" "8px" ] [ text ("Patches (" ++ String.fromInt (List.length detail.patches) ++ ")") ]
                             , ul [ class "resource-list" ]
-                                (List.map (viewPatchItem detail.changeId) detail.patches)
+                                (List.map (viewPatchItem detail.changeId model.expandedPatches) detail.patches)
                             ]
                 ]
             ]
         ]
 
 
-viewPatchItem : String -> PatchInfo -> Html Msg
-viewPatchItem changeId patch =
-    li [ class "resource-item" ]
-        [ div []
-            [ span [ class "resource-id" ] [ text patch.targetResource ]
-            , span [ style "margin-left" "8px", style "font-size" "11px", style "color" "#5a5f73" ]
-                [ text (String.fromInt patch.opsCount ++ " op(s)") ]
-            ]
-        , div [ class "resource-actions" ]
-            [ button
-                [ class "btn btn-sm btn-primary"
-                , onClick (ImportResourceFromChangeset patch.targetResource changeId)
+viewPatchItem : String -> List String -> PatchInfo -> Html Msg
+viewPatchItem changeId expandedPatches patch =
+    let
+        isExpanded =
+            List.member patch.targetResource expandedPatches
+
+        toggleIcon =
+            if isExpanded then
+                "\u{25BC}"
+            else
+                "\u{25B6}"
+    in
+    li [ style "margin-bottom" "4px" ]
+        [ div [ class "resource-item" ]
+            [ div [ style "cursor" "pointer", onClick (TogglePatchOps patch.targetResource) ]
+                [ span [ style "margin-right" "6px", style "font-size" "10px", style "color" "#8b8fa3" ] [ text toggleIcon ]
+                , span [ class "resource-id" ] [ text patch.targetResource ]
+                , span [ style "margin-left" "8px", style "font-size" "11px", style "color" "#5a5f73" ]
+                    [ text (String.fromInt patch.opsCount ++ " op(s)") ]
                 ]
-                [ text "Import this resource" ]
+            , div [ class "resource-actions" ]
+                [ button
+                    [ class "btn btn-sm btn-primary"
+                    , onClick (ImportResourceFromChangeset patch.targetResource changeId)
+                    ]
+                    [ text "Import this resource" ]
+                ]
             ]
+        , if isExpanded then
+            div [ style "margin-left" "20px", style "margin-top" "4px", style "margin-bottom" "8px" ]
+                (List.indexedMap viewPatchOp patch.operations)
+          else
+            text ""
+        ]
+
+
+viewPatchOp : Int -> PatchOp -> Html Msg
+viewPatchOp idx op =
+    let
+        opColor =
+            case op.op of
+                "add" ->
+                    "#34d399"
+
+                "remove" ->
+                    "#f87171"
+
+                "replace" ->
+                    "#fbbf24"
+
+                "move" ->
+                    "#60a5fa"
+
+                "copy" ->
+                    "#a78bfa"
+
+                "test" ->
+                    "#5a5f73"
+
+                _ ->
+                    "#8b8fa3"
+
+        valueDisplay =
+            case op.value of
+                Just v ->
+                    truncateContent v 200
+
+                Nothing ->
+                    ""
+
+        fromDisplay =
+            case op.from of
+                Just f ->
+                    " from: " ++ f
+
+                Nothing ->
+                    ""
+    in
+    div
+        [ style "padding" "6px 10px"
+        , style "margin-bottom" "2px"
+        , style "background" "rgba(255,255,255,0.03)"
+        , style "border-radius" "4px"
+        , style "font-family" "var(--font-mono)"
+        , style "font-size" "12px"
+        , style "line-height" "1.5"
+        ]
+        [ div [ style "display" "flex", style "gap" "8px", style "align-items" "baseline" ]
+            [ span
+                [ style "font-weight" "600"
+                , style "color" opColor
+                , style "text-transform" "uppercase"
+                , style "min-width" "60px"
+                ]
+                [ text op.op ]
+            , span [ style "color" "#c4c9d4" ] [ text op.path ]
+            , if fromDisplay /= "" then
+                span [ style "color" "#8b8fa3" ] [ text fromDisplay ]
+              else
+                text ""
+            ]
+        , if valueDisplay /= "" then
+            pre
+                [ style "margin" "4px 0 0 68px"
+                , style "padding" "6px 8px"
+                , style "background" "rgba(0,0,0,0.2)"
+                , style "border-radius" "3px"
+                , style "font-size" "11px"
+                , style "color" "#a0a4b0"
+                , style "white-space" "pre-wrap"
+                , style "word-break" "break-all"
+                , style "max-height" "150px"
+                , style "overflow-y" "auto"
+                ]
+                [ text valueDisplay ]
+          else
+            text ""
         ]
 
 
