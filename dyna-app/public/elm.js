@@ -77,7 +77,7 @@ function A9(fun, a, b, c, d, e, f, g, h, i) {
   return fun.a === 9 ? fun.f(a, b, c, d, e, f, g, h, i) : fun(a)(b)(c)(d)(e)(f)(g)(h)(i);
 }
 
-console.warn('Compiled in DEV mode. Follow the advice at https://elm-lang.org/0.19.1/optimize for better performance and smaller assets.');
+
 
 
 // EQUALITY
@@ -113,7 +113,7 @@ function _Utils_eqHelp(x, y, depth, stack)
 		return true;
 	}
 
-	/**/
+	/**_UNUSED/
 	if (x.$ === 'Set_elm_builtin')
 	{
 		x = $elm$core$Set$toList(x);
@@ -126,7 +126,7 @@ function _Utils_eqHelp(x, y, depth, stack)
 	}
 	//*/
 
-	/**_UNUSED/
+	/**/
 	if (x.$ < 0)
 	{
 		x = $elm$core$Dict$toList(x);
@@ -161,7 +161,7 @@ function _Utils_cmp(x, y, ord)
 		return x === y ? /*EQ*/ 0 : x < y ? /*LT*/ -1 : /*GT*/ 1;
 	}
 
-	/**/
+	/**_UNUSED/
 	if (x instanceof String)
 	{
 		var a = x.valueOf();
@@ -170,10 +170,10 @@ function _Utils_cmp(x, y, ord)
 	}
 	//*/
 
-	/**_UNUSED/
+	/**/
 	if (typeof x.$ === 'undefined')
 	//*/
-	/**/
+	/**_UNUSED/
 	if (x.$[0] === '#')
 	//*/
 	{
@@ -203,17 +203,17 @@ var _Utils_compare = F2(function(x, y)
 
 // COMMON VALUES
 
-var _Utils_Tuple0_UNUSED = 0;
-var _Utils_Tuple0 = { $: '#0' };
+var _Utils_Tuple0 = 0;
+var _Utils_Tuple0_UNUSED = { $: '#0' };
 
-function _Utils_Tuple2_UNUSED(a, b) { return { a: a, b: b }; }
-function _Utils_Tuple2(a, b) { return { $: '#2', a: a, b: b }; }
+function _Utils_Tuple2(a, b) { return { a: a, b: b }; }
+function _Utils_Tuple2_UNUSED(a, b) { return { $: '#2', a: a, b: b }; }
 
-function _Utils_Tuple3_UNUSED(a, b, c) { return { a: a, b: b, c: c }; }
-function _Utils_Tuple3(a, b, c) { return { $: '#3', a: a, b: b, c: c }; }
+function _Utils_Tuple3(a, b, c) { return { a: a, b: b, c: c }; }
+function _Utils_Tuple3_UNUSED(a, b, c) { return { $: '#3', a: a, b: b, c: c }; }
 
-function _Utils_chr_UNUSED(c) { return c; }
-function _Utils_chr(c) { return new String(c); }
+function _Utils_chr(c) { return c; }
+function _Utils_chr_UNUSED(c) { return new String(c); }
 
 
 // RECORDS
@@ -264,11 +264,11 @@ function _Utils_ap(xs, ys)
 
 
 
-var _List_Nil_UNUSED = { $: 0 };
-var _List_Nil = { $: '[]' };
+var _List_Nil = { $: 0 };
+var _List_Nil_UNUSED = { $: '[]' };
 
-function _List_Cons_UNUSED(hd, tl) { return { $: 1, a: hd, b: tl }; }
-function _List_Cons(hd, tl) { return { $: '::', a: hd, b: tl }; }
+function _List_Cons(hd, tl) { return { $: 1, a: hd, b: tl }; }
+function _List_Cons_UNUSED(hd, tl) { return { $: '::', a: hd, b: tl }; }
 
 
 var _List_cons = F2(_List_Cons);
@@ -499,12 +499,12 @@ var _JsArray_appendN = F3(function(n, dest, source)
 
 // LOG
 
-var _Debug_log_UNUSED = F2(function(tag, value)
+var _Debug_log = F2(function(tag, value)
 {
 	return value;
 });
 
-var _Debug_log = F2(function(tag, value)
+var _Debug_log_UNUSED = F2(function(tag, value)
 {
 	console.log(tag + ': ' + _Debug_toString(value));
 	return value;
@@ -530,12 +530,12 @@ function _Debug_todoCase(moduleName, region, value)
 
 // TO STRING
 
-function _Debug_toString_UNUSED(value)
+function _Debug_toString(value)
 {
 	return '<internals>';
 }
 
-function _Debug_toString(value)
+function _Debug_toString_UNUSED(value)
 {
 	return _Debug_toAnsiString(false, value);
 }
@@ -720,13 +720,13 @@ function _Debug_toHexDigit(n)
 // CRASH
 
 
-function _Debug_crash_UNUSED(identifier)
+function _Debug_crash(identifier)
 {
 	throw new Error('https://github.com/elm/core/blob/1.0.0/hints/' + identifier + '.md');
 }
 
 
-function _Debug_crash(identifier, fact1, fact2, fact3, fact4)
+function _Debug_crash_UNUSED(identifier, fact1, fact2, fact3, fact4)
 {
 	switch(identifier)
 	{
@@ -784,11 +784,11 @@ function _Debug_crash(identifier, fact1, fact2, fact3, fact4)
 
 function _Debug_regionToString(region)
 {
-	if (region.start.line === region.end.line)
+	if (region.aq.T === region.ay.T)
 	{
-		return 'on line ' + region.start.line;
+		return 'on line ' + region.aq.T;
 	}
-	return 'on lines ' + region.start.line + ' through ' + region.end.line;
+	return 'on lines ' + region.aq.T + ' through ' + region.ay.T;
 }
 
 
@@ -1212,7 +1212,7 @@ function _Char_toLocaleLower(char)
 
 
 
-/**/
+/**_UNUSED/
 function _Json_errorToString(error)
 {
 	return $elm$json$Json$Decode$errorToString(error);
@@ -1616,11 +1616,11 @@ var _Json_encode = F2(function(indentLevel, value)
 	return JSON.stringify(_Json_unwrap(value), null, indentLevel) + '';
 });
 
-function _Json_wrap(value) { return { $: 0, a: value }; }
-function _Json_unwrap(value) { return value.a; }
+function _Json_wrap_UNUSED(value) { return { $: 0, a: value }; }
+function _Json_unwrap_UNUSED(value) { return value.a; }
 
-function _Json_wrap_UNUSED(value) { return value; }
-function _Json_unwrap_UNUSED(value) { return value; }
+function _Json_wrap(value) { return value; }
+function _Json_unwrap(value) { return value; }
 
 function _Json_emptyArray() { return []; }
 function _Json_emptyObject() { return {}; }
@@ -1857,9 +1857,9 @@ var _Platform_worker = F4(function(impl, flagDecoder, debugMetadata, args)
 	return _Platform_initialize(
 		flagDecoder,
 		args,
-		impl.init,
-		impl.update,
-		impl.subscriptions,
+		impl.a8,
+		impl.bh,
+		impl.bg,
 		function() { return function() {} }
 	);
 });
@@ -1872,7 +1872,7 @@ var _Platform_worker = F4(function(impl, flagDecoder, debugMetadata, args)
 function _Platform_initialize(flagDecoder, args, init, update, subscriptions, stepperBuilder)
 {
 	var result = A2(_Json_run, flagDecoder, _Json_wrap(args ? args['flags'] : undefined));
-	$elm$core$Result$isOk(result) || _Debug_crash(2 /**/, _Json_errorToString(result.a) /**/);
+	$elm$core$Result$isOk(result) || _Debug_crash(2 /**_UNUSED/, _Json_errorToString(result.a) /**/);
 	var managers = {};
 	var initPair = init(result.a);
 	var model = initPair.a;
@@ -2316,7 +2316,7 @@ function _Platform_setupIncomingPort(name, sendToApp)
 //
 
 
-function _Platform_export_UNUSED(exports)
+function _Platform_export(exports)
 {
 	scope['Elm']
 		? _Platform_mergeExportsProd(scope['Elm'], exports)
@@ -2337,7 +2337,7 @@ function _Platform_mergeExportsProd(obj, exports)
 }
 
 
-function _Platform_export(exports)
+function _Platform_export_UNUSED(exports)
 {
 	scope['Elm']
 		? _Platform_mergeExportsDebug('Elm', scope['Elm'], exports)
@@ -2377,10 +2377,10 @@ var _VirtualDom_init = F4(function(virtualNode, flagDecoder, debugMetadata, args
 {
 	// NOTE: this function needs _Platform_export available to work
 
-	/**_UNUSED/
+	/**/
 	var node = args['node'];
 	//*/
-	/**/
+	/**_UNUSED/
 	var node = args && args['node'] ? args['node'] : _Debug_crash(0);
 	//*/
 
@@ -2655,14 +2655,14 @@ function _VirtualDom_noInnerHtmlOrFormAction(key)
 function _VirtualDom_noJavaScriptUri(value)
 {
 	return _VirtualDom_RE_js.test(value)
-		? /**_UNUSED/''//*//**/'javascript:alert("This is an XSS vector. Please use ports or web components instead.")'//*/
+		? /**/''//*//**_UNUSED/'javascript:alert("This is an XSS vector. Please use ports or web components instead.")'//*/
 		: value;
 }
 
 function _VirtualDom_noJavaScriptOrHtmlUri(value)
 {
 	return _VirtualDom_RE_js_html.test(value)
-		? /**_UNUSED/''//*//**/'javascript:alert("This is an XSS vector. Please use ports or web components instead.")'//*/
+		? /**/''//*//**_UNUSED/'javascript:alert("This is an XSS vector. Please use ports or web components instead.")'//*/
 		: value;
 }
 
@@ -2670,7 +2670,7 @@ function _VirtualDom_noJavaScriptOrHtmlJson(value)
 {
 	return (typeof _Json_unwrap(value) === 'string' && _VirtualDom_RE_js_html.test(_Json_unwrap(value)))
 		? _Json_wrap(
-			/**_UNUSED/''//*//**/'javascript:alert("This is an XSS vector. Please use ports or web components instead.")'//*/
+			/**/''//*//**_UNUSED/'javascript:alert("This is an XSS vector. Please use ports or web components instead.")'//*/
 		) : value;
 }
 
@@ -2719,9 +2719,9 @@ var _VirtualDom_mapEventTuple = F2(function(func, tuple)
 var _VirtualDom_mapEventRecord = F2(function(func, record)
 {
 	return {
-		message: func(record.message),
-		stopPropagation: record.stopPropagation,
-		preventDefault: record.preventDefault
+		aj: func(record.aj),
+		ar: record.ar,
+		am: record.am
 	}
 });
 
@@ -2989,11 +2989,11 @@ function _VirtualDom_makeCallback(eventNode, initialHandler)
 		// 3 = Custom
 
 		var value = result.a;
-		var message = !tag ? value : tag < 3 ? value.a : value.message;
-		var stopPropagation = tag == 1 ? value.b : tag == 3 && value.stopPropagation;
+		var message = !tag ? value : tag < 3 ? value.a : value.aj;
+		var stopPropagation = tag == 1 ? value.b : tag == 3 && value.ar;
 		var currentEventNode = (
 			stopPropagation && event.stopPropagation(),
-			(tag == 2 ? value.b : tag == 3 && value.preventDefault) && event.preventDefault(),
+			(tag == 2 ? value.b : tag == 3 && value.am) && event.preventDefault(),
 			eventNode
 		);
 		var tagger;
@@ -3943,15 +3943,15 @@ var _Browser_element = _Debugger_element || F4(function(impl, flagDecoder, debug
 	return _Platform_initialize(
 		flagDecoder,
 		args,
-		impl.init,
-		impl.update,
-		impl.subscriptions,
+		impl.a8,
+		impl.bh,
+		impl.bg,
 		function(sendToApp, initialModel) {
-			var view = impl.view;
-			/**_UNUSED/
+			var view = impl.bi;
+			/**/
 			var domNode = args['node'];
 			//*/
-			/**/
+			/**_UNUSED/
 			var domNode = args && args['node'] ? args['node'] : _Debug_crash(0);
 			//*/
 			var currNode = _VirtualDom_virtualize(domNode);
@@ -3979,12 +3979,12 @@ var _Browser_document = _Debugger_document || F4(function(impl, flagDecoder, deb
 	return _Platform_initialize(
 		flagDecoder,
 		args,
-		impl.init,
-		impl.update,
-		impl.subscriptions,
+		impl.a8,
+		impl.bh,
+		impl.bg,
 		function(sendToApp, initialModel) {
-			var divertHrefToApp = impl.setup && impl.setup(sendToApp)
-			var view = impl.view;
+			var divertHrefToApp = impl.ap && impl.ap(sendToApp)
+			var view = impl.bi;
 			var title = _VirtualDom_doc.title;
 			var bodyNode = _VirtualDom_doc.body;
 			var currNode = _VirtualDom_virtualize(bodyNode);
@@ -3992,12 +3992,12 @@ var _Browser_document = _Debugger_document || F4(function(impl, flagDecoder, deb
 			{
 				_VirtualDom_divertHrefToApp = divertHrefToApp;
 				var doc = view(model);
-				var nextNode = _VirtualDom_node('body')(_List_Nil)(doc.body);
+				var nextNode = _VirtualDom_node('body')(_List_Nil)(doc.S);
 				var patches = _VirtualDom_diff(currNode, nextNode);
 				bodyNode = _VirtualDom_applyPatches(bodyNode, currNode, patches, sendToApp);
 				currNode = nextNode;
 				_VirtualDom_divertHrefToApp = 0;
-				(title !== doc.title) && (_VirtualDom_doc.title = title = doc.title);
+				(title !== doc._) && (_VirtualDom_doc.title = title = doc._);
 			});
 		}
 	);
@@ -4053,12 +4053,12 @@ function _Browser_makeAnimator(model, draw)
 
 function _Browser_application(impl)
 {
-	var onUrlChange = impl.onUrlChange;
-	var onUrlRequest = impl.onUrlRequest;
+	var onUrlChange = impl.ba;
+	var onUrlRequest = impl.bb;
 	var key = function() { key.a(onUrlChange(_Browser_getUrl())); };
 
 	return _Browser_document({
-		setup: function(sendToApp)
+		ap: function(sendToApp)
 		{
 			key.a = sendToApp;
 			_Browser_window.addEventListener('popstate', key);
@@ -4074,9 +4074,9 @@ function _Browser_application(impl)
 					var next = $elm$url$Url$fromString(href).a;
 					sendToApp(onUrlRequest(
 						(next
-							&& curr.protocol === next.protocol
-							&& curr.host === next.host
-							&& curr.port_.a === next.port_.a
+							&& curr.aM === next.aM
+							&& curr.aC === next.aC
+							&& curr.aJ.a === next.aJ.a
 						)
 							? $elm$browser$Browser$Internal(next)
 							: $elm$browser$Browser$External(href)
@@ -4084,13 +4084,13 @@ function _Browser_application(impl)
 				}
 			});
 		},
-		init: function(flags)
+		a8: function(flags)
 		{
-			return A3(impl.init, flags, _Browser_getUrl(), key);
+			return A3(impl.a8, flags, _Browser_getUrl(), key);
 		},
-		view: impl.view,
-		update: impl.update,
-		subscriptions: impl.subscriptions
+		bi: impl.bi,
+		bh: impl.bh,
+		bg: impl.bg
 	});
 }
 
@@ -4156,17 +4156,17 @@ var _Browser_decodeEvent = F2(function(decoder, event)
 function _Browser_visibilityInfo()
 {
 	return (typeof _VirtualDom_doc.hidden !== 'undefined')
-		? { hidden: 'hidden', change: 'visibilitychange' }
+		? { a6: 'hidden', a$: 'visibilitychange' }
 		:
 	(typeof _VirtualDom_doc.mozHidden !== 'undefined')
-		? { hidden: 'mozHidden', change: 'mozvisibilitychange' }
+		? { a6: 'mozHidden', a$: 'mozvisibilitychange' }
 		:
 	(typeof _VirtualDom_doc.msHidden !== 'undefined')
-		? { hidden: 'msHidden', change: 'msvisibilitychange' }
+		? { a6: 'msHidden', a$: 'msvisibilitychange' }
 		:
 	(typeof _VirtualDom_doc.webkitHidden !== 'undefined')
-		? { hidden: 'webkitHidden', change: 'webkitvisibilitychange' }
-		: { hidden: 'hidden', change: 'visibilitychange' };
+		? { a6: 'webkitHidden', a$: 'webkitvisibilitychange' }
+		: { a6: 'hidden', a$: 'visibilitychange' };
 }
 
 
@@ -4247,12 +4247,12 @@ var _Browser_call = F2(function(functionName, id)
 function _Browser_getViewport()
 {
 	return {
-		scene: _Browser_getScene(),
-		viewport: {
-			x: _Browser_window.pageXOffset,
-			y: _Browser_window.pageYOffset,
-			width: _Browser_doc.documentElement.clientWidth,
-			height: _Browser_doc.documentElement.clientHeight
+		aQ: _Browser_getScene(),
+		aV: {
+			aX: _Browser_window.pageXOffset,
+			aY: _Browser_window.pageYOffset,
+			aW: _Browser_doc.documentElement.clientWidth,
+			aB: _Browser_doc.documentElement.clientHeight
 		}
 	};
 }
@@ -4262,8 +4262,8 @@ function _Browser_getScene()
 	var body = _Browser_doc.body;
 	var elem = _Browser_doc.documentElement;
 	return {
-		width: Math.max(body.scrollWidth, body.offsetWidth, elem.scrollWidth, elem.offsetWidth, elem.clientWidth),
-		height: Math.max(body.scrollHeight, body.offsetHeight, elem.scrollHeight, elem.offsetHeight, elem.clientHeight)
+		aW: Math.max(body.scrollWidth, body.offsetWidth, elem.scrollWidth, elem.offsetWidth, elem.clientWidth),
+		aB: Math.max(body.scrollHeight, body.offsetHeight, elem.scrollHeight, elem.offsetHeight, elem.clientHeight)
 	};
 }
 
@@ -4286,15 +4286,15 @@ function _Browser_getViewportOf(id)
 	return _Browser_withNode(id, function(node)
 	{
 		return {
-			scene: {
-				width: node.scrollWidth,
-				height: node.scrollHeight
+			aQ: {
+				aW: node.scrollWidth,
+				aB: node.scrollHeight
 			},
-			viewport: {
-				x: node.scrollLeft,
-				y: node.scrollTop,
-				width: node.clientWidth,
-				height: node.clientHeight
+			aV: {
+				aX: node.scrollLeft,
+				aY: node.scrollTop,
+				aW: node.clientWidth,
+				aB: node.clientHeight
 			}
 		};
 	});
@@ -4324,18 +4324,18 @@ function _Browser_getElement(id)
 		var x = _Browser_window.pageXOffset;
 		var y = _Browser_window.pageYOffset;
 		return {
-			scene: _Browser_getScene(),
-			viewport: {
-				x: x,
-				y: y,
-				width: _Browser_doc.documentElement.clientWidth,
-				height: _Browser_doc.documentElement.clientHeight
+			aQ: _Browser_getScene(),
+			aV: {
+				aX: x,
+				aY: y,
+				aW: _Browser_doc.documentElement.clientWidth,
+				aB: _Browser_doc.documentElement.clientHeight
 			},
-			element: {
-				x: x + rect.left,
-				y: y + rect.top,
-				width: rect.width,
-				height: rect.height
+			a3: {
+				aX: x + rect.left,
+				aY: y + rect.top,
+				aW: rect.width,
+				aB: rect.height
 			}
 		};
 	});
@@ -4370,15 +4370,15 @@ function _Browser_load(url)
 		}
 	}));
 }
-var $elm$core$Basics$EQ = {$: 'EQ'};
-var $elm$core$Basics$GT = {$: 'GT'};
-var $elm$core$Basics$LT = {$: 'LT'};
+var $elm$core$Basics$EQ = 1;
+var $elm$core$Basics$GT = 2;
+var $elm$core$Basics$LT = 0;
 var $elm$core$List$cons = _List_cons;
 var $elm$core$Dict$foldr = F3(
 	function (func, acc, t) {
 		foldr:
 		while (true) {
-			if (t.$ === 'RBEmpty_elm_builtin') {
+			if (t.$ === -2) {
 				return acc;
 			} else {
 				var key = t.b;
@@ -4423,7 +4423,7 @@ var $elm$core$Dict$keys = function (dict) {
 		dict);
 };
 var $elm$core$Set$toList = function (_v0) {
-	var dict = _v0.a;
+	var dict = _v0;
 	return $elm$core$Dict$keys(dict);
 };
 var $elm$core$Elm$JsArray$foldr = _JsArray_foldr;
@@ -4433,7 +4433,7 @@ var $elm$core$Array$foldr = F3(
 		var tail = _v0.d;
 		var helper = F2(
 			function (node, acc) {
-				if (node.$ === 'SubTree') {
+				if (!node.$) {
 					var subTree = node.a;
 					return A3($elm$core$Elm$JsArray$foldr, helper, acc, subTree);
 				} else {
@@ -4451,32 +4451,32 @@ var $elm$core$Array$toList = function (array) {
 	return A3($elm$core$Array$foldr, $elm$core$List$cons, _List_Nil, array);
 };
 var $elm$core$Result$Err = function (a) {
-	return {$: 'Err', a: a};
+	return {$: 1, a: a};
 };
 var $elm$json$Json$Decode$Failure = F2(
 	function (a, b) {
-		return {$: 'Failure', a: a, b: b};
+		return {$: 3, a: a, b: b};
 	});
 var $elm$json$Json$Decode$Field = F2(
 	function (a, b) {
-		return {$: 'Field', a: a, b: b};
+		return {$: 0, a: a, b: b};
 	});
 var $elm$json$Json$Decode$Index = F2(
 	function (a, b) {
-		return {$: 'Index', a: a, b: b};
+		return {$: 1, a: a, b: b};
 	});
 var $elm$core$Result$Ok = function (a) {
-	return {$: 'Ok', a: a};
+	return {$: 0, a: a};
 };
 var $elm$json$Json$Decode$OneOf = function (a) {
-	return {$: 'OneOf', a: a};
+	return {$: 2, a: a};
 };
-var $elm$core$Basics$False = {$: 'False'};
+var $elm$core$Basics$False = 1;
 var $elm$core$Basics$add = _Basics_add;
 var $elm$core$Maybe$Just = function (a) {
-	return {$: 'Just', a: a};
+	return {$: 0, a: a};
 };
-var $elm$core$Maybe$Nothing = {$: 'Nothing'};
+var $elm$core$Maybe$Nothing = {$: 1};
 var $elm$core$String$all = _String_all;
 var $elm$core$Basics$and = _Basics_and;
 var $elm$core$Basics$append = _Utils_append;
@@ -4601,12 +4601,12 @@ var $elm$json$Json$Decode$errorToStringHelp = F2(
 		errorToStringHelp:
 		while (true) {
 			switch (error.$) {
-				case 'Field':
+				case 0:
 					var f = error.a;
 					var err = error.b;
 					var isSimple = function () {
 						var _v1 = $elm$core$String$uncons(f);
-						if (_v1.$ === 'Nothing') {
+						if (_v1.$ === 1) {
 							return false;
 						} else {
 							var _v2 = _v1.a;
@@ -4621,7 +4621,7 @@ var $elm$json$Json$Decode$errorToStringHelp = F2(
 					error = $temp$error;
 					context = $temp$context;
 					continue errorToStringHelp;
-				case 'Index':
+				case 1:
 					var i = error.a;
 					var err = error.b;
 					var indexName = '[' + ($elm$core$String$fromInt(i) + ']');
@@ -4630,7 +4630,7 @@ var $elm$json$Json$Decode$errorToStringHelp = F2(
 					error = $temp$error;
 					context = $temp$context;
 					continue errorToStringHelp;
-				case 'OneOf':
+				case 2:
 					var errors = error.a;
 					if (!errors.b) {
 						return 'Ran into a Json.Decode.oneOf with no possibilities' + function () {
@@ -4694,7 +4694,7 @@ var $elm$json$Json$Decode$errorToStringHelp = F2(
 var $elm$core$Array$branchFactor = 32;
 var $elm$core$Array$Array_elm_builtin = F4(
 	function (a, b, c, d) {
-		return {$: 'Array_elm_builtin', a: a, b: b, c: c, d: d};
+		return {$: 0, a: a, b: b, c: c, d: d};
 	});
 var $elm$core$Elm$JsArray$empty = _JsArray_empty;
 var $elm$core$Basics$ceiling = _Basics_ceiling;
@@ -4709,7 +4709,7 @@ var $elm$core$Array$shiftStep = $elm$core$Basics$ceiling(
 var $elm$core$Array$empty = A4($elm$core$Array$Array_elm_builtin, 0, $elm$core$Array$shiftStep, $elm$core$Elm$JsArray$empty, $elm$core$Elm$JsArray$empty);
 var $elm$core$Elm$JsArray$initialize = _JsArray_initialize;
 var $elm$core$Array$Leaf = function (a) {
-	return {$: 'Leaf', a: a};
+	return {$: 1, a: a};
 };
 var $elm$core$Basics$apL = F2(
 	function (f, x) {
@@ -4729,7 +4729,7 @@ var $elm$core$Basics$max = F2(
 	});
 var $elm$core$Basics$mul = _Basics_mul;
 var $elm$core$Array$SubTree = function (a) {
-	return {$: 'SubTree', a: a};
+	return {$: 0, a: a};
 };
 var $elm$core$Elm$JsArray$initializeFromList = _JsArray_initializeFromList;
 var $elm$core$Array$compressNodes = F2(
@@ -4776,25 +4776,25 @@ var $elm$core$Array$treeFromBuilder = F2(
 	});
 var $elm$core$Array$builderToArray = F2(
 	function (reverseNodeList, builder) {
-		if (!builder.nodeListSize) {
+		if (!builder.c) {
 			return A4(
 				$elm$core$Array$Array_elm_builtin,
-				$elm$core$Elm$JsArray$length(builder.tail),
+				$elm$core$Elm$JsArray$length(builder.e),
 				$elm$core$Array$shiftStep,
 				$elm$core$Elm$JsArray$empty,
-				builder.tail);
+				builder.e);
 		} else {
-			var treeLen = builder.nodeListSize * $elm$core$Array$branchFactor;
+			var treeLen = builder.c * $elm$core$Array$branchFactor;
 			var depth = $elm$core$Basics$floor(
 				A2($elm$core$Basics$logBase, $elm$core$Array$branchFactor, treeLen - 1));
-			var correctNodeList = reverseNodeList ? $elm$core$List$reverse(builder.nodeList) : builder.nodeList;
-			var tree = A2($elm$core$Array$treeFromBuilder, correctNodeList, builder.nodeListSize);
+			var correctNodeList = reverseNodeList ? $elm$core$List$reverse(builder.f) : builder.f;
+			var tree = A2($elm$core$Array$treeFromBuilder, correctNodeList, builder.c);
 			return A4(
 				$elm$core$Array$Array_elm_builtin,
-				$elm$core$Elm$JsArray$length(builder.tail) + treeLen,
+				$elm$core$Elm$JsArray$length(builder.e) + treeLen,
 				A2($elm$core$Basics$max, 5, depth * $elm$core$Array$shiftStep),
 				tree,
-				builder.tail);
+				builder.e);
 		}
 	});
 var $elm$core$Basics$idiv = _Basics_idiv;
@@ -4807,7 +4807,7 @@ var $elm$core$Array$initializeHelp = F5(
 				return A2(
 					$elm$core$Array$builderToArray,
 					false,
-					{nodeList: nodeList, nodeListSize: (len / $elm$core$Array$branchFactor) | 0, tail: tail});
+					{f: nodeList, c: (len / $elm$core$Array$branchFactor) | 0, e: tail});
 			} else {
 				var leaf = $elm$core$Array$Leaf(
 					A3($elm$core$Elm$JsArray$initialize, $elm$core$Array$branchFactor, fromIndex, fn));
@@ -4837,9 +4837,9 @@ var $elm$core$Array$initialize = F2(
 			return A5($elm$core$Array$initializeHelp, fn, initialFromIndex, len, _List_Nil, tail);
 		}
 	});
-var $elm$core$Basics$True = {$: 'True'};
+var $elm$core$Basics$True = 0;
 var $elm$core$Result$isOk = function (result) {
-	if (result.$ === 'Ok') {
+	if (!result.$) {
 		return true;
 	} else {
 		return false;
@@ -4850,33 +4850,31 @@ var $elm$json$Json$Decode$map2 = _Json_map2;
 var $elm$json$Json$Decode$succeed = _Json_succeed;
 var $elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
 	switch (handler.$) {
-		case 'Normal':
+		case 0:
 			return 0;
-		case 'MayStopPropagation':
+		case 1:
 			return 1;
-		case 'MayPreventDefault':
+		case 2:
 			return 2;
 		default:
 			return 3;
 	}
 };
 var $elm$browser$Browser$External = function (a) {
-	return {$: 'External', a: a};
+	return {$: 1, a: a};
 };
 var $elm$browser$Browser$Internal = function (a) {
-	return {$: 'Internal', a: a};
+	return {$: 0, a: a};
 };
 var $elm$core$Basics$identity = function (x) {
 	return x;
 };
-var $elm$browser$Browser$Dom$NotFound = function (a) {
-	return {$: 'NotFound', a: a};
-};
-var $elm$url$Url$Http = {$: 'Http'};
-var $elm$url$Url$Https = {$: 'Https'};
+var $elm$browser$Browser$Dom$NotFound = $elm$core$Basics$identity;
+var $elm$url$Url$Http = 0;
+var $elm$url$Url$Https = 1;
 var $elm$url$Url$Url = F6(
 	function (protocol, host, port_, path, query, fragment) {
-		return {fragment: fragment, host: host, path: path, port_: port_, protocol: protocol, query: query};
+		return {aA: fragment, aC: host, be: path, aJ: port_, aM: protocol, aN: query};
 	});
 var $elm$core$String$contains = _String_contains;
 var $elm$core$String$length = _String_length;
@@ -4912,7 +4910,7 @@ var $elm$url$Url$chompBeforePath = F5(
 					var i = _v0.a;
 					var _v1 = $elm$core$String$toInt(
 						A2($elm$core$String$dropLeft, i + 1, str));
-					if (_v1.$ === 'Nothing') {
+					if (_v1.$ === 1) {
 						return $elm$core$Maybe$Nothing;
 					} else {
 						var port_ = _v1;
@@ -4995,26 +4993,24 @@ var $elm$core$String$startsWith = _String_startsWith;
 var $elm$url$Url$fromString = function (str) {
 	return A2($elm$core$String$startsWith, 'http://', str) ? A2(
 		$elm$url$Url$chompAfterProtocol,
-		$elm$url$Url$Http,
+		0,
 		A2($elm$core$String$dropLeft, 7, str)) : (A2($elm$core$String$startsWith, 'https://', str) ? A2(
 		$elm$url$Url$chompAfterProtocol,
-		$elm$url$Url$Https,
+		1,
 		A2($elm$core$String$dropLeft, 8, str)) : $elm$core$Maybe$Nothing);
 };
 var $elm$core$Basics$never = function (_v0) {
 	never:
 	while (true) {
-		var nvr = _v0.a;
+		var nvr = _v0;
 		var $temp$_v0 = nvr;
 		_v0 = $temp$_v0;
 		continue never;
 	}
 };
-var $elm$core$Task$Perform = function (a) {
-	return {$: 'Perform', a: a};
-};
+var $elm$core$Task$Perform = $elm$core$Basics$identity;
 var $elm$core$Task$succeed = _Scheduler_succeed;
-var $elm$core$Task$init = $elm$core$Task$succeed(_Utils_Tuple0);
+var $elm$core$Task$init = $elm$core$Task$succeed(0);
 var $elm$core$List$foldrHelper = F4(
 	function (fn, acc, ctr, ls) {
 		if (!ls.b) {
@@ -5120,7 +5116,7 @@ var $elm$core$Task$sequence = function (tasks) {
 var $elm$core$Platform$sendToApp = _Platform_sendToApp;
 var $elm$core$Task$spawnCmd = F2(
 	function (router, _v0) {
-		var task = _v0.a;
+		var task = _v0;
 		return _Scheduler_spawn(
 			A2(
 				$elm$core$Task$andThen,
@@ -5132,7 +5128,7 @@ var $elm$core$Task$onEffects = F3(
 		return A2(
 			$elm$core$Task$map,
 			function (_v0) {
-				return _Utils_Tuple0;
+				return 0;
 			},
 			$elm$core$Task$sequence(
 				A2(
@@ -5142,33 +5138,31 @@ var $elm$core$Task$onEffects = F3(
 	});
 var $elm$core$Task$onSelfMsg = F3(
 	function (_v0, _v1, _v2) {
-		return $elm$core$Task$succeed(_Utils_Tuple0);
+		return $elm$core$Task$succeed(0);
 	});
 var $elm$core$Task$cmdMap = F2(
 	function (tagger, _v0) {
-		var task = _v0.a;
-		return $elm$core$Task$Perform(
-			A2($elm$core$Task$map, tagger, task));
+		var task = _v0;
+		return A2($elm$core$Task$map, tagger, task);
 	});
 _Platform_effectManagers['Task'] = _Platform_createManager($elm$core$Task$init, $elm$core$Task$onEffects, $elm$core$Task$onSelfMsg, $elm$core$Task$cmdMap);
 var $elm$core$Task$command = _Platform_leaf('Task');
 var $elm$core$Task$perform = F2(
 	function (toMessage, task) {
 		return $elm$core$Task$command(
-			$elm$core$Task$Perform(
-				A2($elm$core$Task$map, toMessage, task)));
+			A2($elm$core$Task$map, toMessage, task));
 	});
 var $elm$browser$Browser$element = _Browser_element;
-var $author$project$Main$SetupPage = {$: 'SetupPage'};
+var $author$project$Main$SetupPage = 0;
 var $elm$json$Json$Decode$decodeValue = _Json_run;
-var $author$project$Main$emptyStatus = {channel: 'main', conflicts: _List_Nil, deleted: _List_Nil, modified: _List_Nil, staged: _List_Nil, unstagedOnStaged: _List_Nil};
+var $author$project$Main$emptyStatus = {r: 'main', av: _List_Nil, ag: _List_Nil, V: _List_Nil, H: _List_Nil, aU: _List_Nil};
 var $elm$json$Json$Decode$field = _Json_decodeField;
 var $elm$core$Platform$Cmd$batch = _Platform_batch;
 var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
 var $elm$json$Json$Decode$string = _Json_decodeString;
 var $elm$core$Result$withDefault = F2(
 	function (def, result) {
-		if (result.$ === 'Ok') {
+		if (!result.$) {
 			var a = result.a;
 			return a;
 		} else {
@@ -5184,62 +5178,62 @@ var $author$project$Main$init = function (flags) {
 			A2($elm$json$Json$Decode$field, 'serverUrl', $elm$json$Json$Decode$string),
 			flags));
 	return _Utils_Tuple2(
-		{channels: _List_Nil, commitMessage: '', connected: false, editContent: '', editIsNew: false, editJsonError: $elm$core$Maybe$Nothing, editResourceId: '', flashIsError: false, flashMessage: $elm$core$Maybe$Nothing, historyEntries: _List_Nil, historyResourceId: '', logEntries: _List_Nil, newChannelName: '', nextNotifId: 0, notifications: _List_Nil, page: $author$project$Main$SetupPage, promoteChannel: '', resources: _List_Nil, serverUrl: serverUrl, showCommitDialog: false, showNewChannelDialog: false, showPromoteDialog: false, snapshots: _List_Nil, status: $author$project$Main$emptyStatus},
+		{ad: _List_Nil, B: '', af: false, s: '', o: false, w: $elm$core$Maybe$Nothing, i: '', a: false, b: $elm$core$Maybe$Nothing, K: _List_Nil, ah: '', U: _List_Nil, y: '', W: 0, E: _List_Nil, k: 0, L: '', ao: _List_Nil, M: serverUrl, N: false, O: false, P: false, X: _List_Nil, g: $author$project$Main$emptyStatus},
 		$elm$core$Platform$Cmd$none);
 };
 var $author$project$Main$GotAddResult = function (a) {
-	return {$: 'GotAddResult', a: a};
+	return {$: 22, a: a};
 };
 var $author$project$Main$GotChannels = function (a) {
-	return {$: 'GotChannels', a: a};
+	return {$: 10, a: a};
 };
 var $author$project$Main$GotCloneResult = function (a) {
-	return {$: 'GotCloneResult', a: a};
+	return {$: 5, a: a};
 };
 var $author$project$Main$GotCommitResult = function (a) {
-	return {$: 'GotCommitResult', a: a};
+	return {$: 27, a: a};
 };
 var $author$project$Main$GotCreateChannelResult = function (a) {
-	return {$: 'GotCreateChannelResult', a: a};
+	return {$: 39, a: a};
 };
 var $author$project$Main$GotDeleteResult = function (a) {
-	return {$: 'GotDeleteResult', a: a};
+	return {$: 21, a: a};
 };
 var $author$project$Main$GotHistoryResult = function (a) {
-	return {$: 'GotHistoryResult', a: a};
+	return {$: 43, a: a};
 };
 var $author$project$Main$GotInitResult = function (a) {
-	return {$: 'GotInitResult', a: a};
+	return {$: 4, a: a};
 };
 var $author$project$Main$GotListFiles = function (a) {
-	return {$: 'GotListFiles', a: a};
+	return {$: 7, a: a};
 };
 var $author$project$Main$GotListSnapshots = function (a) {
-	return {$: 'GotListSnapshots', a: a};
+	return {$: 8, a: a};
 };
 var $author$project$Main$GotLogResult = function (a) {
-	return {$: 'GotLogResult', a: a};
+	return {$: 45, a: a};
 };
 var $author$project$Main$GotNotification = function (a) {
-	return {$: 'GotNotification', a: a};
+	return {$: 46, a: a};
 };
 var $author$project$Main$GotPromoteResult = function (a) {
-	return {$: 'GotPromoteResult', a: a};
+	return {$: 34, a: a};
 };
 var $author$project$Main$GotPushResult = function (a) {
-	return {$: 'GotPushResult', a: a};
+	return {$: 29, a: a};
 };
 var $author$project$Main$GotReadResult = function (a) {
-	return {$: 'GotReadResult', a: a};
+	return {$: 19, a: a};
 };
 var $author$project$Main$GotStatus = function (a) {
-	return {$: 'GotStatus', a: a};
+	return {$: 9, a: a};
 };
 var $author$project$Main$GotSwitchChannelResult = function (a) {
-	return {$: 'GotSwitchChannelResult', a: a};
+	return {$: 41, a: a};
 };
 var $author$project$Main$GotWriteResult = function (a) {
-	return {$: 'GotWriteResult', a: a};
+	return {$: 20, a: a};
 };
 var $elm$core$Platform$Sub$batch = _Platform_batch;
 var $elm$json$Json$Decode$value = _Json_decodeValue;
@@ -5285,9 +5279,9 @@ var $author$project$Main$subscriptions = function (_v0) {
 				$author$project$Ports$onNotification($author$project$Main$GotNotification)
 			]));
 };
-var $author$project$Main$EditorPage = {$: 'EditorPage'};
-var $author$project$Main$HistoryPage = {$: 'HistoryPage'};
-var $author$project$Main$ResourcesPage = {$: 'ResourcesPage'};
+var $author$project$Main$EditorPage = 2;
+var $author$project$Main$HistoryPage = 3;
+var $author$project$Main$ResourcesPage = 1;
 var $elm$json$Json$Encode$string = _Json_wrap;
 var $author$project$Ports$addDelete = _Platform_outgoingPort('addDelete', $elm$json$Json$Encode$string);
 var $author$project$Ports$addFile = _Platform_outgoingPort('addFile', $elm$json$Json$Encode$string);
@@ -5303,7 +5297,7 @@ var $author$project$Ports$connectNotifications = _Platform_outgoingPort(
 var $author$project$Ports$createChannel = _Platform_outgoingPort('createChannel', $elm$json$Json$Encode$string);
 var $author$project$Main$ChannelInfo = F4(
 	function (name, changesetCount, head, isCurrent) {
-		return {changesetCount: changesetCount, head: head, isCurrent: isCurrent, name: name};
+		return {a0: changesetCount, a5: head, a9: isCurrent, D: name};
 	});
 var $elm$json$Json$Decode$int = _Json_decodeInt;
 var $elm$json$Json$Decode$map4 = _Json_map4;
@@ -5329,7 +5323,7 @@ var $author$project$Main$decodeChannelInfo = A5(
 	A2($elm$json$Json$Decode$field, 'is_current', $elm$json$Json$Decode$bool));
 var $author$project$Main$HistoryEntry = F6(
 	function (changeId, commitHash, message, author, timestamp, channel) {
-		return {author: author, changeId: changeId, channel: channel, commitHash: commitHash, message: message, timestamp: timestamp};
+		return {ac: author, at: changeId, r: channel, ae: commitHash, aj: message, aT: timestamp};
 	});
 var $elm$json$Json$Decode$list = _Json_decodeList;
 var $elm$json$Json$Decode$map6 = _Json_map6;
@@ -5348,7 +5342,7 @@ var $author$project$Main$decodeHistoryResponse = A2(
 			A2($elm$json$Json$Decode$field, 'channel', $elm$json$Json$Decode$string))));
 var $author$project$Main$LogEntry = F7(
 	function (changeId, commitHash, message, author, createdAt, patchCount, immutable) {
-		return {author: author, changeId: changeId, commitHash: commitHash, createdAt: createdAt, immutable: immutable, message: message, patchCount: patchCount};
+		return {ac: author, at: changeId, ae: commitHash, aw: createdAt, aD: immutable, aj: message, aH: patchCount};
 	});
 var $elm$json$Json$Decode$map7 = _Json_map7;
 var $author$project$Main$decodeLogEntry = A8(
@@ -5363,7 +5357,7 @@ var $author$project$Main$decodeLogEntry = A8(
 	A2($elm$json$Json$Decode$field, 'immutable', $elm$json$Json$Decode$bool));
 var $author$project$Main$NotificationPayload = F3(
 	function (kind, title, body) {
-		return {body: body, kind: kind, title: title};
+		return {S: body, x: kind, _: title};
 	});
 var $elm$json$Json$Decode$map3 = _Json_map3;
 var $author$project$Main$decodeNotificationPayload = A4(
@@ -5380,11 +5374,11 @@ var $author$project$Main$decodeNotificationPayload = A4(
 			])));
 var $author$project$Main$StatusInfo = F6(
 	function (channel, staged, modified, deleted, unstagedOnStaged, conflicts) {
-		return {channel: channel, conflicts: conflicts, deleted: deleted, modified: modified, staged: staged, unstagedOnStaged: unstagedOnStaged};
+		return {r: channel, av: conflicts, ag: deleted, V: modified, H: staged, aU: unstagedOnStaged};
 	});
 var $author$project$Main$StagedFile = F3(
 	function (resourceId, ops, kind) {
-		return {kind: kind, ops: ops, resourceId: resourceId};
+		return {x: kind, bd: ops, an: resourceId};
 	});
 var $author$project$Main$decodeStagedFile = A4(
 	$elm$json$Json$Decode$map3,
@@ -5601,7 +5595,7 @@ var $elm$json$Json$Encode$object = function (pairs) {
 					var v = _v0.b;
 					return A3(_Json_addField, k, v, obj);
 				}),
-			_Json_emptyObject(_Utils_Tuple0),
+			_Json_emptyObject(0),
 			pairs));
 };
 var $author$project$Ports$writeFile = _Platform_outgoingPort(
@@ -5612,28 +5606,28 @@ var $author$project$Ports$writeFile = _Platform_outgoingPort(
 				[
 					_Utils_Tuple2(
 					'content',
-					$elm$json$Json$Encode$string($.content)),
+					$elm$json$Json$Encode$string($.a1)),
 					_Utils_Tuple2(
 					'path',
-					$elm$json$Json$Encode$string($.path))
+					$elm$json$Json$Encode$string($.be))
 				]));
 	});
 var $author$project$Main$update = F2(
 	function (msg, model) {
 		switch (msg.$) {
-			case 'GoToPage':
+			case 0:
 				var page = msg.a;
 				var cmd = function () {
-					switch (page.$) {
-						case 'LogPage':
+					switch (page) {
+						case 4:
 							return $author$project$Ports$requestLog(50);
-						case 'ResourcesPage':
+						case 1:
 							return $elm$core$Platform$Cmd$batch(
 								_List_fromArray(
 									[
-										$author$project$Ports$listSnapshots(_Utils_Tuple0),
-										$author$project$Ports$requestStatus(_Utils_Tuple0),
-										$author$project$Ports$requestChannels(_Utils_Tuple0)
+										$author$project$Ports$listSnapshots(0),
+										$author$project$Ports$requestStatus(0),
+										$author$project$Ports$requestChannels(0)
 									]));
 						default:
 							return $elm$core$Platform$Cmd$none;
@@ -5642,177 +5636,191 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{page: page}),
+						{k: page}),
 					cmd);
-			case 'UpdateServerUrl':
+			case 1:
 				var url = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{serverUrl: url}),
+						{M: url}),
 					$elm$core$Platform$Cmd$none);
-			case 'ConnectToServer':
+			case 2:
 				return _Utils_Tuple2(
 					model,
-					$author$project$Ports$initRepo(model.serverUrl));
-			case 'CloneFromServer':
+					$author$project$Ports$initRepo(model.M));
+			case 3:
 				return _Utils_Tuple2(
 					model,
-					$author$project$Ports$cloneRepo(model.serverUrl));
-			case 'GotInitResult':
+					$author$project$Ports$cloneRepo(model.M));
+			case 4:
 				var val = msg.a;
 				var _v2 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v2.$ === 'Ok') && _v2.a) {
+				if ((!_v2.$) && _v2.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{connected: true, page: $author$project$Main$ResourcesPage}),
+							{af: true, k: 1}),
 						$elm$core$Platform$Cmd$batch(
 							_List_fromArray(
 								[
-									$author$project$Ports$requestStatus(_Utils_Tuple0),
-									$author$project$Ports$requestChannels(_Utils_Tuple0),
-									$author$project$Ports$listSnapshots(_Utils_Tuple0),
-									$author$project$Ports$connectNotifications(_Utils_Tuple0)
+									$author$project$Ports$requestStatus(0),
+									$author$project$Ports$requestChannels(0),
+									$author$project$Ports$listSnapshots(0),
+									$author$project$Ports$connectNotifications(0)
 								])));
 				} else {
+					var detail = A2(
+						$elm$core$Result$withDefault,
+						'unknown error',
+						A2(
+							$elm$json$Json$Decode$decodeValue,
+							A2($elm$json$Json$Decode$field, 'error', $elm$json$Json$Decode$string),
+							val));
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Failed to initialise repository')
+								a: true,
+								b: $elm$core$Maybe$Just('Failed to initialise repository: ' + detail)
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'GotCloneResult':
+			case 5:
 				var val = msg.a;
 				var _v3 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v3.$ === 'Ok') && _v3.a) {
+				if ((!_v3.$) && _v3.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{connected: true, page: $author$project$Main$ResourcesPage}),
+							{af: true, k: 1}),
 						$elm$core$Platform$Cmd$batch(
 							_List_fromArray(
 								[
-									$author$project$Ports$requestStatus(_Utils_Tuple0),
-									$author$project$Ports$requestChannels(_Utils_Tuple0),
-									$author$project$Ports$listSnapshots(_Utils_Tuple0),
-									$author$project$Ports$connectNotifications(_Utils_Tuple0)
+									$author$project$Ports$requestStatus(0),
+									$author$project$Ports$requestChannels(0),
+									$author$project$Ports$listSnapshots(0),
+									$author$project$Ports$connectNotifications(0)
 								])));
 				} else {
+					var detail = A2(
+						$elm$core$Result$withDefault,
+						'unknown error',
+						A2(
+							$elm$json$Json$Decode$decodeValue,
+							A2($elm$json$Json$Decode$field, 'error', $elm$json$Json$Decode$string),
+							val));
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Failed to clone repository')
+								a: true,
+								b: $elm$core$Maybe$Just('Failed to clone repository: ' + detail)
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'RefreshAll':
+			case 6:
 				return _Utils_Tuple2(
 					model,
 					$elm$core$Platform$Cmd$batch(
 						_List_fromArray(
 							[
-								$author$project$Ports$listSnapshots(_Utils_Tuple0),
-								$author$project$Ports$requestStatus(_Utils_Tuple0),
-								$author$project$Ports$requestChannels(_Utils_Tuple0)
+								$author$project$Ports$listSnapshots(0),
+								$author$project$Ports$requestStatus(0),
+								$author$project$Ports$requestChannels(0)
 							])));
-			case 'GotListFiles':
+			case 7:
 				var val = msg.a;
 				var _v4 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					$elm$json$Json$Decode$list($elm$json$Json$Decode$string),
 					val);
-				if (_v4.$ === 'Ok') {
+				if (!_v4.$) {
 					var files = _v4.a;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{resources: files}),
+							{ao: files}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'GotListSnapshots':
+			case 8:
 				var val = msg.a;
 				var _v5 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					$elm$json$Json$Decode$list($elm$json$Json$Decode$string),
 					val);
-				if (_v5.$ === 'Ok') {
+				if (!_v5.$) {
 					var ids = _v5.a;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{snapshots: ids}),
+							{X: ids}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'GotStatus':
+			case 9:
 				var val = msg.a;
 				var _v6 = $author$project$Main$decodeStatus(val);
-				if (_v6.$ === 'Ok') {
+				if (!_v6.$) {
 					var status = _v6.a;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{status: status}),
+							{g: status}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'GotChannels':
+			case 10:
 				var val = msg.a;
 				var _v7 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					$elm$json$Json$Decode$list($author$project$Main$decodeChannelInfo),
 					val);
-				if (_v7.$ === 'Ok') {
+				if (!_v7.$) {
 					var channels = _v7.a;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{channels: channels}),
+							{ad: channels}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'OpenResource':
+			case 11:
 				var resourceId = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{editContent: '', editIsNew: false, editJsonError: $elm$core$Maybe$Nothing, editResourceId: resourceId, page: $author$project$Main$EditorPage}),
+						{s: '', o: false, w: $elm$core$Maybe$Nothing, i: resourceId, k: 2}),
 					$author$project$Ports$readFile(resourceId));
-			case 'OpenNewResource':
+			case 12:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{editContent: '{\n  \n}', editIsNew: true, editJsonError: $elm$core$Maybe$Nothing, editResourceId: '', page: $author$project$Main$EditorPage}),
+						{s: '{\n  \n}', o: true, w: $elm$core$Maybe$Nothing, i: '', k: 2}),
 					$elm$core$Platform$Cmd$none);
-			case 'UpdateResourceId':
+			case 13:
 				var rid = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{editResourceId: rid}),
+						{i: rid}),
 					$elm$core$Platform$Cmd$none);
-			case 'UpdateContent':
+			case 14:
 				var content = msg.a;
 				var jsonError = function () {
 					var _v8 = A2($elm$json$Json$Decode$decodeString, $elm$json$Json$Decode$value, content);
-					if (_v8.$ === 'Ok') {
+					if (!_v8.$) {
 						return $elm$core$Maybe$Nothing;
 					} else {
 						var err = _v8.a;
@@ -5823,50 +5831,50 @@ var $author$project$Main$update = F2(
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{editContent: content, editJsonError: jsonError}),
+						{s: content, w: jsonError}),
 					$elm$core$Platform$Cmd$none);
-			case 'SaveResource':
-				if ($elm$core$String$isEmpty(model.editResourceId)) {
+			case 15:
+				if ($elm$core$String$isEmpty(model.i)) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Resource ID is required')
+								a: true,
+								b: $elm$core$Maybe$Just('Resource ID is required')
 							}),
 						$elm$core$Platform$Cmd$none);
 				} else {
-					var _v9 = model.editJsonError;
-					if (_v9.$ === 'Just') {
+					var _v9 = model.w;
+					if (!_v9.$) {
 						return _Utils_Tuple2(
 							_Utils_update(
 								model,
 								{
-									flashIsError: true,
-									flashMessage: $elm$core$Maybe$Just('Fix JSON errors before saving')
+									a: true,
+									b: $elm$core$Maybe$Just('Fix JSON errors before saving')
 								}),
 							$elm$core$Platform$Cmd$none);
 					} else {
-						var path = A3($elm$core$String$replace, '.', '/', model.editResourceId) + '.json';
+						var path = A3($elm$core$String$replace, '.', '/', model.i) + '.json';
 						return _Utils_Tuple2(
 							model,
 							$author$project$Ports$writeFile(
-								{content: model.editContent, path: path}));
+								{a1: model.s, be: path}));
 					}
 				}
-			case 'DeleteResource':
+			case 16:
 				return _Utils_Tuple2(
 					model,
-					$author$project$Ports$deleteFile(model.editResourceId));
-			case 'StageResource':
+					$author$project$Ports$deleteFile(model.i));
+			case 17:
 				return _Utils_Tuple2(
 					model,
-					$author$project$Ports$addFile(model.editResourceId));
-			case 'StageDelete':
+					$author$project$Ports$addFile(model.i));
+			case 18:
 				return _Utils_Tuple2(
 					model,
-					$author$project$Ports$addDelete(model.editResourceId));
-			case 'GotReadResult':
+					$author$project$Ports$addDelete(model.i));
+			case 19:
 				var val = msg.a;
 				var error = A2(
 					$elm$core$Result$withDefault,
@@ -5885,410 +5893,412 @@ var $author$project$Main$update = F2(
 						$elm$json$Json$Decode$decodeValue,
 						A2($elm$json$Json$Decode$field, 'content', $elm$json$Json$Decode$string),
 						val));
-				if (error.$ === 'Just') {
+				if (!error.$) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{editContent: '{\n  \n}', editIsNew: true}),
+							{s: '{\n  \n}', o: true}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{editContent: content, editIsNew: false}),
+							{s: content, o: false}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'GotWriteResult':
+			case 20:
 				var val = msg.a;
 				var _v11 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v11.$ === 'Ok') && _v11.a) {
+				if ((!_v11.$) && _v11.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('File saved')
+								a: false,
+								b: $elm$core$Maybe$Just('File saved')
 							}),
-						$author$project$Ports$requestStatus(_Utils_Tuple0));
+						$author$project$Ports$requestStatus(0));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Failed to save file')
+								a: true,
+								b: $elm$core$Maybe$Just('Failed to save file')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'GotDeleteResult':
+			case 21:
 				var val = msg.a;
 				var _v12 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v12.$ === 'Ok') && _v12.a) {
+				if ((!_v12.$) && _v12.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('File deleted'),
-								page: $author$project$Main$ResourcesPage
+								a: false,
+								b: $elm$core$Maybe$Just('File deleted'),
+								k: 1
 							}),
 						$elm$core$Platform$Cmd$batch(
 							_List_fromArray(
 								[
-									$author$project$Ports$listSnapshots(_Utils_Tuple0),
-									$author$project$Ports$requestStatus(_Utils_Tuple0)
+									$author$project$Ports$listSnapshots(0),
+									$author$project$Ports$requestStatus(0)
 								])));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Failed to delete file')
+								a: true,
+								b: $elm$core$Maybe$Just('Failed to delete file')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'GotAddResult':
+			case 22:
 				var val = msg.a;
 				var _v13 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v13.$ === 'Ok') && _v13.a) {
+				if ((!_v13.$) && _v13.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('Staged successfully')
+								a: false,
+								b: $elm$core$Maybe$Just('Staged successfully')
 							}),
-						$author$project$Ports$requestStatus(_Utils_Tuple0));
+						$author$project$Ports$requestStatus(0));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Failed to stage')
+								a: true,
+								b: $elm$core$Maybe$Just('Failed to stage')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'ShowCommitDialog':
+			case 23:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{commitMessage: '', showCommitDialog: true}),
+						{B: '', N: true}),
 					$elm$core$Platform$Cmd$none);
-			case 'HideCommitDialog':
+			case 24:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{showCommitDialog: false}),
+						{N: false}),
 					$elm$core$Platform$Cmd$none);
-			case 'UpdateCommitMessage':
+			case 25:
 				var m = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{commitMessage: m}),
+						{B: m}),
 					$elm$core$Platform$Cmd$none);
-			case 'DoCommit':
+			case 26:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{showCommitDialog: false}),
-					$author$project$Ports$commitChanges(model.commitMessage));
-			case 'GotCommitResult':
+						{N: false}),
+					$author$project$Ports$commitChanges(model.B));
+			case 27:
 				var val = msg.a;
 				var _v14 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v14.$ === 'Ok') && _v14.a) {
+				if ((!_v14.$) && _v14.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('Committed successfully')
+								a: false,
+								b: $elm$core$Maybe$Just('Committed successfully')
 							}),
 						$elm$core$Platform$Cmd$batch(
 							_List_fromArray(
 								[
-									$author$project$Ports$requestStatus(_Utils_Tuple0),
-									$author$project$Ports$listSnapshots(_Utils_Tuple0)
+									$author$project$Ports$requestStatus(0),
+									$author$project$Ports$listSnapshots(0)
 								])));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Commit failed')
+								a: true,
+								b: $elm$core$Maybe$Just('Commit failed')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'DoPush':
+			case 28:
 				return _Utils_Tuple2(
 					model,
-					$author$project$Ports$pushChanges(_Utils_Tuple0));
-			case 'GotPushResult':
+					$author$project$Ports$pushChanges(0));
+			case 29:
 				var val = msg.a;
 				var _v15 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v15.$ === 'Ok') && _v15.a) {
+				if ((!_v15.$) && _v15.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('Pushed to remote')
+								a: false,
+								b: $elm$core$Maybe$Just('Pushed to remote')
 							}),
-						$author$project$Ports$requestStatus(_Utils_Tuple0));
+						$author$project$Ports$requestStatus(0));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Push failed')
+								a: true,
+								b: $elm$core$Maybe$Just('Push failed')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'ShowPromoteDialog':
+			case 30:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{promoteChannel: model.status.channel, showPromoteDialog: true}),
+						{L: model.g.r, P: true}),
 					$elm$core$Platform$Cmd$none);
-			case 'HidePromoteDialog':
+			case 31:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{showPromoteDialog: false}),
+						{P: false}),
 					$elm$core$Platform$Cmd$none);
-			case 'UpdatePromoteChannel':
+			case 32:
 				var ch = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{promoteChannel: ch}),
+						{L: ch}),
 					$elm$core$Platform$Cmd$none);
-			case 'DoPromote':
+			case 33:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{showPromoteDialog: false}),
-					$author$project$Ports$promoteChanges(model.promoteChannel));
-			case 'GotPromoteResult':
+						{P: false}),
+					$author$project$Ports$promoteChanges(model.L));
+			case 34:
 				var val = msg.a;
 				var _v16 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v16.$ === 'Ok') && _v16.a) {
+				if ((!_v16.$) && _v16.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('Promoted to main')
+								a: false,
+								b: $elm$core$Maybe$Just('Promoted to main')
 							}),
 						$elm$core$Platform$Cmd$batch(
 							_List_fromArray(
 								[
-									$author$project$Ports$requestStatus(_Utils_Tuple0),
-									$author$project$Ports$requestChannels(_Utils_Tuple0)
+									$author$project$Ports$requestStatus(0),
+									$author$project$Ports$requestChannels(0)
 								])));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Promote failed')
+								a: true,
+								b: $elm$core$Maybe$Just('Promote failed')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'ShowNewChannelDialog':
+			case 35:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{newChannelName: '', showNewChannelDialog: true}),
+						{y: '', O: true}),
 					$elm$core$Platform$Cmd$none);
-			case 'HideNewChannelDialog':
+			case 36:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{showNewChannelDialog: false}),
+						{O: false}),
 					$elm$core$Platform$Cmd$none);
-			case 'UpdateNewChannelName':
+			case 37:
 				var n = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{newChannelName: n}),
+						{y: n}),
 					$elm$core$Platform$Cmd$none);
-			case 'DoCreateChannel':
+			case 38:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{showNewChannelDialog: false}),
-					$author$project$Ports$createChannel(model.newChannelName));
-			case 'GotCreateChannelResult':
+						{O: false}),
+					$author$project$Ports$createChannel(model.y));
+			case 39:
 				var val = msg.a;
 				var _v17 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v17.$ === 'Ok') && _v17.a) {
+				if ((!_v17.$) && _v17.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('Channel created')
+								a: false,
+								b: $elm$core$Maybe$Just('Channel created')
 							}),
 						$elm$core$Platform$Cmd$batch(
 							_List_fromArray(
 								[
-									$author$project$Ports$requestChannels(_Utils_Tuple0),
-									$author$project$Ports$switchChannel(model.newChannelName)
+									$author$project$Ports$requestChannels(0),
+									$author$project$Ports$switchChannel(model.y)
 								])));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Failed to create channel')
+								a: true,
+								b: $elm$core$Maybe$Just('Failed to create channel')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'DoSwitchChannel':
+			case 40:
 				var name = msg.a;
 				return _Utils_Tuple2(
 					model,
 					$author$project$Ports$switchChannel(name));
-			case 'GotSwitchChannelResult':
+			case 41:
 				var val = msg.a;
 				var _v18 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					A2($elm$json$Json$Decode$field, 'success', $elm$json$Json$Decode$bool),
 					val);
-				if ((_v18.$ === 'Ok') && _v18.a) {
+				if ((!_v18.$) && _v18.a) {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: false,
-								flashMessage: $elm$core$Maybe$Just('Switched channel')
+								a: false,
+								b: $elm$core$Maybe$Just('Switched channel')
 							}),
 						$elm$core$Platform$Cmd$batch(
 							_List_fromArray(
 								[
-									$author$project$Ports$requestStatus(_Utils_Tuple0),
-									$author$project$Ports$requestChannels(_Utils_Tuple0),
-									$author$project$Ports$listSnapshots(_Utils_Tuple0)
+									$author$project$Ports$requestStatus(0),
+									$author$project$Ports$requestChannels(0),
+									$author$project$Ports$listSnapshots(0)
 								])));
 				} else {
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								flashIsError: true,
-								flashMessage: $elm$core$Maybe$Just('Failed to switch channel')
+								a: true,
+								b: $elm$core$Maybe$Just('Failed to switch channel')
 							}),
 						$elm$core$Platform$Cmd$none);
 				}
-			case 'OpenHistory':
+			case 42:
 				var resourceId = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{historyEntries: _List_Nil, historyResourceId: resourceId, page: $author$project$Main$HistoryPage}),
+						{K: _List_Nil, ah: resourceId, k: 3}),
 					$author$project$Ports$requestHistory(resourceId));
-			case 'GotHistoryResult':
+			case 43:
 				var val = msg.a;
 				var _v19 = A2($elm$json$Json$Decode$decodeValue, $author$project$Main$decodeHistoryResponse, val);
-				if (_v19.$ === 'Ok') {
+				if (!_v19.$) {
 					var entries = _v19.a;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{historyEntries: entries}),
+							{K: entries}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'RefreshLog':
+			case 44:
 				return _Utils_Tuple2(
 					model,
 					$author$project$Ports$requestLog(50));
-			case 'GotLogResult':
+			case 45:
 				var val = msg.a;
 				var _v20 = A2(
 					$elm$json$Json$Decode$decodeValue,
 					$elm$json$Json$Decode$list($author$project$Main$decodeLogEntry),
 					val);
-				if (_v20.$ === 'Ok') {
+				if (!_v20.$) {
 					var entries = _v20.a;
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
-							{logEntries: entries}),
+							{U: entries}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'GotNotification':
+			case 46:
 				var json = msg.a;
 				var _v21 = A2($elm$json$Json$Decode$decodeString, $author$project$Main$decodeNotificationPayload, json);
-				if (_v21.$ === 'Ok') {
+				if (!_v21.$) {
 					var notif = _v21.a;
-					var newNotif = {body: notif.body, id: model.nextNotifId, kind: notif.kind, title: notif.title};
+					var newNotif = {S: notif.S, ai: model.W, x: notif.x, _: notif._};
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								nextNotifId: model.nextNotifId + 1,
-								notifications: A2(
+								W: model.W + 1,
+								E: A2(
 									$elm$core$List$cons,
 									newNotif,
-									A2($elm$core$List$take, 4, model.notifications))
+									A2($elm$core$List$take, 4, model.E))
 							}),
 						$elm$core$Platform$Cmd$none);
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'DismissNotification':
+			case 47:
 				var nid = msg.a;
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
 						{
-							notifications: A2(
+							E: A2(
 								$elm$core$List$filter,
 								function (n) {
-									return !_Utils_eq(n.id, nid);
+									return !_Utils_eq(n.ai, nid);
 								},
-								model.notifications)
+								model.E)
 						}),
 					$elm$core$Platform$Cmd$none);
-			default:
+			case 48:
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
-						{flashMessage: $elm$core$Maybe$Nothing}),
+						{b: $elm$core$Maybe$Nothing}),
 					$elm$core$Platform$Cmd$none);
+			default:
+				return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 		}
 	});
 var $elm$html$Html$Attributes$stringProperty = F2(
@@ -6302,10 +6312,11 @@ var $elm$html$Html$Attributes$class = $elm$html$Html$Attributes$stringProperty('
 var $elm$html$Html$div = _VirtualDom_node('div');
 var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
-var $author$project$Main$DoCommit = {$: 'DoCommit'};
-var $author$project$Main$HideCommitDialog = {$: 'HideCommitDialog'};
+var $author$project$Main$DoCommit = {$: 26};
+var $author$project$Main$HideCommitDialog = {$: 24};
+var $author$project$Main$NoOp = {$: 49};
 var $author$project$Main$UpdateCommitMessage = function (a) {
-	return {$: 'UpdateCommitMessage', a: a};
+	return {$: 25, a: a};
 };
 var $elm$html$Html$button = _VirtualDom_node('button');
 var $elm$json$Json$Encode$bool = _Json_wrap;
@@ -6321,7 +6332,7 @@ var $elm$html$Html$h3 = _VirtualDom_node('h3');
 var $elm$html$Html$input = _VirtualDom_node('input');
 var $elm$html$Html$label = _VirtualDom_node('label');
 var $elm$virtual_dom$VirtualDom$Normal = function (a) {
-	return {$: 'Normal', a: a};
+	return {$: 0, a: a};
 };
 var $elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
 var $elm$html$Html$Events$on = F2(
@@ -6341,7 +6352,7 @@ var $elm$html$Html$Events$alwaysStop = function (x) {
 	return _Utils_Tuple2(x, true);
 };
 var $elm$virtual_dom$VirtualDom$MayStopPropagation = function (a) {
-	return {$: 'MayStopPropagation', a: a};
+	return {$: 1, a: a};
 };
 var $elm$html$Html$Events$stopPropagationOn = F2(
 	function (event, decoder) {
@@ -6391,18 +6402,8 @@ var $author$project$Main$viewCommitDialog = function (model) {
 						A2(
 						$elm$html$Html$Events$stopPropagationOn,
 						'click',
-						A2(
-							$elm$json$Json$Decode$map,
-							function (_v1) {
-								return _Utils_Tuple2($author$project$Main$HideCommitDialog, true);
-							},
-							A2(
-								$elm$json$Json$Decode$map,
-								function (_v0) {
-									return _Utils_Tuple2($author$project$Main$HideCommitDialog, true);
-								},
-								$elm$json$Json$Decode$succeed(
-									_Utils_Tuple2($author$project$Main$HideCommitDialog, false)))))
+						$elm$json$Json$Decode$succeed(
+							_Utils_Tuple2($author$project$Main$NoOp, true)))
 					]),
 				_List_fromArray(
 					[
@@ -6433,7 +6434,7 @@ var $author$project$Main$viewCommitDialog = function (model) {
 								_List_fromArray(
 									[
 										$elm$html$Html$Attributes$type_('text'),
-										$elm$html$Html$Attributes$value(model.commitMessage),
+										$elm$html$Html$Attributes$value(model.B),
 										$elm$html$Html$Events$onInput($author$project$Main$UpdateCommitMessage),
 										$elm$html$Html$Attributes$placeholder('Describe your changes...')
 									]),
@@ -6451,7 +6452,7 @@ var $author$project$Main$viewCommitDialog = function (model) {
 							[
 								$elm$html$Html$text(
 								$elm$core$String$fromInt(
-									$elm$core$List$length(model.status.staged)) + ' staged change(s)')
+									$elm$core$List$length(model.g.H)) + ' staged change(s)')
 							])),
 						A2(
 						$elm$html$Html$div,
@@ -6479,7 +6480,7 @@ var $author$project$Main$viewCommitDialog = function (model) {
 										$elm$html$Html$Attributes$class('btn btn-primary'),
 										$elm$html$Html$Events$onClick($author$project$Main$DoCommit),
 										$elm$html$Html$Attributes$disabled(
-										$elm$core$String$isEmpty(model.commitMessage))
+										$elm$core$String$isEmpty(model.B))
 									]),
 								_List_fromArray(
 									[
@@ -6489,10 +6490,10 @@ var $author$project$Main$viewCommitDialog = function (model) {
 					]))
 			]));
 };
-var $author$project$Main$DoCreateChannel = {$: 'DoCreateChannel'};
-var $author$project$Main$HideNewChannelDialog = {$: 'HideNewChannelDialog'};
+var $author$project$Main$DoCreateChannel = {$: 38};
+var $author$project$Main$HideNewChannelDialog = {$: 36};
 var $author$project$Main$UpdateNewChannelName = function (a) {
-	return {$: 'UpdateNewChannelName', a: a};
+	return {$: 37, a: a};
 };
 var $elm$html$Html$p = _VirtualDom_node('p');
 var $author$project$Main$viewNewChannelDialog = function (model) {
@@ -6509,7 +6510,12 @@ var $author$project$Main$viewNewChannelDialog = function (model) {
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
-						$elm$html$Html$Attributes$class('modal')
+						$elm$html$Html$Attributes$class('modal'),
+						A2(
+						$elm$html$Html$Events$stopPropagationOn,
+						'click',
+						$elm$json$Json$Decode$succeed(
+							_Utils_Tuple2($author$project$Main$NoOp, true)))
 					]),
 				_List_fromArray(
 					[
@@ -6552,7 +6558,7 @@ var $author$project$Main$viewNewChannelDialog = function (model) {
 								_List_fromArray(
 									[
 										$elm$html$Html$Attributes$type_('text'),
-										$elm$html$Html$Attributes$value(model.newChannelName),
+										$elm$html$Html$Attributes$value(model.y),
 										$elm$html$Html$Events$onInput($author$project$Main$UpdateNewChannelName),
 										$elm$html$Html$Attributes$placeholder('feature/user-schema')
 									]),
@@ -6584,7 +6590,7 @@ var $author$project$Main$viewNewChannelDialog = function (model) {
 										$elm$html$Html$Attributes$class('btn btn-primary'),
 										$elm$html$Html$Events$onClick($author$project$Main$DoCreateChannel),
 										$elm$html$Html$Attributes$disabled(
-										$elm$core$String$isEmpty(model.newChannelName))
+										$elm$core$String$isEmpty(model.y))
 									]),
 								_List_fromArray(
 									[
@@ -6594,8 +6600,8 @@ var $author$project$Main$viewNewChannelDialog = function (model) {
 					]))
 			]));
 };
-var $author$project$Main$DoPromote = {$: 'DoPromote'};
-var $author$project$Main$HidePromoteDialog = {$: 'HidePromoteDialog'};
+var $author$project$Main$DoPromote = {$: 33};
+var $author$project$Main$HidePromoteDialog = {$: 31};
 var $author$project$Main$viewPromoteDialog = function (model) {
 	return A2(
 		$elm$html$Html$div,
@@ -6610,7 +6616,12 @@ var $author$project$Main$viewPromoteDialog = function (model) {
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
-						$elm$html$Html$Attributes$class('modal')
+						$elm$html$Html$Attributes$class('modal'),
+						A2(
+						$elm$html$Html$Events$stopPropagationOn,
+						'click',
+						$elm$json$Json$Decode$succeed(
+							_Utils_Tuple2($author$project$Main$NoOp, true)))
 					]),
 				_List_fromArray(
 					[
@@ -6631,7 +6642,7 @@ var $author$project$Main$viewPromoteDialog = function (model) {
 							]),
 						_List_fromArray(
 							[
-								$elm$html$Html$text('Promote all changesets from \"' + (model.promoteChannel + '\" to main.'))
+								$elm$html$Html$text('Promote all changesets from \"' + (model.L + '\" to main.'))
 							])),
 						A2(
 						$elm$html$Html$div,
@@ -6673,26 +6684,26 @@ var $author$project$Main$viewDialogs = function (model) {
 		_List_Nil,
 		_List_fromArray(
 			[
-				model.showCommitDialog ? $author$project$Main$viewCommitDialog(model) : $elm$html$Html$text(''),
-				model.showNewChannelDialog ? $author$project$Main$viewNewChannelDialog(model) : $elm$html$Html$text(''),
-				model.showPromoteDialog ? $author$project$Main$viewPromoteDialog(model) : $elm$html$Html$text('')
+				model.N ? $author$project$Main$viewCommitDialog(model) : $elm$html$Html$text(''),
+				model.O ? $author$project$Main$viewNewChannelDialog(model) : $elm$html$Html$text(''),
+				model.P ? $author$project$Main$viewPromoteDialog(model) : $elm$html$Html$text('')
 			]));
 };
-var $author$project$Main$DeleteResource = {$: 'DeleteResource'};
+var $author$project$Main$DeleteResource = {$: 16};
 var $author$project$Main$GoToPage = function (a) {
-	return {$: 'GoToPage', a: a};
+	return {$: 0, a: a};
 };
 var $author$project$Main$OpenHistory = function (a) {
-	return {$: 'OpenHistory', a: a};
+	return {$: 42, a: a};
 };
-var $author$project$Main$SaveResource = {$: 'SaveResource'};
-var $author$project$Main$ShowNewChannelDialog = {$: 'ShowNewChannelDialog'};
-var $author$project$Main$StageResource = {$: 'StageResource'};
+var $author$project$Main$SaveResource = {$: 15};
+var $author$project$Main$ShowNewChannelDialog = {$: 35};
+var $author$project$Main$StageResource = {$: 17};
 var $author$project$Main$UpdateContent = function (a) {
-	return {$: 'UpdateContent', a: a};
+	return {$: 14, a: a};
 };
 var $author$project$Main$UpdateResourceId = function (a) {
-	return {$: 'UpdateResourceId', a: a};
+	return {$: 13, a: a};
 };
 var $elm$html$Html$h2 = _VirtualDom_node('h2');
 var $elm$core$Basics$not = _Basics_not;
@@ -6726,7 +6737,7 @@ var $author$project$Main$viewEditor = function (model) {
 								_List_fromArray(
 									[
 										$elm$html$Html$text(
-										model.editIsNew ? 'New Resource' : 'Edit Resource')
+										model.o ? 'New Resource' : 'Edit Resource')
 									])),
 								A2(
 								$elm$html$Html$div,
@@ -6743,19 +6754,19 @@ var $author$project$Main$viewEditor = function (model) {
 											[
 												$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
 												$elm$html$Html$Events$onClick(
-												$author$project$Main$GoToPage($author$project$Main$ResourcesPage))
+												$author$project$Main$GoToPage(1))
 											]),
 										_List_fromArray(
 											[
 												$elm$html$Html$text('← Back')
 											])),
-										(!model.editIsNew) ? A2(
+										(!model.o) ? A2(
 										$elm$html$Html$button,
 										_List_fromArray(
 											[
 												$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
 												$elm$html$Html$Events$onClick(
-												$author$project$Main$OpenHistory(model.editResourceId))
+												$author$project$Main$OpenHistory(model.i))
 											]),
 										_List_fromArray(
 											[
@@ -6791,10 +6802,10 @@ var $author$project$Main$viewEditor = function (model) {
 										_List_fromArray(
 											[
 												$elm$html$Html$Attributes$type_('text'),
-												$elm$html$Html$Attributes$value(model.editResourceId),
+												$elm$html$Html$Attributes$value(model.i),
 												$elm$html$Html$Events$onInput($author$project$Main$UpdateResourceId),
 												$elm$html$Html$Attributes$placeholder('acme.entity.User'),
-												$elm$html$Html$Attributes$disabled(!model.editIsNew),
+												$elm$html$Html$Attributes$disabled(!model.o),
 												A2($elm$html$Html$Attributes$style, 'font-family', 'var(--font-mono)')
 											]),
 										_List_Nil)
@@ -6826,14 +6837,14 @@ var $author$project$Main$viewEditor = function (model) {
 												$elm$html$Html$textarea,
 												_List_fromArray(
 													[
-														$elm$html$Html$Attributes$value(model.editContent),
+														$elm$html$Html$Attributes$value(model.s),
 														$elm$html$Html$Events$onInput($author$project$Main$UpdateContent),
 														$elm$html$Html$Attributes$placeholder('{ }')
 													]),
 												_List_Nil),
 												function () {
-												var _v0 = model.editJsonError;
-												if (_v0.$ === 'Just') {
+												var _v0 = model.w;
+												if (!_v0.$) {
 													var err = _v0.a;
 													return A2(
 														$elm$html$Html$div,
@@ -6868,7 +6879,7 @@ var $author$project$Main$viewEditor = function (model) {
 												$elm$html$Html$Attributes$class('btn btn-primary'),
 												$elm$html$Html$Events$onClick($author$project$Main$SaveResource),
 												$elm$html$Html$Attributes$disabled(
-												(!_Utils_eq(model.editJsonError, $elm$core$Maybe$Nothing)) || $elm$core$String$isEmpty(model.editResourceId))
+												(!_Utils_eq(model.w, $elm$core$Maybe$Nothing)) || $elm$core$String$isEmpty(model.i))
 											]),
 										_List_fromArray(
 											[
@@ -6881,13 +6892,13 @@ var $author$project$Main$viewEditor = function (model) {
 												$elm$html$Html$Attributes$class('btn btn-success'),
 												$elm$html$Html$Events$onClick($author$project$Main$StageResource),
 												$elm$html$Html$Attributes$disabled(
-												$elm$core$String$isEmpty(model.editResourceId))
+												$elm$core$String$isEmpty(model.i))
 											]),
 										_List_fromArray(
 											[
 												$elm$html$Html$text('Stage')
 											])),
-										(!model.editIsNew) ? A2(
+										(!model.o) ? A2(
 										$elm$html$Html$button,
 										_List_fromArray(
 											[
@@ -6899,7 +6910,7 @@ var $author$project$Main$viewEditor = function (model) {
 												$elm$html$Html$text('Delete')
 											])) : $elm$html$Html$text('')
 									])),
-								(model.status.channel === 'main') ? A2(
+								(model.g.r === 'main') ? A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -6930,10 +6941,10 @@ var $author$project$Main$viewEditor = function (model) {
 					]))
 			]));
 };
-var $author$project$Main$DismissFlash = {$: 'DismissFlash'};
+var $author$project$Main$DismissFlash = {$: 48};
 var $author$project$Main$viewFlash = function (model) {
-	var _v0 = model.flashMessage;
-	if (_v0.$ === 'Just') {
+	var _v0 = model.b;
+	if (!_v0.$) {
 		var msg = _v0.a;
 		return A2(
 			$elm$html$Html$div,
@@ -6947,11 +6958,11 @@ var $author$project$Main$viewFlash = function (model) {
 					A2(
 					$elm$html$Html$Attributes$style,
 					'background',
-					model.flashIsError ? 'rgba(248,113,113,0.12)' : 'rgba(52,211,153,0.12)'),
+					model.a ? 'rgba(248,113,113,0.12)' : 'rgba(52,211,153,0.12)'),
 					A2(
 					$elm$html$Html$Attributes$style,
 					'color',
-					model.flashIsError ? '#f87171' : '#34d399'),
+					model.a ? '#f87171' : '#34d399'),
 					$elm$html$Html$Events$onClick($author$project$Main$DismissFlash)
 				]),
 			_List_fromArray(
@@ -6962,9 +6973,9 @@ var $author$project$Main$viewFlash = function (model) {
 		return $elm$html$Html$text('');
 	}
 };
-var $author$project$Main$DoPush = {$: 'DoPush'};
-var $author$project$Main$ShowCommitDialog = {$: 'ShowCommitDialog'};
-var $author$project$Main$ShowPromoteDialog = {$: 'ShowPromoteDialog'};
+var $author$project$Main$DoPush = {$: 28};
+var $author$project$Main$ShowCommitDialog = {$: 23};
+var $author$project$Main$ShowPromoteDialog = {$: 30};
 var $elm$html$Html$h1 = _VirtualDom_node('h1');
 var $elm$core$List$isEmpty = function (xs) {
 	if (!xs.b) {
@@ -7013,7 +7024,7 @@ var $author$project$Main$viewHeader = function (model) {
 							]),
 						_List_fromArray(
 							[
-								$elm$html$Html$text('Channel: ' + model.status.channel)
+								$elm$html$Html$text('Channel: ' + model.g.r)
 							])),
 						A2(
 						$elm$html$Html$button,
@@ -7022,7 +7033,7 @@ var $author$project$Main$viewHeader = function (model) {
 								$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
 								$elm$html$Html$Events$onClick($author$project$Main$ShowCommitDialog),
 								$elm$html$Html$Attributes$disabled(
-								$elm$core$List$isEmpty(model.status.staged))
+								$elm$core$List$isEmpty(model.g.H))
 							]),
 						_List_fromArray(
 							[
@@ -7045,7 +7056,7 @@ var $author$project$Main$viewHeader = function (model) {
 							[
 								$elm$html$Html$Attributes$class('btn btn-sm btn-success'),
 								$elm$html$Html$Events$onClick($author$project$Main$ShowPromoteDialog),
-								$elm$html$Html$Attributes$disabled(model.status.channel === 'main')
+								$elm$html$Html$Attributes$disabled(model.g.r === 'main')
 							]),
 						_List_fromArray(
 							[
@@ -7080,7 +7091,7 @@ var $author$project$Main$viewHistoryEntry = function (entry) {
 						_List_fromArray(
 							[
 								$elm$html$Html$text(
-								A2($elm$core$String$left, 8, entry.commitHash))
+								A2($elm$core$String$left, 8, entry.ae))
 							])),
 						A2(
 						$elm$html$Html$span,
@@ -7090,7 +7101,7 @@ var $author$project$Main$viewHistoryEntry = function (entry) {
 							]),
 						_List_fromArray(
 							[
-								$elm$html$Html$text(entry.channel)
+								$elm$html$Html$text(entry.r)
 							]))
 					])),
 				A2(
@@ -7101,7 +7112,7 @@ var $author$project$Main$viewHistoryEntry = function (entry) {
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(entry.message)
+						$elm$html$Html$text(entry.aj)
 					])),
 				A2(
 				$elm$html$Html$div,
@@ -7112,7 +7123,7 @@ var $author$project$Main$viewHistoryEntry = function (entry) {
 				_List_fromArray(
 					[
 						$elm$html$Html$text(
-						entry.author + (' · ' + A2($elm$core$String$left, 19, entry.timestamp)))
+						entry.ac + (' · ' + A2($elm$core$String$left, 19, entry.aT)))
 					]))
 			]));
 };
@@ -7143,7 +7154,7 @@ var $author$project$Main$viewHistory = function (model) {
 								_List_Nil,
 								_List_fromArray(
 									[
-										$elm$html$Html$text('History: ' + model.historyResourceId)
+										$elm$html$Html$text('History: ' + model.ah)
 									])),
 								A2(
 								$elm$html$Html$button,
@@ -7151,7 +7162,7 @@ var $author$project$Main$viewHistory = function (model) {
 									[
 										$elm$html$Html$Attributes$class('btn btn-sm btn-ghost'),
 										$elm$html$Html$Events$onClick(
-										$author$project$Main$GoToPage($author$project$Main$ResourcesPage))
+										$author$project$Main$GoToPage(1))
 									]),
 								_List_fromArray(
 									[
@@ -7166,7 +7177,7 @@ var $author$project$Main$viewHistory = function (model) {
 							]),
 						_List_fromArray(
 							[
-								$elm$core$List$isEmpty(model.historyEntries) ? A2(
+								$elm$core$List$isEmpty(model.K) ? A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -7194,12 +7205,12 @@ var $author$project$Main$viewHistory = function (model) {
 									[
 										$elm$html$Html$Attributes$class('timeline')
 									]),
-								A2($elm$core$List$map, $author$project$Main$viewHistoryEntry, model.historyEntries))
+								A2($elm$core$List$map, $author$project$Main$viewHistoryEntry, model.K))
 							]))
 					]))
 			]));
 };
-var $author$project$Main$RefreshLog = {$: 'RefreshLog'};
+var $author$project$Main$RefreshLog = {$: 44};
 var $author$project$Main$viewLogEntry = function (entry) {
 	return A2(
 		$elm$html$Html$div,
@@ -7226,9 +7237,9 @@ var $author$project$Main$viewLogEntry = function (entry) {
 						_List_fromArray(
 							[
 								$elm$html$Html$text(
-								A2($elm$core$String$left, 8, entry.commitHash))
+								A2($elm$core$String$left, 8, entry.ae))
 							])),
-						entry.immutable ? A2(
+						entry.aD ? A2(
 						$elm$html$Html$span,
 						_List_fromArray(
 							[
@@ -7248,7 +7259,7 @@ var $author$project$Main$viewLogEntry = function (entry) {
 						_List_fromArray(
 							[
 								$elm$html$Html$text(
-								$elm$core$String$fromInt(entry.patchCount) + ' patch(es)')
+								$elm$core$String$fromInt(entry.aH) + ' patch(es)')
 							]))
 					])),
 				A2(
@@ -7259,7 +7270,7 @@ var $author$project$Main$viewLogEntry = function (entry) {
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(entry.message)
+						$elm$html$Html$text(entry.aj)
 					])),
 				A2(
 				$elm$html$Html$div,
@@ -7270,7 +7281,7 @@ var $author$project$Main$viewLogEntry = function (entry) {
 				_List_fromArray(
 					[
 						$elm$html$Html$text(
-						entry.author + (' · ' + A2($elm$core$String$left, 19, entry.createdAt)))
+						entry.ac + (' · ' + A2($elm$core$String$left, 19, entry.aw)))
 					]))
 			]));
 };
@@ -7323,7 +7334,7 @@ var $author$project$Main$viewLog = function (model) {
 							]),
 						_List_fromArray(
 							[
-								$elm$core$List$isEmpty(model.logEntries) ? A2(
+								$elm$core$List$isEmpty(model.U) ? A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -7351,22 +7362,22 @@ var $author$project$Main$viewLog = function (model) {
 									[
 										$elm$html$Html$Attributes$class('timeline')
 									]),
-								A2($elm$core$List$map, $author$project$Main$viewLogEntry, model.logEntries))
+								A2($elm$core$List$map, $author$project$Main$viewLogEntry, model.U))
 							]))
 					]))
 			]));
 };
 var $author$project$Main$DismissNotification = function (a) {
-	return {$: 'DismissNotification', a: a};
+	return {$: 47, a: a};
 };
 var $author$project$Main$viewNotificationToast = function (notif) {
 	return A2(
 		$elm$html$Html$div,
 		_List_fromArray(
 			[
-				$elm$html$Html$Attributes$class('notification-toast ' + notif.kind),
+				$elm$html$Html$Attributes$class('notification-toast ' + notif.x),
 				$elm$html$Html$Events$onClick(
-				$author$project$Main$DismissNotification(notif.id))
+				$author$project$Main$DismissNotification(notif.ai))
 			]),
 		_List_fromArray(
 			[
@@ -7378,7 +7389,7 @@ var $author$project$Main$viewNotificationToast = function (notif) {
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(notif.title)
+						$elm$html$Html$text(notif._)
 					])),
 				A2(
 				$elm$html$Html$div,
@@ -7388,7 +7399,7 @@ var $author$project$Main$viewNotificationToast = function (notif) {
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(notif.body)
+						$elm$html$Html$text(notif.S)
 					]))
 			]));
 };
@@ -7399,12 +7410,12 @@ var $author$project$Main$viewNotifications = function (model) {
 			[
 				$elm$html$Html$Attributes$class('notifications')
 			]),
-		A2($elm$core$List$map, $author$project$Main$viewNotificationToast, model.notifications));
+		A2($elm$core$List$map, $author$project$Main$viewNotificationToast, model.E));
 };
-var $author$project$Main$OpenNewResource = {$: 'OpenNewResource'};
-var $author$project$Main$RefreshAll = {$: 'RefreshAll'};
+var $author$project$Main$OpenNewResource = {$: 12};
+var $author$project$Main$RefreshAll = {$: 6};
 var $elm$html$Html$ul = _VirtualDom_node('ul');
-var $author$project$Main$StageDelete = {$: 'StageDelete'};
+var $author$project$Main$StageDelete = {$: 18};
 var $elm$html$Html$li = _VirtualDom_node('li');
 var $author$project$Main$viewDeletedItem = function (resourceId) {
 	return A2(
@@ -7448,7 +7459,7 @@ var $author$project$Main$viewDeletedItem = function (resourceId) {
 			]));
 };
 var $author$project$Main$OpenResource = function (a) {
-	return {$: 'OpenResource', a: a};
+	return {$: 11, a: a};
 };
 var $author$project$Main$viewModifiedItem = function (resourceId) {
 	return A2(
@@ -7527,10 +7538,10 @@ var $author$project$Main$viewResourceItem = F2(
 		var isStaged = A2(
 			$elm$core$List$any,
 			function (s) {
-				return _Utils_eq(s.resourceId, resourceId);
+				return _Utils_eq(s.an, resourceId);
 			},
-			status.staged);
-		var isModified = A2($elm$core$List$member, resourceId, status.modified);
+			status.H);
+		var isModified = A2($elm$core$List$member, resourceId, status.V);
 		return A2(
 			$elm$html$Html$li,
 			_List_fromArray(
@@ -7681,7 +7692,7 @@ var $author$project$Main$viewResources = function (model) {
 							]),
 						_List_fromArray(
 							[
-								$elm$core$List$isEmpty(model.snapshots) ? A2(
+								$elm$core$List$isEmpty(model.X) ? A2(
 								$elm$html$Html$div,
 								_List_fromArray(
 									[
@@ -7711,11 +7722,11 @@ var $author$project$Main$viewResources = function (model) {
 									]),
 								A2(
 									$elm$core$List$map,
-									$author$project$Main$viewResourceItem(model.status),
-									model.snapshots))
+									$author$project$Main$viewResourceItem(model.g),
+									model.X))
 							]))
 					])),
-				(!$elm$core$List$isEmpty(model.status.modified)) ? A2(
+				(!$elm$core$List$isEmpty(model.g.V)) ? A2(
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
@@ -7753,10 +7764,10 @@ var $author$project$Main$viewResources = function (model) {
 									[
 										$elm$html$Html$Attributes$class('resource-list')
 									]),
-								A2($elm$core$List$map, $author$project$Main$viewModifiedItem, model.status.modified))
+								A2($elm$core$List$map, $author$project$Main$viewModifiedItem, model.g.V))
 							]))
 					])) : $elm$html$Html$text(''),
-				(!$elm$core$List$isEmpty(model.status.deleted)) ? A2(
+				(!$elm$core$List$isEmpty(model.g.ag)) ? A2(
 				$elm$html$Html$div,
 				_List_fromArray(
 					[
@@ -7794,14 +7805,14 @@ var $author$project$Main$viewResources = function (model) {
 									[
 										$elm$html$Html$Attributes$class('resource-list')
 									]),
-								A2($elm$core$List$map, $author$project$Main$viewDeletedItem, model.status.deleted))
+								A2($elm$core$List$map, $author$project$Main$viewDeletedItem, model.g.ag))
 							]))
 					])) : $elm$html$Html$text('')
 			]));
 };
-var $author$project$Main$LogPage = {$: 'LogPage'};
+var $author$project$Main$LogPage = 4;
 var $author$project$Main$DoSwitchChannel = function (a) {
-	return {$: 'DoSwitchChannel', a: a};
+	return {$: 40, a: a};
 };
 var $author$project$Main$viewChannelItem = F2(
 	function (currentChannel, ch) {
@@ -7810,9 +7821,9 @@ var $author$project$Main$viewChannelItem = F2(
 			_List_fromArray(
 				[
 					$elm$html$Html$Attributes$class(
-					_Utils_eq(ch.name, currentChannel) ? 'sidebar-item active' : 'sidebar-item'),
+					_Utils_eq(ch.D, currentChannel) ? 'sidebar-item active' : 'sidebar-item'),
 					$elm$html$Html$Events$onClick(
-					$author$project$Main$DoSwitchChannel(ch.name))
+					$author$project$Main$DoSwitchChannel(ch.D))
 				]),
 			_List_fromArray(
 				[
@@ -7822,11 +7833,11 @@ var $author$project$Main$viewChannelItem = F2(
 						[
 							$elm$html$Html$Attributes$class('dot'),
 							$elm$html$Html$Attributes$class(
-							(ch.name === 'main') ? 'main' : (_Utils_eq(ch.name, currentChannel) ? 'current' : 'branch'))
+							(ch.D === 'main') ? 'main' : (_Utils_eq(ch.D, currentChannel) ? 'current' : 'branch'))
 						]),
 					_List_Nil),
-					$elm$html$Html$text(ch.name),
-					_Utils_eq(ch.name, currentChannel) ? A2(
+					$elm$html$Html$text(ch.D),
+					_Utils_eq(ch.D, currentChannel) ? A2(
 					$elm$html$Html$span,
 					_List_fromArray(
 						[
@@ -7863,7 +7874,7 @@ var $author$project$Main$viewStagedItem = function (sf) {
 						$elm$html$Html$Attributes$class('badge'),
 						$elm$html$Html$Attributes$class(
 						function () {
-							var _v0 = sf.kind;
+							var _v0 = sf.x;
 							switch (_v0) {
 								case 'new':
 									return 'badge-new';
@@ -7876,7 +7887,7 @@ var $author$project$Main$viewStagedItem = function (sf) {
 					]),
 				_List_fromArray(
 					[
-						$elm$html$Html$text(sf.kind)
+						$elm$html$Html$text(sf.x)
 					])),
 				A2(
 				$elm$html$Html$span,
@@ -7888,7 +7899,7 @@ var $author$project$Main$viewStagedItem = function (sf) {
 				_List_fromArray(
 					[
 						$elm$html$Html$text(
-						A2($author$project$Main$truncateId, sf.resourceId, 24))
+						A2($author$project$Main$truncateId, sf.an, 24))
 					]))
 			]));
 };
@@ -7921,9 +7932,9 @@ var $author$project$Main$viewSidebar = function (model) {
 						_List_fromArray(
 							[
 								$elm$html$Html$Attributes$class(
-								_Utils_eq(model.page, $author$project$Main$ResourcesPage) ? 'sidebar-item active' : 'sidebar-item'),
+								(model.k === 1) ? 'sidebar-item active' : 'sidebar-item'),
 								$elm$html$Html$Events$onClick(
-								$author$project$Main$GoToPage($author$project$Main$ResourcesPage))
+								$author$project$Main$GoToPage(1))
 							]),
 						_List_fromArray(
 							[
@@ -7934,9 +7945,9 @@ var $author$project$Main$viewSidebar = function (model) {
 						_List_fromArray(
 							[
 								$elm$html$Html$Attributes$class(
-								_Utils_eq(model.page, $author$project$Main$LogPage) ? 'sidebar-item active' : 'sidebar-item'),
+								(model.k === 4) ? 'sidebar-item active' : 'sidebar-item'),
 								$elm$html$Html$Events$onClick(
-								$author$project$Main$GoToPage($author$project$Main$LogPage))
+								$author$project$Main$GoToPage(4))
 							]),
 						_List_fromArray(
 							[
@@ -7963,8 +7974,8 @@ var $author$project$Main$viewSidebar = function (model) {
 						_List_Nil,
 						A2(
 							$elm$core$List$map,
-							$author$project$Main$viewChannelItem(model.status.channel),
-							model.channels)),
+							$author$project$Main$viewChannelItem(model.g.r),
+							model.ad)),
 						A2(
 						$elm$html$Html$div,
 						_List_fromArray(
@@ -8001,7 +8012,7 @@ var $author$project$Main$viewSidebar = function (model) {
 							[
 								$elm$html$Html$text('Staged Changes')
 							])),
-						$elm$core$List$isEmpty(model.status.staged) ? A2(
+						$elm$core$List$isEmpty(model.g.H) ? A2(
 						$elm$html$Html$div,
 						_List_fromArray(
 							[
@@ -8015,7 +8026,7 @@ var $author$project$Main$viewSidebar = function (model) {
 							])) : A2(
 						$elm$html$Html$div,
 						_List_Nil,
-						A2($elm$core$List$map, $author$project$Main$viewStagedItem, model.status.staged))
+						A2($elm$core$List$map, $author$project$Main$viewStagedItem, model.g.H))
 					]))
 			]));
 };
@@ -8040,15 +8051,15 @@ var $author$project$Main$viewApp = function (model) {
 					[
 						$author$project$Main$viewFlash(model),
 						function () {
-						var _v0 = model.page;
-						switch (_v0.$) {
-							case 'ResourcesPage':
+						var _v0 = model.k;
+						switch (_v0) {
+							case 1:
 								return $author$project$Main$viewResources(model);
-							case 'EditorPage':
+							case 2:
 								return $author$project$Main$viewEditor(model);
-							case 'HistoryPage':
+							case 3:
 								return $author$project$Main$viewHistory(model);
-							case 'LogPage':
+							case 4:
 								return $author$project$Main$viewLog(model);
 							default:
 								return $elm$html$Html$text('');
@@ -8059,10 +8070,10 @@ var $author$project$Main$viewApp = function (model) {
 				$author$project$Main$viewDialogs(model)
 			]));
 };
-var $author$project$Main$CloneFromServer = {$: 'CloneFromServer'};
-var $author$project$Main$ConnectToServer = {$: 'ConnectToServer'};
+var $author$project$Main$CloneFromServer = {$: 3};
+var $author$project$Main$ConnectToServer = {$: 2};
 var $author$project$Main$UpdateServerUrl = function (a) {
-	return {$: 'UpdateServerUrl', a: a};
+	return {$: 1, a: a};
 };
 var $author$project$Main$viewSetup = function (model) {
 	return A2(
@@ -8124,7 +8135,7 @@ var $author$project$Main$viewSetup = function (model) {
 								_List_fromArray(
 									[
 										$elm$html$Html$Attributes$type_('text'),
-										$elm$html$Html$Attributes$value(model.serverUrl),
+										$elm$html$Html$Attributes$value(model.M),
 										$elm$html$Html$Events$onInput($author$project$Main$UpdateServerUrl),
 										$elm$html$Html$Attributes$placeholder('http://localhost:8080')
 									]),
@@ -8167,13 +8178,13 @@ var $author$project$Main$viewSetup = function (model) {
 			]));
 };
 var $author$project$Main$view = function (model) {
-	var _v0 = model.page;
-	if (_v0.$ === 'SetupPage') {
+	var _v0 = model.k;
+	if (!_v0) {
 		return $author$project$Main$viewSetup(model);
 	} else {
 		return $author$project$Main$viewApp(model);
 	}
 };
 var $author$project$Main$main = $elm$browser$Browser$element(
-	{init: $author$project$Main$init, subscriptions: $author$project$Main$subscriptions, update: $author$project$Main$update, view: $author$project$Main$view});
+	{a8: $author$project$Main$init, bg: $author$project$Main$subscriptions, bh: $author$project$Main$update, bi: $author$project$Main$view});
 _Platform_export({'Main':{'init':$author$project$Main$main($elm$json$Json$Decode$value)(0)}});}(this));

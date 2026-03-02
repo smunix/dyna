@@ -237,6 +237,8 @@ type Msg
     | DismissNotification Int
       -- Flash
     | DismissFlash
+      -- Misc
+    | NoOp
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -624,6 +626,9 @@ update msg model =
 
         DismissFlash ->
             ( { model | flashMessage = Nothing }, Cmd.none )
+
+        NoOp ->
+            ( model, Cmd.none )
 
 
 
@@ -1203,7 +1208,7 @@ viewDialogs model =
 viewCommitDialog : Model -> Html Msg
 viewCommitDialog model =
     div [ class "modal-overlay", onClick HideCommitDialog ]
-        [ div [ class "modal", stopPropagationOn "click" (Decode.succeed ( HideCommitDialog, False ) |> Decode.map (\_ -> ( HideCommitDialog, True )) |> Decode.map (\_ -> ( HideCommitDialog, True ))) ]
+        [ div [ class "modal", stopPropagationOn "click" (Decode.succeed ( NoOp, True )) ]
             [ h3 [] [ text "Commit Changes" ]
             , div [ class "form-group" ]
                 [ label [] [ text "Commit Message" ]
@@ -1233,7 +1238,7 @@ viewCommitDialog model =
 viewNewChannelDialog : Model -> Html Msg
 viewNewChannelDialog model =
     div [ class "modal-overlay", onClick HideNewChannelDialog ]
-        [ div [ class "modal" ]
+        [ div [ class "modal", stopPropagationOn "click" (Decode.succeed ( NoOp, True )) ]
             [ h3 [] [ text "Create Channel" ]
             , p [ style "font-size" "13px", style "color" "#8b90a0", style "margin-bottom" "12px" ]
                 [ text "Edits happen on feature channels, never directly on main." ]
@@ -1263,7 +1268,7 @@ viewNewChannelDialog model =
 viewPromoteDialog : Model -> Html Msg
 viewPromoteDialog model =
     div [ class "modal-overlay", onClick HidePromoteDialog ]
-        [ div [ class "modal" ]
+        [ div [ class "modal", stopPropagationOn "click" (Decode.succeed ( NoOp, True )) ]
             [ h3 [] [ text "Promote to Main" ]
             , p [ style "font-size" "13px", style "color" "#8b90a0", style "margin-bottom" "12px" ]
                 [ text ("Promote all changesets from \"" ++ model.promoteChannel ++ "\" to main.") ]
