@@ -310,6 +310,12 @@
               ];
             };
 
+            # Tell cargoSetupHook that the crate lives in a subdirectory,
+            # not at the workspace root.  Without this, maturin tries to
+            # parse the workspace Cargo.toml (which has [workspace] but
+            # no [package]) and fails with "missing field `package`".
+            cargoRoot = "dyna-py";
+
             cargoDeps = pkgs.rustPlatform.importCargoLock {
               lockFile = ./Cargo.lock;
             };
@@ -328,6 +334,10 @@
             propagatedBuildInputs = [
               pkgs.python3Packages.click
             ];
+
+            # Point maturin at the subcrate manifest so it doesn't
+            # pick up the workspace root Cargo.toml.
+            maturinBuildFlags = [ "--manifest-path" "dyna-py/Cargo.toml" ];
 
             pythonImportsCheck = [ "dyna_py" ];
           };
