@@ -77,10 +77,17 @@ pub enum Commands {
     /// Push local changesets to the remote server.
     ///
     /// Defaults to the current channel if no channel name is given.
+    /// Use `--force` to resend ALL local changesets, ignoring sync state.
+    /// This is useful when the remote server has lost its state (e.g.
+    /// after a restart with in-memory storage).
     Push {
         /// Optional: the channel to push (defaults to current channel).
         #[arg(short, long)]
         channel: Option<String>,
+        /// Force-push all local changesets, ignoring sync state.
+        /// Useful when the remote server has lost its in-memory state.
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Fetch and merge remote changesets into the local state.

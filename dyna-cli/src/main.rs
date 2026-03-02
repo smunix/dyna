@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
             delete,
         } => commands::add::execute(pattern, delete).await,
         Commands::Commit { message } => commands::commit::execute(message).await,
-        Commands::Push { channel } => commands::push::execute(channel).await,
+        Commands::Push { channel, force } => commands::push::execute(channel, force).await,
         Commands::Pull { channel } => commands::pull::execute(channel).await,
         Commands::Status => commands::status::execute().await,
         Commands::Diff { path } => commands::diff::execute(path).await,
