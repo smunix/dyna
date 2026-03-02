@@ -65,3 +65,6 @@ pyo3 = { version = "0.23", features = ["extension-module"] }
 # Internal crates
 dyna-core = { path = "dyna-core" }
 dyna-cli = { path = "dyna-cli" }
+
+[patch.crates-io]
+vfs = { path = "vfs-patch" }
