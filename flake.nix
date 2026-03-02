@@ -151,8 +151,10 @@
                 extraPaths = extraSrcPaths;
               };
 
-              members = presentMembersFor cratePath;
-              patchScript = patchWorkspaceMembersScript members;
+              # Note: crane automatically generates dummy Cargo.toml files
+              # for missing workspace members, so we do NOT patch the
+              # workspace members list here. Only non-crane builds (e.g.
+              # dyna-py via maturin/buildPythonPackage) need that patch.
 
               cargoArtifacts = craneLib.buildDepsOnly {
                 pname = "${pname}-deps";
@@ -160,9 +162,6 @@
                 strictDeps = true;
                 cargoExtraArgs = "-p ${pname}";
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
-                # Patch workspace Cargo.toml so cargo only sees members
-                # that exist in the filtered source tree.
-                postPatch = patchScript;
               };
 
               package = craneLib.buildPackage ({
@@ -171,7 +170,6 @@
                 cargoExtraArgs = "-p ${pname}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
-                postPatch = patchScript;
               } // buildPackageArgs);
             in
               { inherit src cargoArtifacts package; };
@@ -197,8 +195,8 @@
                 useCraneLib = craneLibWasm;
               };
 
-              members = presentMembersFor cratePath;
-              patchScript = patchWorkspaceMembersScript members;
+              # Note: crane handles missing workspace members automatically.
+              # No postPatch needed here.
 
               cargoArtifacts = craneLibWasm.buildDepsOnly {
                 pname = "${pname}-deps";
@@ -207,7 +205,6 @@
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
-                postPatch = patchScript;
               };
 
               raw = craneLibWasm.buildPackage {
@@ -216,7 +213,6 @@
                 cargoExtraArgs = "-p ${pname} --target ${wasmTarget}";
                 doCheck = false;
                 buildInputs = darwinBuildInputs ++ extraBuildInputs;
-                postPatch = patchScript;
                 installPhaseCommand = ''
                   mkdir -p $out/lib
                   cp target/${wasmTarget}/release/${wasmFileName}.wasm $out/lib/ 2>/dev/null || \
