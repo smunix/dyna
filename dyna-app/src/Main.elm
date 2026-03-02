@@ -493,7 +493,7 @@ update msg model =
         GotListFiles val ->
             case Decode.decodeValue (Decode.list Decode.string) val of
                 Ok files ->
-                    ( { model | resources = files }, Cmd.none )
+                    ( { model | resources = List.map filePathToResourceId files }, Cmd.none )
 
                 Err _ ->
                     ( model, Cmd.none )
@@ -1761,11 +1761,12 @@ viewResources model =
         stagedIds =
             List.map .resourceId model.status.staged
 
-        -- Working directory resources: files in the working dir that are NOT
-        -- in snapshots (new/untracked) or are modified
+        -- Working directory resources: files that have local unstaged changes
+        -- (new/untracked files not in snapshots, or modified files)
+        -- Excludes anything that is already staged
         workingOnlyIds =
             model.resources
-                |> List.filter (\rid -> not (List.member rid (List.map .resourceId model.status.staged)))
+                |> List.filter (\rid -> not (List.member rid stagedIds))
                 |> List.filter (\rid ->
                     not (List.member rid model.snapshots)
                         || List.member rid model.status.modified
@@ -2801,6 +2802,13 @@ For more advanced regex, we'd need elm/regex, but substring covers most use case
 simpleMatch : String -> String -> Bool
 simpleMatch pattern str =
     String.contains (String.toLower pattern) (String.toLower str)
+
+
+filePathToResourceId : String -> String
+filePathToResourceId path =
+    path
+        |> (\p -> if String.endsWith ".json" p then String.dropRight 5 p else p)
+        |> String.replace "/" "."
 
 
 negate : Int -> Int
