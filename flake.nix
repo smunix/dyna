@@ -518,16 +518,27 @@
               exit 1
             fi
 
-            # Build the WASM package (output goes into dyna-app/public/pkg)
+            # Populate the WASM package (output goes into dyna-app/public/pkg)
             PKG_DIR="$ELM_SRC/public/pkg"
             mkdir -p "$PKG_DIR"
             if [ ! -f "$PKG_DIR/dyna_wasm.js" ]; then
-              echo "Building dyna-wasm..."
-              if wasm-pack build dyna-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
-                echo "  WASM package built successfully."
+              # Prefer the pre-built Nix artifacts (version-matched wasm-bindgen)
+              NIX_WASM="${dyna-wasm}"
+              if [ -f "$NIX_WASM/dyna_wasm.js" ]; then
+                echo "Copying pre-built WASM artifacts from Nix store..."
+                cp -f "$NIX_WASM"/dyna_wasm* "$PKG_DIR/"
+                echo "  WASM package ready."
               else
-                echo "  Warning: wasm-pack build failed. The UI will render but WASM operations will not work."
-                echo "  Make sure wasm-pack and the wasm32-unknown-unknown target are available."
+                # Fallback: build from source with wasm-pack
+                echo "Building dyna-wasm from source..."
+                if wasm-pack build dyna-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
+                  echo "  WASM package built successfully."
+                else
+                  echo "  Error: wasm-pack build failed and no pre-built artifacts available."
+                  echo "  Make sure wasm-pack and the wasm32-unknown-unknown target are available,"
+                  echo "  or run 'nix build .#dyna-wasm' first."
+                  exit 1
+                fi
               fi
             fi
 
