@@ -479,9 +479,9 @@
               Cmd = [
                 "${pkgs.static-web-server}/bin/static-web-server"
                 "--root" "${dyna-app}"
-                "--port" "8080"
+                "--port" "3000"
               ];
-              ExposedPorts = { "8080/tcp" = {}; };
+              ExposedPorts = { "3000/tcp" = {}; };
             };
           };
 
@@ -508,7 +508,7 @@
           dyna-app-serve = pkgs.writeShellScriptBin "dyna-app-serve" ''
             set -euo pipefail
 
-            PORT="''${1:-8080}"
+            PORT="''${1:-3000}"
 
             # Locate the dyna-app source directory
             ELM_SRC="''${DYNA_ELM_SRC:-$(pwd)/dyna-app}"

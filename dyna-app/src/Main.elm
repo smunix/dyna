@@ -285,7 +285,13 @@ update msg model =
                     )
 
                 _ ->
-                    ( { model | flashMessage = Just "Failed to initialise repository", flashIsError = True }, Cmd.none )
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "unknown error"
+                    in
+                    ( { model | flashMessage = Just ("Failed to initialise repository: " ++ detail), flashIsError = True }, Cmd.none )
 
         GotCloneResult val ->
             case Decode.decodeValue (Decode.field "success" Decode.bool) val of
@@ -300,7 +306,13 @@ update msg model =
                     )
 
                 _ ->
-                    ( { model | flashMessage = Just "Failed to clone repository", flashIsError = True }, Cmd.none )
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "unknown error"
+                    in
+                    ( { model | flashMessage = Just ("Failed to clone repository: " ++ detail), flashIsError = True }, Cmd.none )
 
         -- Resources
         RefreshAll ->
