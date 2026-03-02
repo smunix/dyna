@@ -40,6 +40,20 @@
           craneLib = (crane.mkLib pkgs).overrideToolchain nativeToolchain;
           craneLibWasm = (crane.mkLib pkgs).overrideToolchain wasmToolchain;
 
+          # ── Pinned wasm-bindgen-cli (must match Cargo.lock) ───────────
+          wasm-bindgen-cli-0_2_111 = pkgs.buildWasmBindgenCli rec {
+            src = pkgs.fetchCrate {
+              pname = "wasm-bindgen-cli";
+              version = "0.2.111";
+              hash = "sha256-vCa7VIGmMB3baGQqhkd6r4XmUktt61ibcjDQtRW4PzA=";
+            };
+            cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+              inherit src;
+              inherit (src) pname version;
+              hash = "sha256-Sl/AJXq4NSryKIXXo2Fjy6ybVxB8ezka8VQBBxbWPCw=";
+            };
+          };
+
           # ── Platform-specific build inputs ─────────────────────────────
           darwinBuildInputs = lib.optionals pkgs.stdenv.isDarwin [
             pkgs.libiconv
@@ -284,7 +298,7 @@
                 inherit pname;
                 version = "0.1.0";
                 dontUnpack = true;
-                nativeBuildInputs = [ pkgs.wasm-bindgen-cli ];
+                nativeBuildInputs = [ wasm-bindgen-cli-0_2_111 ];
                 buildPhase = ''
                   wasm-bindgen \
                     --target ${bindgenTarget} \
@@ -646,7 +660,7 @@
 
               # WASM tooling
               pkgs.wasm-pack
-              pkgs.wasm-bindgen-cli
+              wasm-bindgen-cli-0_2_111
 
               # Elm
               pkgs.elmPackages.elm

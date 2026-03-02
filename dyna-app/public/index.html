@@ -66,9 +66,22 @@
 
         // -----------------------------------------------------------------
         // Elm → JS ports (commands)
+        //
+        // Elm's --optimize flag eliminates unused command ports, making
+        // `app.ports.<name>` undefined.  Guard every subscription so a
+        // missing port does not crash the entire <script> module.
         // -----------------------------------------------------------------
 
-        app.ports.initRepo.subscribe(async function(url) {
+        function safeSub(portName, fn) {
+            const port = app.ports[portName];
+            if (port && typeof port.subscribe === 'function') {
+                port.subscribe(fn);
+            } else {
+                console.debug('[dyna] port', portName, 'not available (unused by Elm) — skipping');
+            }
+        }
+
+        safeSub('initRepo', async function(url) {
             await wasmReady;
             if (!requireClient(app.ports.onInitResult)) return;
             try {
@@ -79,7 +92,7 @@
             }
         });
 
-        app.ports.cloneRepo.subscribe(async function(url) {
+        safeSub('cloneRepo', async function(url) {
             await wasmReady;
             if (!requireClient(app.ports.onCloneResult)) return;
             try {
@@ -90,7 +103,7 @@
             }
         });
 
-        app.ports.writeFile.subscribe(async function(args) {
+        safeSub('writeFile', async function(args) {
             await wasmReady;
             if (!requireClient(app.ports.onWriteResult)) return;
             try {
@@ -101,7 +114,7 @@
             }
         });
 
-        app.ports.readFile.subscribe(async function(resourceId) {
+        safeSub('readFile', async function(resourceId) {
             await wasmReady;
             if (!requireClient(app.ports.onReadResult)) return;
             try {
@@ -113,7 +126,7 @@
             }
         });
 
-        app.ports.deleteFile.subscribe(async function(resourceId) {
+        safeSub('deleteFile', async function(resourceId) {
             await wasmReady;
             if (!requireClient(app.ports.onDeleteResult)) return;
             try {
@@ -125,7 +138,7 @@
             }
         });
 
-        app.ports.addFile.subscribe(async function(resourceId) {
+        safeSub('addFile', async function(resourceId) {
             await wasmReady;
             if (!requireClient(app.ports.onAddResult)) return;
             try {
@@ -137,7 +150,7 @@
             }
         });
 
-        app.ports.addDelete.subscribe(async function(resourceId) {
+        safeSub('addDelete', async function(resourceId) {
             await wasmReady;
             if (!requireClient(app.ports.onAddResult)) return;
             try {
@@ -149,7 +162,7 @@
             }
         });
 
-        app.ports.requestStatus.subscribe(async function(_) {
+        safeSub('requestStatus', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {
                 app.ports.onStatusResult.send({
@@ -177,7 +190,7 @@
             }
         });
 
-        app.ports.commitChanges.subscribe(async function(message) {
+        safeSub('commitChanges', async function(message) {
             await wasmReady;
             if (!requireClient(app.ports.onCommitResult)) return;
             try {
@@ -188,7 +201,7 @@
             }
         });
 
-        app.ports.pushChanges.subscribe(async function(_) {
+        safeSub('pushChanges', async function(_) {
             await wasmReady;
             if (!requireClient(app.ports.onPushResult)) return;
             try {
@@ -199,7 +212,7 @@
             }
         });
 
-        app.ports.promoteChanges.subscribe(async function(channel) {
+        safeSub('promoteChanges', async function(channel) {
             await wasmReady;
             if (!requireClient(app.ports.onPromoteResult)) return;
             try {
@@ -212,7 +225,7 @@
             }
         });
 
-        app.ports.requestChannels.subscribe(async function(_) {
+        safeSub('requestChannels', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {
                 app.ports.onChannelsResult.send([]);
@@ -227,7 +240,7 @@
             }
         });
 
-        app.ports.createChannel.subscribe(async function(name) {
+        safeSub('createChannel', async function(name) {
             await wasmReady;
             if (!requireClient(app.ports.onCreateChannelResult)) return;
             try {
@@ -239,7 +252,7 @@
             }
         });
 
-        app.ports.switchChannel.subscribe(async function(name) {
+        safeSub('switchChannel', async function(name) {
             await wasmReady;
             if (!requireClient(app.ports.onSwitchChannelResult)) return;
             try {
@@ -250,7 +263,7 @@
             }
         });
 
-        app.ports.requestLog.subscribe(async function(_limit) {
+        safeSub('requestLog', async function(_limit) {
             await wasmReady;
             if (!requireClient(null)) {
                 app.ports.onLogResult.send([]);
@@ -265,7 +278,7 @@
             }
         });
 
-        app.ports.requestHistory.subscribe(async function(resourceId) {
+        safeSub('requestHistory', async function(resourceId) {
             await wasmReady;
             if (!requireClient(null)) {
                 app.ports.onHistoryResult.send({ resource_id: resourceId, entries: [], error: 'WASM not loaded' });
@@ -279,7 +292,7 @@
             }
         });
 
-        app.ports.listFiles.subscribe(async function(_) {
+        safeSub('listFiles', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {
                 app.ports.onListFilesResult.send([]);
@@ -293,7 +306,7 @@
             }
         });
 
-        app.ports.listSnapshots.subscribe(async function(_) {
+        safeSub('listSnapshots', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {
                 app.ports.onListSnapshotsResult.send([]);
@@ -311,7 +324,7 @@
         // WebSocket notifications
         // -----------------------------------------------------------------
         let ws = null;
-        app.ports.connectNotifications.subscribe(async function(_) {
+        safeSub('connectNotifications', async function(_) {
             await wasmReady;
             if (!requireClient(null)) return;
             try {
@@ -323,7 +336,7 @@
             }
         });
 
-        app.ports.disconnectNotifications.subscribe(function(_) {
+        safeSub('disconnectNotifications', function(_) {
             if (ws) {
                 ws.close();
                 ws = null;
