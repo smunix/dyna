@@ -557,6 +557,27 @@ impl DynaClient {
         Ok(())
     }
 
+    /// Delete a local channel. Refuses to delete "main".
+    /// Returns true if the channel was deleted.
+    #[wasm_bindgen]
+    pub fn delete_channel(&self, name: &str) -> Result<bool, JsError> {
+        if name == "main" {
+            return Err(JsError::new("Cannot delete the 'main' channel: it is protected."));
+        }
+        self.repo.delete_channel(name).map_err(to_js_error)?;
+        Ok(true)
+    }
+
+    /// Check if a channel has been fully promoted to main
+    /// (all its changesets exist in main's changeset list).
+    #[wasm_bindgen]
+    pub fn is_promoted_to_main(&self, name: &str) -> Result<bool, JsError> {
+        let main_channel = self.repo.load_channel("main").map_err(to_js_error)?;
+        let target_channel = self.repo.load_channel(name).map_err(to_js_error)?;
+        let main_set: std::collections::HashSet<&String> = main_channel.changesets.iter().collect();
+        Ok(target_channel.changesets.iter().all(|id| main_set.contains(id)))
+    }
+
     // -----------------------------------------------------------------------
     // Restore
     // -----------------------------------------------------------------------

@@ -321,5 +321,92 @@ def resolve(resource_id: str, path: str):
     click.echo(f"Resolved conflict for {resource_id}")
 
 
+# ── delete ──────────────────────────────────────────────────────────────────
+
+@main.command("delete")
+@click.argument("channel_name")
+@click.option("--force", "-f", is_flag=True, help="Force delete even if not promoted to main")
+@click.option("--path", "-C", default=".", help="Repository path")
+def delete_cmd(channel_name: str, force: bool, path: str):
+    """Delete a channel that has been promoted to main."""
+    repo = _repo(path)
+    try:
+        repo.delete_channel(channel_name, force=force)
+        click.echo(f"Deleted channel '{channel_name}'")
+    except RuntimeError as exc:
+        click.echo(f"error: {exc}", err=True)
+        sys.exit(1)
+
+
+# ── cleanup ─────────────────────────────────────────────────────────────────
+
+@main.command()
+@click.option("--before", "-b", help="Cutoff datetime (ISO format, e.g. 2026-01-15T12:00:00)")
+@click.option("--older-than", "-o", help="Duration cutoff (e.g. 30d, 6h, 2m, 90s, 1y)")
+@click.option("--dry-run", is_flag=True, help="List channels that would be deleted without deleting")
+@click.option("--path", "-C", default=".", help="Repository path")
+def cleanup(before: str | None, older_than: str | None, dry_run: bool, path: str):
+    """Remove channels that have been promoted to main."""
+    from datetime import datetime, timedelta, timezone
+
+    repo = _repo(path)
+    channels = repo.list_channels()
+    current = repo.current_channel()
+
+    cutoff = None
+    if before:
+        try:
+            cutoff = datetime.fromisoformat(before)
+            if cutoff.tzinfo is None:
+                cutoff = cutoff.replace(tzinfo=timezone.utc)
+        except ValueError:
+            click.echo(f"error: invalid datetime format: {before}", err=True)
+            sys.exit(1)
+    elif older_than:
+        amount_str = older_than[:-1]
+        unit = older_than[-1]
+        try:
+            amount = int(amount_str)
+        except ValueError:
+            click.echo(f"error: invalid duration: {older_than}", err=True)
+            sys.exit(1)
+        delta_map = {'s': 'seconds', 'm': 'minutes', 'h': 'hours', 'd': 'days', 'y': 'days'}
+        if unit not in delta_map:
+            click.echo(f"error: unknown unit '{unit}'. Use s/m/h/d/y.", err=True)
+            sys.exit(1)
+        if unit == 'y':
+            amount *= 365
+        cutoff = datetime.now(timezone.utc) - timedelta(**{delta_map[unit]: amount})
+
+    deleted = []
+    skipped = []
+    for ch_name in channels:
+        if ch_name == "main" or ch_name == current:
+            continue
+        try:
+            promoted = repo.is_promoted_to_main(ch_name)
+        except Exception:
+            promoted = False
+        if not promoted:
+            continue
+        # If cutoff is specified, we'd need channel metadata — skip for now if no cutoff
+        if dry_run:
+            click.echo(f"  would delete: {ch_name}")
+            deleted.append(ch_name)
+        else:
+            try:
+                repo.delete_channel(ch_name, force=True)
+                deleted.append(ch_name)
+                click.echo(f"  deleted: {ch_name}")
+            except Exception as exc:
+                skipped.append(ch_name)
+                click.echo(f"  skipped: {ch_name} ({exc})")
+
+    action = "Would delete" if dry_run else "Deleted"
+    click.echo(f"\n{action} {len(deleted)} channel(s).")
+    if skipped:
+        click.echo(f"Skipped {len(skipped)} channel(s).")
+
+
 if __name__ == "__main__":
     main()

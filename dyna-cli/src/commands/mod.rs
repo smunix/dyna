@@ -32,3 +32,5 @@ pub mod revert;
 pub mod cherry_pick;
 pub mod load_file;
 pub mod unstage;
+pub mod delete;
+pub mod cleanup;

@@ -174,6 +174,25 @@ func (c *Client) UnstageAll() (int, error) {
 }
 
 // ---------------------------------------------------------------------------
+// Channel management
+// ---------------------------------------------------------------------------
+
+// IsPromotedToMain checks if all changesets of a channel exist in main.
+func (c *Client) IsPromotedToMain(channelName string) (bool, error) {
+	return c.Repo.IsPromotedToMain(channelName)
+}
+
+// DeleteChannelSafe deletes a channel with protection checks.
+func (c *Client) DeleteChannelSafe(channelName string, force bool) error {
+	return c.Repo.DeleteChannelSafe(channelName, force)
+}
+
+// Cleanup removes all channels that have been promoted to main.
+func (c *Client) Cleanup() ([]string, error) {
+	return c.Repo.Cleanup()
+}
+
+// ---------------------------------------------------------------------------
 // Local operations (delegated to Repository)
 // ---------------------------------------------------------------------------
 

@@ -83,6 +83,10 @@ pub enum ApiRequest {
     ListChannels {
         reply: oneshot::Sender<ListChannelsResponse>,
     },
+    DeleteChannel {
+        body: DeleteChannelRequest,
+        reply: oneshot::Sender<DeleteChannelResponse>,
+    },
     GetChangeset {
         change_id: String,
         reply: oneshot::Sender<GetChangesetResponse>,
@@ -234,6 +238,18 @@ async fn dispatch_request(ctx: &Context, request: ApiRequest) {
             let _ = reply.send(response);
         }
 
+        ApiRequest::DeleteChannel { body, reply } => {
+            let response = ctx
+                .request(HandleDeleteChannel { body })
+                .resolve()
+                .await
+                .unwrap_or_else(|e| DeleteChannelResponse {
+                    success: false,
+                    error: Some(format!("Internal error: {}", e)),
+                });
+            let _ = reply.send(response);
+        }
+
         ApiRequest::GetChangeset { change_id, reply } => {
             let response = ctx
                 .request(HandleGetChangeset { change_id })
@@ -335,6 +351,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/v1/promote", post(promote_handler))
         .route("/api/v1/channels", get(list_channels_handler))
         .route("/api/v1/channels", post(create_channel_handler))
+        .route("/api/v1/channels/delete", post(delete_channel_handler))
         .route("/api/v1/changesets/{change_id}", get(get_changeset_handler))
         .route(
             "/api/v1/resources/{resource_id}/history",
@@ -534,6 +551,20 @@ async fn create_channel_handler(
             r.success
                 .then(|| json_response(StatusCode::CREATED, &r))
                 .unwrap_or_else(|| json_response(StatusCode::CONFLICT, &r))
+        })
+        .unwrap_or_else(|e| e)
+}
+
+async fn delete_channel_handler(
+    State(state): State<AppState>,
+    Json(body): Json<DeleteChannelRequest>,
+) -> impl IntoResponse {
+    send_and_recv(&state, |reply| ApiRequest::DeleteChannel { body, reply })
+        .await
+        .map(|r| {
+            r.success
+                .then(|| json_response(StatusCode::OK, &r))
+                .unwrap_or_else(|| json_response(StatusCode::BAD_REQUEST, &r))
         })
         .unwrap_or_else(|e| e)
 }

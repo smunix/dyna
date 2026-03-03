@@ -189,4 +189,27 @@ impl SyncClient {
     pub async fn health(&self) -> Result<HealthResponse> {
         self.get_json("/api/v1/health", "Health check").await
     }
+
+    /// Delete a channel on the remote server.
+    pub async fn delete_channel(
+        &self,
+        request: &DeleteChannelRequest,
+    ) -> Result<DeleteChannelResponse> {
+        self.post_json::<_, DeleteChannelResponse>(
+            "/api/v1/channels/delete",
+            request,
+            "Delete channel",
+        )
+        .await
+        .and_then(|resp| {
+            resp.success
+                .then_some(resp.clone())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Delete channel rejected: {}",
+                        resp.error.unwrap_or_else(|| "Unknown error".into())
+                    )
+                })
+        })
+    }
 }

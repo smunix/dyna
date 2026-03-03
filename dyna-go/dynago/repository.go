@@ -241,6 +241,20 @@ func (r *Repository) SwitchChannel(name string) error {
 	return r.setCurrentChannelName(name)
 }
 
+// DeleteChannel removes a channel's JSON file and its snapshot directory.
+func (r *Repository) DeleteChannel(name string) error {
+	channelPath := filepath.Join(r.dynaDir, "channels", name+".json")
+	_ = r.fs.Remove(channelPath)
+	// Remove snapshot directory
+	snapDir := r.snapshotDirFor(name)
+	entries, _ := afero.ReadDir(r.fs, snapDir)
+	for _, entry := range entries {
+		_ = r.fs.Remove(filepath.Join(snapDir, entry.Name()))
+	}
+	_ = r.fs.Remove(snapDir)
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Changesets
 // ---------------------------------------------------------------------------

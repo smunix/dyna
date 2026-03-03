@@ -219,6 +219,35 @@
             }
         });
 
+        safeSub('deleteChannel', async function(data) {
+            await wasmReady;
+            if (!requireClient(app.ports.onDeleteChannelResult)) return;
+            try {
+                const name = data.name;
+                const force = data.force;
+                if (name === 'main') {
+                    app.ports.onDeleteChannelResult.send({ success: false, channel: name, error: "Cannot delete the 'main' channel: it is protected." });
+                    return;
+                }
+                if (!force) {
+                    // Check if promoted to main
+                    try {
+                        const promoted = client.is_promoted_to_main(name);
+                        if (!promoted) {
+                            app.ports.onDeleteChannelResult.send({ success: false, channel: name, error: "Channel '" + name + "' has not been fully promoted to main. Use Force Delete to delete anyway." });
+                            return;
+                        }
+                    } catch (e) {
+                        // If check fails, proceed with caution
+                    }
+                }
+                client.delete_channel(name);
+                app.ports.onDeleteChannelResult.send({ success: true, channel: name, error: null });
+            } catch (e) {
+                app.ports.onDeleteChannelResult.send({ success: false, channel: data.name, error: e.message });
+            }
+        });
+
         safeSub('requestStatus', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {

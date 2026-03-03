@@ -79,6 +79,18 @@ async fn main() -> anyhow::Result<()> {
             commands::describe::execute(change_id, message).await
         }
         Commands::Unstage { pattern, all } => commands::unstage::execute(pattern, all).await,
+        Commands::Delete {
+            name,
+            force,
+            local,
+            remote,
+            both,
+        } => commands::delete::execute(name, force, local, remote, both).await,
+        Commands::Cleanup {
+            cutoff,
+            remote,
+            dry_run,
+        } => commands::cleanup::execute(cutoff, remote, dry_run).await,
     };
 
     if let Err(e) = result {

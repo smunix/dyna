@@ -122,6 +122,9 @@ port unstageResource : String -> Cmd msg
 port unstageAll : () -> Cmd msg
 
 
+port deleteChannel : { name : String, force : Bool } -> Cmd msg
+
+
 -- =========================================================================
 -- Incoming ports (JS → Elm subscriptions)
 -- =========================================================================
@@ -215,3 +218,6 @@ port onSyncMainResult : (Decode.Value -> msg) -> Sub msg
 
 
 port onUnstageResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onDeleteChannelResult : (Decode.Value -> msg) -> Sub msg

@@ -283,6 +283,51 @@ pub enum Commands {
         all: bool,
     },
 
+    /// Delete a channel that has been promoted to main.
+    ///
+    /// By default, only deletes channels whose changesets are all present in main.
+    /// Use `--force` to delete even if not fully promoted.
+    /// Use `--local`, `--remote`, or `--both` to control where the deletion occurs.
+    /// The 'main' channel is protected and cannot be deleted.
+    Delete {
+        /// Name of the channel to delete.
+        name: String,
+        /// Delete even if the channel has not been promoted to main.
+        #[arg(short, long)]
+        force: bool,
+        /// Delete only the local copy.
+        #[arg(long)]
+        local: bool,
+        /// Delete only the remote copy.
+        #[arg(long)]
+        remote: bool,
+        /// Delete both local and remote copies.
+        #[arg(long)]
+        both: bool,
+    },
+
+    /// Clean up channels that have already been promoted to main.
+    ///
+    /// Finds all channels (excluding main) whose changesets are a subset of main's
+    /// changesets, and deletes them. Use `--cutoff` to only delete channels whose
+    /// last update is older than the specified time.
+    ///
+    /// Cutoff format: ISO 8601 datetime (e.g. "2026-01-15T00:00:00") or a duration
+    /// like "30d", "6m", "1y", "24h", "3600s", "90min".
+    Cleanup {
+        /// Only delete channels last updated before this cutoff.
+        /// Accepts ISO 8601 datetime or duration: Nd (days), Nm (months),
+        /// Ny (years), Nh (hours), Nmin (minutes), Ns (seconds).
+        #[arg(short, long)]
+        cutoff: Option<String>,
+        /// Also delete remote copies (default: local only).
+        #[arg(long)]
+        remote: bool,
+        /// Perform a dry run: list channels that would be deleted without deleting.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Describe (amend the message of) a changeset.
     ///
     /// Defaults to the current working changeset if no change_id is given.

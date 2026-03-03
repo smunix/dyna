@@ -369,6 +369,45 @@ impl Repository {
         self.save_channel(&channel).map(|()| channel)
     }
 
+    /// Delete a channel from the local repository.
+    ///
+    /// Removes the channel JSON file and its snapshot directory.
+    /// Returns an error if the channel is "main" (protected).
+    pub fn delete_channel(&self, name: &str) -> Result<()> {
+        if name == "main" {
+            bail!("Cannot delete the 'main' channel: it is protected.");
+        }
+        // Remove channel JSON
+        let channel_path = self.vfs_dyna.join("channels")?.join(&format!("{}.json", name))?;
+        if vfs_exists(&channel_path)? {
+            channel_path.remove_file()?;
+        }
+        // Remove snapshot directory for this channel
+        if let Ok(snap_dir) = self.snapshot_dir_for(name) {
+            if let Ok(entries) = snap_dir.read_dir() {
+                for entry in entries {
+                    entry.remove_file().ok();
+                }
+            }
+            snap_dir.remove_dir().ok();
+        }
+        // If the current HEAD points to this channel, switch to main
+        if self.current_channel_name().map_or(false, |c| c == name) {
+            self.set_current_channel("main")?;
+        }
+        Ok(())
+    }
+
+    /// Check whether a channel has been fully promoted to main.
+    ///
+    /// Returns true if every changeset in the channel also exists in main.
+    pub fn is_channel_promoted(&self, name: &str) -> Result<bool> {
+        let channel = self.load_channel(name)?;
+        let main = self.load_channel("main")?;
+        let main_set: std::collections::HashSet<&String> = main.changesets.iter().collect();
+        Ok(channel.changesets.iter().all(|id| main_set.contains(id)))
+    }
+
     // -----------------------------------------------------------------------
     // Changeset Management
     // -----------------------------------------------------------------------

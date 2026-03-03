@@ -113,6 +113,26 @@ pub struct CreateChannelResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Delete Channel
+// ---------------------------------------------------------------------------
+
+/// Request to delete a channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteChannelRequest {
+    /// The channel name to delete.
+    pub channel: String,
+    /// Force deletion even if the channel has not been promoted to main.
+    pub force: bool,
+}
+
+/// Response from a delete channel operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteChannelResponse {
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Promote
 // ---------------------------------------------------------------------------
 

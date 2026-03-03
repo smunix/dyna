@@ -276,6 +276,37 @@ impl DynaRepo {
         Ok(count)
     }
 
+    /// Check if all changesets of a channel exist in main.
+    fn is_promoted_to_main(&self, channel_name: &str) -> PyResult<bool> {
+        let channel = self.repo.load_channel(channel_name).map_err(to_py_err)?;
+        let main = self.repo.load_channel("main").map_err(to_py_err)?;
+        let main_set: std::collections::HashSet<&str> = main.changesets.iter().map(|s| s.as_str()).collect();
+        Ok(channel.changesets.iter().all(|c| main_set.contains(c.as_str())))
+    }
+
+    /// Delete a local channel. Raises error if channel is 'main' or is current.
+    fn delete_channel(&self, channel_name: &str, force: Option<bool>) -> PyResult<()> {
+        if channel_name == "main" {
+            return Err(PyRuntimeError::new_err("Cannot delete the 'main' channel: it is protected."));
+        }
+        let current = self.repo.current_channel_name().map_err(to_py_err)?;
+        if channel_name == current {
+            return Err(PyRuntimeError::new_err("Cannot delete the current channel. Switch to another channel first."));
+        }
+        let force = force.unwrap_or(false);
+        if !force {
+            let promoted = self.is_promoted_to_main(channel_name)?;
+            if !promoted {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Channel '{}' has not been fully promoted to main. Use force=True to delete anyway.",
+                    channel_name
+                )));
+            }
+        }
+        self.repo.delete_channel(channel_name).map_err(to_py_err)?;
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Status
     // -----------------------------------------------------------------------

@@ -296,6 +296,24 @@ impl Repository {
         self.save_channel(&channel)
     }
 
+    /// Delete a channel: remove the channel JSON file and its snapshot directory.
+    pub fn delete_channel(&self, name: &str) -> Result<()> {
+        // Remove channel JSON
+        let channel_path = self.vfs_dyna.join("channels")?.join(&format!("{}.json", name))?;
+        if vfs_exists(&channel_path)? {
+            channel_path.remove_file()?;
+        }
+        // Remove snapshot directory for this channel
+        if let Ok(snap_dir) = self.snapshot_dir_for(name) {
+            if let Ok(entries) = snap_dir.read_dir() {
+                for entry in entries {
+                    entry.remove_file().ok();
+                }
+            }
+        }
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Changeset CRUD
     // -----------------------------------------------------------------------

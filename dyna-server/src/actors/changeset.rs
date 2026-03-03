@@ -65,6 +65,10 @@ async fn changeset_actor(mut ctx: Context) {
                 let response = handle_resource_history(&ctx, resource_id).await;
                 ctx.respond(token, response);
             }
+            (HandleDeleteChannel { body }, token) => {
+                let response = handle_delete_channel(&ctx, body).await;
+                ctx.respond(token, response);
+            }
         });
     }
 
@@ -670,4 +674,78 @@ async fn handle_get_changeset(ctx: &Context, change_id: String) -> GetChangesetR
         changeset: None,
         error: Some("Failed to load changeset".into()),
     })
+}
+
+/// Handle a delete channel request.
+///
+/// Checks that the channel is not "main" (protected), and that all its changesets
+/// have been promoted to main (unless force=true). Then deletes from storage.
+async fn handle_delete_channel(ctx: &Context, body: DeleteChannelRequest) -> DeleteChannelResponse {
+    let name = &body.channel;
+
+    // Never delete main
+    if name == "main" {
+        return DeleteChannelResponse {
+            success: false,
+            error: Some("Cannot delete the 'main' channel: it is protected.".into()),
+        };
+    }
+
+    // Load the channel to delete
+    let channel = match load_channel_or_err(ctx, name).await {
+        Ok(ch) => ch,
+        Err(e) => {
+            return DeleteChannelResponse {
+                success: false,
+                error: Some(e),
+            }
+        }
+    };
+
+    // Check if promoted to main (unless force)
+    if !body.force {
+        let main = match load_channel_or_err(ctx, "main").await {
+            Ok(ch) => ch,
+            Err(e) => {
+                return DeleteChannelResponse {
+                    success: false,
+                    error: Some(format!("Cannot verify promotion status: {}", e)),
+                }
+            }
+        };
+        let main_set: std::collections::HashSet<&String> = main.changesets.iter().collect();
+        let all_promoted = channel.changesets.iter().all(|id| main_set.contains(id));
+        if !all_promoted {
+            return DeleteChannelResponse {
+                success: false,
+                error: Some(format!(
+                    "Channel '{}' has not been fully promoted to main. Use --force to delete anyway.",
+                    name
+                )),
+            };
+        }
+    }
+
+    // Delete from storage
+    match ctx
+        .request(DeleteChannelStorage { name: name.clone() })
+        .resolve()
+        .await
+    {
+        Ok(DeleteChannelStorageResult::Ok) => {
+            tracing::info!(channel = %name, "Channel deleted successfully");
+            DeleteChannelResponse {
+                success: true,
+                error: None,
+            }
+        }
+        Ok(DeleteChannelStorageResult::Error(e)) => DeleteChannelResponse {
+            success: false,
+            error: Some(e),
+        },
+        Err(e) => DeleteChannelResponse {
+            success: false,
+            error: Some(format!("Storage request failed: {}", e)),
+        },
+    }
 }

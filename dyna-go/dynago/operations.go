@@ -138,6 +138,81 @@ func (r *Repository) UnstageAll() (int, error) {
 }
 
 // ---------------------------------------------------------------------------
+// Channel management
+// ---------------------------------------------------------------------------
+
+// IsPromotedToMain checks if all changesets of a channel exist in main.
+func (r *Repository) IsPromotedToMain(channelName string) (bool, error) {
+	channel, err := r.LoadChannel(channelName)
+	if err != nil {
+		return false, err
+	}
+	mainCh, err := r.LoadChannel("main")
+	if err != nil {
+		return false, err
+	}
+	mainSet := make(map[string]bool, len(mainCh.Changesets))
+	for _, c := range mainCh.Changesets {
+		mainSet[c] = true
+	}
+	for _, c := range channel.Changesets {
+		if !mainSet[c] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// DeleteChannelSafe deletes a channel with protection checks.
+// If force is false, the channel must have been promoted to main.
+func (r *Repository) DeleteChannelSafe(channelName string, force bool) error {
+	if channelName == "main" {
+		return fmt.Errorf("cannot delete the 'main' channel: it is protected")
+	}
+	current, err := r.CurrentChannelName()
+	if err != nil {
+		return err
+	}
+	if channelName == current {
+		return fmt.Errorf("cannot delete the current channel; switch to another channel first")
+	}
+	if !force {
+		promoted, err := r.IsPromotedToMain(channelName)
+		if err != nil {
+			return fmt.Errorf("could not check promotion status: %w", err)
+		}
+		if !promoted {
+			return fmt.Errorf("channel '%s' has not been fully promoted to main; use force=true to delete anyway", channelName)
+		}
+	}
+	return r.DeleteChannel(channelName)
+}
+
+// Cleanup removes all channels that have been promoted to main.
+// Returns the list of deleted channel names.
+func (r *Repository) Cleanup() ([]string, error) {
+	channels, err := r.ListChannels()
+	if err != nil {
+		return nil, err
+	}
+	current, _ := r.CurrentChannelName()
+	var deleted []string
+	for _, ch := range channels {
+		if ch.Name == "main" || ch.Name == current {
+			continue
+		}
+		promoted, err := r.IsPromotedToMain(ch.Name)
+		if err != nil || !promoted {
+			continue
+		}
+		if err := r.DeleteChannel(ch.Name); err == nil {
+			deleted = append(deleted, ch.Name)
+		}
+	}
+	return deleted, nil
+}
+
+// ---------------------------------------------------------------------------
 // Commit
 // ---------------------------------------------------------------------------
 

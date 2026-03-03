@@ -12,8 +12,8 @@
 
 use dyna_core::models::{Changeset, Channel};
 use dyna_core::protocol::{
-    CloneResponse, CreateChannelResponse, ListChannelsResponse, PromoteResponse, PullResponse,
-    PushResponse, ResourceHistoryResponse,
+    CloneResponse, CreateChannelResponse, DeleteChannelResponse, ListChannelsResponse,
+    PromoteResponse, PullResponse, PushResponse, ResourceHistoryResponse,
 };
 use elfo::prelude::*;
 
@@ -68,6 +68,18 @@ pub struct LoadChannel {
 pub enum LoadChannelResult {
     Ok(Channel),
     NotFound,
+    Error(String),
+}
+
+/// Delete a channel from S3.
+#[message(ret = DeleteChannelStorageResult)]
+pub struct DeleteChannelStorage {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum DeleteChannelStorageResult {
+    Ok,
     Error(String),
 }
 
@@ -174,4 +186,10 @@ pub struct HandleGetChangeset {
 #[message(ret = ResourceHistoryResponse)]
 pub struct HandleResourceHistory {
     pub resource_id: String,
+}
+
+/// Handle a delete channel request.
+#[message(ret = DeleteChannelResponse)]
+pub struct HandleDeleteChannel {
+    pub body: dyna_core::protocol::DeleteChannelRequest,
 }

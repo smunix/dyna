@@ -410,6 +410,9 @@ type Msg
     | ToggleStagedSection
     | ToggleWorkingSection
     | ToggleCommittedSection
+      -- Delete channel
+    | RequestDeleteChannel String Bool  -- name, force
+    | GotDeleteChannelResult Decode.Value
       -- Resource filter/sort
     | UpdateResourceFilter String
     | SetResourceSort ResourceSort
@@ -1237,6 +1240,32 @@ update msg model =
         ToggleCommittedSection ->
             ( { model | committedSectionOpen = not model.committedSectionOpen }, Cmd.none )
 
+        -- Delete channel
+        RequestDeleteChannel name force ->
+            ( model, Ports.deleteChannel { name = name, force = force } )
+
+        GotDeleteChannelResult val ->
+            case Decode.decodeValue (Decode.field "success" Decode.bool) val of
+                Ok True ->
+                    let
+                        chName =
+                            val
+                                |> Decode.decodeValue (Decode.field "channel" Decode.string)
+                                |> Result.withDefault "Channel"
+                    in
+                    ( { model | flashMessage = Just ("Deleted channel '" ++ chName ++ "'"), flashIsError = False }
+                    , Ports.requestChannels ()
+                    )
+
+                _ ->
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "Delete channel failed"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
+
         DismissFlash ->
             ( { model | flashMessage = Nothing }, Cmd.none )
 
@@ -1792,6 +1821,27 @@ viewChannelItem model ch =
                     ]
                 , if ch.isCurrent then
                     div [ style "font-size" "11px", style "color" "#fbbf24", style "margin-top" "2px" ] [ text "Current channel" ]
+                  else
+                    text ""
+                , if ch.name /= "main" && not ch.isCurrent then
+                    div [ style "display" "flex", style "gap" "6px", style "margin-top" "6px" ]
+                        [ span
+                            [ style "font-size" "11px"
+                            , style "color" "#f87171"
+                            , style "cursor" "pointer"
+                            , style "text-decoration" "underline"
+                            , onClick (RequestDeleteChannel ch.name False)
+                            ]
+                            [ text "Delete" ]
+                        , span
+                            [ style "font-size" "11px"
+                            , style "color" "#f87171"
+                            , style "cursor" "pointer"
+                            , style "text-decoration" "underline"
+                            , onClick (RequestDeleteChannel ch.name True)
+                            ]
+                            [ text "Force Delete" ]
+                        ]
                   else
                     text ""
                 ]
@@ -3082,6 +3132,7 @@ subscriptions _ =
         , Ports.onStageAllResult GotStageAllResult
         , Ports.onSyncMainResult GotSyncMainResult
         , Ports.onUnstageResult GotUnstageResult
+        , Ports.onDeleteChannelResult GotDeleteChannelResult
         ]
 
 

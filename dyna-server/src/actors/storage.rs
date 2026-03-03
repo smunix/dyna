@@ -202,6 +202,23 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                         ctx.respond(token, result);
                     }
 
+                    (DeleteChannelStorage { name }, token) => {
+                        // Delete channel JSON (try both compressed and plain)
+                        let channel_gz = ObjPath::from(format!("channels/{}.json.gz", name));
+                        let channel_plain = ObjPath::from(format!("channels/{}.json", name));
+                        let _ = store.delete(&channel_gz).await;
+                        let _ = store.delete(&channel_plain).await;
+                        // Delete snapshot directory for this channel
+                        let snap_prefix = ObjPath::from(format!("snapshots/{}/", name));
+                        if let Ok(list_result) = store.list_with_delimiter(Some(&snap_prefix)).await {
+                            for obj in &list_result.objects {
+                                let _ = store.delete(&obj.location).await;
+                            }
+                        }
+                        tracing::info!(channel = %name, "Deleted channel from storage");
+                        ctx.respond(token, DeleteChannelStorageResult::Ok);
+                    }
+
                     // ----------------------------------------------------------
                     // Snapshot operations
                     // ----------------------------------------------------------
