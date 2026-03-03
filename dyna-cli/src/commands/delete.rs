@@ -1,4 +1,5 @@
 use anyhow::Result;
+use itertools::izip;
 use std::collections::HashSet;
 
 /// Execute the `delete` command.
@@ -33,11 +34,10 @@ pub async fn execute(
     if !force {
         let main_channel = repo.load_channel("main")?;
         let target_channel = repo.load_channel(&name)?;
-        let main_set: HashSet<&String> = main_channel.changesets.iter().collect();
-        let all_promoted = target_channel
-            .changesets
-            .iter()
-            .all(|id| main_set.contains(id));
+        let main_set: HashSet<&String> = izip!(&main_channel.changesets)
+            .map(|id| id)
+            .collect();
+        let all_promoted = izip!(&target_channel.changesets).all(|id| main_set.contains(id));
         if !all_promoted {
             anyhow::bail!(
                 "Channel '{}' has not been fully promoted to main. Use --force to delete anyway.",
@@ -52,24 +52,30 @@ pub async fn execute(
     }
 
     if do_remote {
-        let sync_client = crate::sync_client::SyncClient::from_repo(&repo)?;
+        let config = repo.load_config()?;
+        let remote_url = config
+            .remote_url
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No remote URL configured."))?;
+        let sync_client = crate::sync_client::SyncClient::new(remote_url);
         let request = dyna_core::protocol::DeleteChannelRequest {
             channel: name.clone(),
             force,
         };
-        match sync_client.delete_channel(&request).await {
-            Ok(resp) => {
-                if resp.success {
-                    println!("Deleted remote channel '{}'", name);
-                } else {
-                    let err = resp.error.unwrap_or_default();
-                    eprintln!("Failed to delete remote channel '{}': {}", name, err);
-                }
-            }
-            Err(e) => {
+        sync_client
+            .delete_channel(&request)
+            .await
+            .map(|resp| {
+                resp.success
+                    .then(|| println!("Deleted remote channel '{}'", name))
+                    .unwrap_or_else(|| {
+                        let err = resp.error.unwrap_or_default();
+                        eprintln!("Failed to delete remote channel '{}': {}", name, err);
+                    });
+            })
+            .unwrap_or_else(|e| {
                 eprintln!("Failed to delete remote channel '{}': {}", name, e);
-            }
-        }
+            });
     }
 
     Ok(())

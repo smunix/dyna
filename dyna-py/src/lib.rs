@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use itertools::izip;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use serde_json::Value;
@@ -82,12 +83,8 @@ impl DynaRepo {
         // Optionally override config
         if remote_url.is_some() || user_name.is_some() {
             let mut config = repo.load_config().map_err(to_py_err)?;
-            if let Some(url) = remote_url {
-                config.remote_url = Some(url.to_string());
-            }
-            if let Some(name) = user_name {
-                config.user.name = name.to_string();
-            }
+            remote_url.map(|url| config.remote_url = Some(url.to_string()));
+            user_name.map(|name| config.user.name = name.to_string());
             repo.save_config(&config).map_err(to_py_err)?;
         }
 
@@ -241,15 +238,17 @@ impl DynaRepo {
             })?;
 
         // For staged deletions, restore the working directory file
-        if staged.current.is_null() {
-            if let Some(ref previous) = staged.previous {
-                let content = serde_json::to_string_pretty(previous)
-                    .map_err(|e| PyRuntimeError::new_err(format!("JSON error: {}", e)))?;
-                self.repo
-                    .write_resource_file(resource_id, &content)
-                    .map_err(to_py_err)?;
-            }
-        }
+        staged.current.is_null().then(|| {
+            staged.previous.as_ref().map(|previous| {
+                serde_json::to_string_pretty(previous)
+                    .map_err(|e| PyRuntimeError::new_err(format!("JSON error: {}", e)))
+                    .and_then(|content| {
+                        self.repo
+                            .write_resource_file(resource_id, &content)
+                            .map_err(to_py_err)
+                    })
+            })
+        });
 
         self.repo.remove_staging_file(resource_id).map_err(to_py_err)
     }
@@ -260,17 +259,19 @@ impl DynaRepo {
         let staged_changes = self.repo.load_staged_changes().map_err(to_py_err)?;
         let count = staged_changes.len() as u32;
 
-        for staged in &staged_changes {
-            if staged.current.is_null() {
-                if let Some(ref previous) = staged.previous {
-                    let content = serde_json::to_string_pretty(previous)
-                        .map_err(|e| PyRuntimeError::new_err(format!("JSON error: {}", e)))?;
-                    self.repo
-                        .write_resource_file(&staged.resource_id, &content)
-                        .map_err(to_py_err)?;
-                }
-            }
-        }
+        izip!(&staged_changes)
+            .filter(|staged| staged.current.is_null())
+            .try_for_each(|staged| {
+                staged.previous.as_ref().map(|previous| {
+                    serde_json::to_string_pretty(previous)
+                        .map_err(|e| PyRuntimeError::new_err(format!("JSON error: {}", e)))
+                        .and_then(|content| {
+                            self.repo
+                                .write_resource_file(&staged.resource_id, &content)
+                                .map_err(to_py_err)
+                        })
+                }).unwrap_or(Ok(()))
+            })?;
 
         self.repo.clear_staging().map_err(to_py_err)?;
         Ok(count)
@@ -280,8 +281,8 @@ impl DynaRepo {
     fn is_promoted_to_main(&self, channel_name: &str) -> PyResult<bool> {
         let channel = self.repo.load_channel(channel_name).map_err(to_py_err)?;
         let main = self.repo.load_channel("main").map_err(to_py_err)?;
-        let main_set: std::collections::HashSet<&str> = main.changesets.iter().map(|s| s.as_str()).collect();
-        Ok(channel.changesets.iter().all(|c| main_set.contains(c.as_str())))
+        let main_set: std::collections::HashSet<&str> = izip!(&main.changesets).map(|s| s.as_str()).collect();
+        Ok(izip!(&channel.changesets).all(|c| main_set.contains(c.as_str())))
     }
 
     /// Delete a local channel. Raises error if channel is 'main' or is current.
@@ -341,33 +342,30 @@ impl DynaRepo {
             dict.set_item("staged", staged_list)?;
 
             let staged_ids: HashSet<String> =
-                staged.iter().map(|s| s.resource_id.clone()).collect();
+                izip!(&staged).map(|s| s.resource_id.clone()).collect();
 
             let snapshots = self.repo.load_all_snapshots().map_err(to_py_err)?;
             let work_files = self.repo.list_work_json_files().map_err(to_py_err)?;
 
             // Modified (unstaged changes to tracked files)
-            let mut modified = Vec::new();
-            for file_path in &work_files {
-                let rid = self.repo.resource_id_from_relative(file_path);
-                if staged_ids.contains(&rid) {
-                    continue;
-                }
-                if let Some(snapshot_val) = snapshots.get(&rid) {
-                    if let Ok(content) = self.repo.read_work_file(file_path) {
-                        if let Ok(current_val) = serde_json::from_str::<Value>(&content) {
-                            if &current_val != snapshot_val {
-                                modified.push(rid);
-                            }
-                        }
-                    }
-                }
-            }
+            let modified: Vec<String> = izip!(&work_files)
+                .map(|file_path| (self.repo.resource_id_from_relative(file_path), file_path))
+                .filter(|(rid, _)| !staged_ids.contains(rid))
+                .filter(|(rid, file_path)| {
+                    snapshots.get(rid).and_then(|snapshot_val| {
+                        self.repo.read_work_file(file_path).ok().and_then(|content| {
+                            serde_json::from_str::<Value>(&content)
+                                .ok()
+                                .map(|current_val| &current_val != snapshot_val)
+                        })
+                    }).unwrap_or(false)
+                })
+                .map(|(rid, _)| rid)
+                .collect();
             dict.set_item("modified", modified)?;
 
             // Deleted tracked files
-            let work_rids: HashSet<String> = work_files
-                .iter()
+            let work_rids: HashSet<String> = izip!(&work_files)
                 .map(|f| self.repo.resource_id_from_relative(f))
                 .collect();
             let deleted: Vec<String> = snapshots
@@ -378,13 +376,10 @@ impl DynaRepo {
             dict.set_item("deleted", deleted)?;
 
             // Untracked (new files not yet in snapshots)
-            let mut untracked = Vec::new();
-            for file_path in &work_files {
-                let rid = self.repo.resource_id_from_relative(file_path);
-                if !snapshots.contains_key(&rid) && !staged_ids.contains(&rid) {
-                    untracked.push(rid);
-                }
-            }
+            let untracked: Vec<String> = izip!(&work_files)
+                .map(|file_path| self.repo.resource_id_from_relative(file_path))
+                .filter(|rid| !snapshots.contains_key(rid) && !staged_ids.contains(rid))
+                .collect();
             dict.set_item("untracked", untracked)?;
 
             // Conflicts
@@ -448,17 +443,13 @@ impl DynaRepo {
             .set_working_change(Some(&change_id))
             .map_err(to_py_err)?;
 
-        for s in &staged {
+        izip!(&staged).try_for_each(|s| {
             if s.current.is_null() {
-                self.repo
-                    .remove_snapshot(&s.resource_id)
-                    .map_err(to_py_err)?;
+                self.repo.remove_snapshot(&s.resource_id).map_err(to_py_err)
             } else {
-                self.repo
-                    .save_snapshot(&s.resource_id, &s.current)
-                    .map_err(to_py_err)?;
+                self.repo.save_snapshot(&s.resource_id, &s.current).map_err(to_py_err)
             }
-        }
+        })?;
 
         self.repo.clear_staging().map_err(to_py_err)?;
         Ok(change_id)
@@ -528,16 +519,16 @@ impl DynaRepo {
 
         if response.success {
             let mut new_sync = sync_state;
-            if let Some(ref new_head) = response.new_head {
+            response.new_head.as_ref().map(|new_head| {
                 new_sync
                     .remote_heads
                     .insert(channel_name.clone(), new_head.clone());
-            }
-            for id in &new_changeset_ids {
-                if !new_sync.pushed_changesets.contains(id) {
-                    new_sync.pushed_changesets.push((*id).clone());
-                }
-            }
+            });
+            let new_ids: Vec<String> = izip!(&new_changeset_ids)
+                .filter(|id| !new_sync.pushed_changesets.contains(*id))
+                .map(|id| (*id).clone())
+                .collect();
+            new_sync.pushed_changesets.extend(new_ids);
             self.repo.save_sync_state(&new_sync).map_err(to_py_err)?;
         }
 
@@ -546,9 +537,7 @@ impl DynaRepo {
             dict.set_item("success", response.success)?;
             dict.set_item("changesets_pushed", response.accepted_count)?;
             dict.set_item("channel", &channel_name)?;
-            if let Some(ref err) = response.error {
-                dict.set_item("error", err)?;
-            }
+            response.error.as_ref().map(|err| dict.set_item("error", err)).transpose()?;
             Ok(dict.into())
         })
     }
@@ -583,38 +572,41 @@ impl DynaRepo {
         let response = block_on(client.pull(&request)).map_err(to_py_err)?;
         let new_count = response.changesets.len();
 
-        for cs in &response.changesets {
-            self.repo.store_changeset(cs).map_err(to_py_err)?;
-        }
+        izip!(&response.changesets).try_for_each(|cs| {
+            self.repo.store_changeset(cs).map_err(to_py_err)
+        })?;
 
         self.repo
             .save_channel(&response.channel)
             .map_err(to_py_err)?;
 
         let mut new_sync = sync_state;
-        if let Some(ref head) = response.current_head {
+        response.current_head.as_ref().map(|head| {
             new_sync
                 .remote_heads
                 .insert(channel_name.clone(), head.clone());
-        }
+        });
         self.repo.save_sync_state(&new_sync).map_err(to_py_err)?;
 
-        let mut resources_updated = 0usize;
-        for cs in &response.changesets {
-            for patch in &cs.patches {
-                if let Some(ref snap) = patch.result_snapshot {
-                    let json = serde_json::to_string_pretty(snap)
-                        .map_err(|e| to_py_err(e.into()))?;
-                    self.repo
-                        .write_resource_file(&patch.target_resource, &json)
-                        .map_err(to_py_err)?;
-                    self.repo
-                        .save_snapshot(&patch.target_resource, snap)
-                        .map_err(to_py_err)?;
-                    resources_updated += 1;
-                }
-            }
-        }
+        let resources_updated = izip!(&response.changesets)
+            .flat_map(|cs| izip!(&cs.patches))
+            .try_fold(0usize, |count, patch| -> PyResult<usize> {
+                patch.result_snapshot.as_ref().map(|snap| {
+                    serde_json::to_string_pretty(snap)
+                        .map_err(|e| to_py_err(e.into()))
+                        .and_then(|json| {
+                            self.repo
+                                .write_resource_file(&patch.target_resource, &json)
+                                .map_err(to_py_err)
+                        })
+                        .and_then(|_| {
+                            self.repo
+                                .save_snapshot(&patch.target_resource, snap)
+                                .map_err(to_py_err)
+                        })
+                        .map(|_| count + 1)
+                }).unwrap_or(Ok(count))
+            })?;
 
         Python::with_gil(|py| {
             let dict = pyo3::types::PyDict::new(py);
@@ -662,12 +654,8 @@ impl DynaRepo {
             dict.set_item("success", response.success)?;
             dict.set_item("source_channel", &source_channel)?;
             dict.set_item("promoted_count", response.promoted_changesets.len())?;
-            if let Some(ref new_head) = response.new_head {
-                dict.set_item("new_head", new_head)?;
-            }
-            if let Some(ref err) = response.error {
-                dict.set_item("error", err)?;
-            }
+            response.new_head.as_ref().map(|new_head| dict.set_item("new_head", new_head)).transpose()?;
+            response.error.as_ref().map(|err| dict.set_item("error", err)).transpose()?;
             Ok(dict.into())
         })
     }
@@ -689,9 +677,9 @@ impl DynaRepo {
 
         let mut all_conflicts: Vec<(String, Vec<dyna_core::models::Conflict>)> = Vec::new();
 
-        for cs_id in &promoted {
+        for cs_id in izip!(&promoted) {
             let cs = self.repo.load_changeset(cs_id).map_err(to_py_err)?;
-            for p in &cs.patches {
+            for p in izip!(&cs.patches) {
                 let resource_id = &p.target_resource;
 
                 let base = p.parent_snapshot.clone().unwrap_or(serde_json::Value::Null);
@@ -741,8 +729,8 @@ impl DynaRepo {
             } else {
                 dict.set_item("success", false)?;
                 let conflict_list = pyo3::types::PyList::empty(py);
-                for (resource_id, conflicts) in &all_conflicts {
-                    for c in conflicts {
+                for (resource_id, conflicts) in izip!(&all_conflicts) {
+                    for c in izip!(conflicts) {
                         let cd = pyo3::types::PyDict::new(py);
                         cd.set_item("resource_id", resource_id)?;
                         cd.set_item("json_path", &c.json_path)?;
@@ -775,54 +763,60 @@ impl DynaRepo {
 
         let mut config = repo.load_config().map_err(to_py_err)?;
         config.remote_url = Some(url.to_string());
-        if let Some(name) = user_name {
-            config.user.name = name.to_string();
-        }
+        user_name.map(|name| config.user.name = name.to_string());
         repo.save_config(&config).map_err(to_py_err)?;
 
         let client = SyncClient::new(url);
         let request = CloneRequest { channel: None };
         let response = block_on(client.clone_repo(&request)).map_err(to_py_err)?;
 
-        for cs in &response.changesets {
-            repo.store_changeset(cs).map_err(to_py_err)?;
-        }
-        for ch in &response.channels {
-            repo.save_channel(ch).map_err(to_py_err)?;
-        }
-        for (resource_id, snapshot) in &response.snapshots {
-            let json = serde_json::to_string_pretty(snapshot)
-                .map_err(|e| to_py_err(e.into()))?;
-            repo.write_resource_file(resource_id, &json)
-                .map_err(to_py_err)?;
-            repo.save_snapshot(resource_id, snapshot)
-                .map_err(to_py_err)?;
-        }
+        izip!(&response.changesets).try_for_each(|cs| {
+            repo.store_changeset(cs).map_err(to_py_err)
+        })?;
+        izip!(&response.channels).try_for_each(|ch| {
+            repo.save_channel(ch).map_err(to_py_err)
+        })?;
+        izip!(&response.snapshots).try_for_each(|(resource_id, snapshot)| {
+            serde_json::to_string_pretty(snapshot)
+                .map_err(|e| to_py_err(e.into()))
+                .and_then(|json| {
+                    repo.write_resource_file(resource_id, &json)
+                        .map_err(to_py_err)
+                })
+                .and_then(|_| {
+                    repo.save_snapshot(resource_id, snapshot)
+                        .map_err(to_py_err)
+                })
+        })?;
 
-        if let Some(main_ch) = response.channels.iter().find(|c| c.name == "main") {
-            repo.set_current_channel(&main_ch.name)
-                .map_err(to_py_err)?;
-            if let Some(ref head) = main_ch.head_change_id {
-                repo.set_working_change(Some(head)).map_err(to_py_err)?;
-            }
-        } else if let Some(first_ch) = response.channels.first() {
-            repo.set_current_channel(&first_ch.name)
-                .map_err(to_py_err)?;
-        }
+        izip!(&response.channels)
+            .find(|c| c.name == "main")
+            .map(|c| c)
+            .map(|main_ch| -> PyResult<()> {
+                repo.set_current_channel(&main_ch.name).map_err(to_py_err)?;
+                main_ch.head_change_id.as_ref().map(|head| {
+                    repo.set_working_change(Some(head)).map_err(to_py_err)
+                }).transpose()?;
+                Ok(())
+            })
+            .or_else(|| {
+                response.channels.first().map(|first_ch| {
+                    repo.set_current_channel(&first_ch.name).map_err(to_py_err)
+                })
+            })
+            .transpose()?;
 
-        let mut sync_state = SyncState::default();
-        for ch in &response.channels {
-            if let Some(ref head) = ch.head_change_id {
-                sync_state
-                    .remote_heads
-                    .insert(ch.name.clone(), head.clone());
-            }
-            for cs_id in &ch.changesets {
-                if !sync_state.pushed_changesets.contains(cs_id) {
-                    sync_state.pushed_changesets.push(cs_id.clone());
-                }
-            }
-        }
+        let sync_state = izip!(&response.channels).fold(SyncState::default(), |mut state, ch| {
+            ch.head_change_id.as_ref().map(|head| {
+                state.remote_heads.insert(ch.name.clone(), head.clone());
+            });
+            let new_ids: Vec<String> = izip!(&ch.changesets)
+                .filter(|cs_id| !state.pushed_changesets.contains(cs_id))
+                .cloned()
+                .collect();
+            state.pushed_changesets.extend(new_ids);
+            state
+        });
         repo.save_sync_state(&sync_state).map_err(to_py_err)?;
 
         Ok(Self { repo })
@@ -841,7 +835,7 @@ impl DynaRepo {
     fn list_channels(&self) -> PyResult<Vec<String>> {
         self.repo
             .list_channels()
-            .map(|channels| channels.iter().map(|c| c.name.clone()).collect())
+            .map(|channels| izip!(&channels).map(|c| c.name.clone()).collect())
             .map_err(to_py_err)
     }
 
@@ -946,22 +940,19 @@ impl DynaRepo {
         _channel: Option<&str>,
         changeset: Option<&str>,
     ) -> PyResult<()> {
-        let snapshot_value = if let Some(cs_prefix) = changeset {
+        let snapshot_value = changeset.map(|cs_prefix| {
             let matches = self
                 .repo
                 .find_changeset_by_prefix(cs_prefix)
                 .map_err(to_py_err)?;
             match matches.len() {
-                0 => {
-                    return Err(PyRuntimeError::new_err(format!(
-                        "No changeset found matching '{}'",
-                        cs_prefix
-                    )))
-                }
+                0 => Err(PyRuntimeError::new_err(format!(
+                    "No changeset found matching '{}'",
+                    cs_prefix
+                ))),
                 1 => {
                     let cs = &matches[0];
-                    cs.patches
-                        .iter()
+                    izip!(&cs.patches)
                         .find(|p| p.target_resource == resource_id)
                         .and_then(|p| p.result_snapshot.clone())
                         .ok_or_else(|| {
@@ -969,18 +960,18 @@ impl DynaRepo {
                                 "Changeset '{}' does not contain resource '{}'",
                                 cs.change_id, resource_id
                             ))
-                        })?
+                        })
                 }
                 _ => {
                     let ids: Vec<&str> =
-                        matches.iter().map(|m| m.change_id.as_str()).collect();
-                    return Err(PyRuntimeError::new_err(format!(
+                        izip!(&matches).map(|m| m.change_id.as_str()).collect();
+                    Err(PyRuntimeError::new_err(format!(
                         "Ambiguous prefix '{}', matches: {:?}",
                         cs_prefix, ids
-                    )));
+                    )))
                 }
             }
-        } else {
+        }).unwrap_or_else(|| {
             self.repo
                 .load_snapshot(resource_id)
                 .map_err(to_py_err)?
@@ -989,8 +980,8 @@ impl DynaRepo {
                         "No snapshot found for '{}'",
                         resource_id
                     ))
-                })?
-        };
+                })
+        })?;
 
         let json =
             serde_json::to_string_pretty(&snapshot_value).map_err(|e| to_py_err(e.into()))?;
@@ -1015,29 +1006,27 @@ impl DynaRepo {
         let channel_name = self.repo.current_channel_name().map_err(to_py_err)?;
         let mut channel = self.repo.load_channel(&channel_name).map_err(to_py_err)?;
 
-        let child_id = if let Some(rev) = revision {
+        let child_id = revision.map(|rev| {
             let matches = self
                 .repo
                 .find_changeset_by_prefix(rev)
                 .map_err(to_py_err)?;
             match matches.len() {
-                0 => {
-                    return Err(PyRuntimeError::new_err(format!(
-                        "No changeset found matching '{}'",
-                        rev
-                    )))
-                }
-                1 => matches[0].change_id.clone(),
-                _ => return Err(PyRuntimeError::new_err("Ambiguous changeset prefix")),
+                0 => Err(PyRuntimeError::new_err(format!(
+                    "No changeset found matching '{}'",
+                    rev
+                ))),
+                1 => Ok(matches[0].change_id.clone()),
+                _ => Err(PyRuntimeError::new_err("Ambiguous changeset prefix")),
             }
-        } else {
+        }).unwrap_or_else(|| {
             channel
                 .head_change_id
                 .clone()
                 .ok_or_else(|| {
                     PyRuntimeError::new_err("No changesets in channel to squash")
-                })?
-        };
+                })
+        })?;
 
         let child = self.repo.load_changeset(&child_id).map_err(to_py_err)?;
         if child.immutable {
@@ -1046,30 +1035,28 @@ impl DynaRepo {
             ));
         }
 
-        let target_id = if let Some(into_prefix) = into {
+        let target_id = into.map(|into_prefix| {
             let matches = self
                 .repo
                 .find_changeset_by_prefix(into_prefix)
                 .map_err(to_py_err)?;
             match matches.len() {
-                0 => {
-                    return Err(PyRuntimeError::new_err(format!(
-                        "No changeset found matching '{}'",
-                        into_prefix
-                    )))
-                }
-                1 => matches[0].change_id.clone(),
-                _ => return Err(PyRuntimeError::new_err("Ambiguous changeset prefix")),
+                0 => Err(PyRuntimeError::new_err(format!(
+                    "No changeset found matching '{}'",
+                    into_prefix
+                ))),
+                1 => Ok(matches[0].change_id.clone()),
+                _ => Err(PyRuntimeError::new_err("Ambiguous changeset prefix")),
             }
-        } else {
+        }).unwrap_or_else(|| {
             child
                 .parents
                 .first()
                 .cloned()
                 .ok_or_else(|| {
                     PyRuntimeError::new_err("Changeset has no parent to squash into")
-                })?
-        };
+                })
+        })?;
 
         let mut target = self.repo.load_changeset(&target_id).map_err(to_py_err)?;
         if target.immutable {
@@ -1080,10 +1067,10 @@ impl DynaRepo {
 
         // Merge patches
         let mut merged_patches = target.patches.clone();
-        for child_patch in &child.patches {
-            if let Some(existing) = merged_patches
-                .iter_mut()
+        for child_patch in izip!(&child.patches) {
+            if let Some(existing) = izip!(&mut merged_patches)
                 .find(|p| p.target_resource == child_patch.target_resource)
+                .map(|p| p)
             {
                 let parent_snap = existing.parent_snapshot.clone();
                 let result_snap = child_patch.result_snapshot.clone();
@@ -1103,9 +1090,7 @@ impl DynaRepo {
         }
 
         target.patches = merged_patches;
-        if let Some(msg) = message {
-            target.message = msg.to_string();
-        }
+        message.map(|msg| target.message = msg.to_string());
         target.recompute_hash();
 
         self.repo.store_changeset(&target).map_err(to_py_err)?;
@@ -1117,38 +1102,33 @@ impl DynaRepo {
         self.repo.save_channel(&channel).map_err(to_py_err)?;
 
         // Update working change if needed
-        if let Ok(Some(wc)) = self.repo.working_change_id() {
-            if wc == child_id {
-                self.repo
-                    .set_working_change(Some(&target_id))
-                    .map_err(to_py_err)?;
-            }
-        }
+        self.repo.working_change_id()
+            .ok()
+            .flatten()
+            .filter(|wc| wc == &child_id)
+            .map(|_| self.repo.set_working_change(Some(&target_id)).map_err(to_py_err))
+            .transpose()?;
 
         // Reparent any changesets that had child as parent
         let all_ids = self.repo.all_changeset_ids().map_err(to_py_err)?;
-        for id in &all_ids {
-            if id == &child_id || id == &target_id {
-                continue;
-            }
-            if let Ok(mut cs) = self.repo.load_changeset(id) {
-                if cs.parents.contains(&child_id) {
-                    cs.parents = cs
-                        .parents
-                        .iter()
-                        .map(|p| {
-                            if p == &child_id {
-                                target_id.clone()
-                            } else {
-                                p.clone()
-                            }
-                        })
-                        .collect();
-                    cs.recompute_hash();
-                    self.repo.store_changeset(&cs).map_err(to_py_err)?;
-                }
-            }
-        }
+        izip!(&all_ids)
+            .filter(|id| *id != &child_id && *id != &target_id)
+            .try_for_each(|id| {
+                self.repo.load_changeset(id).ok()
+                    .filter(|cs| cs.parents.contains(&child_id))
+                    .map(|mut cs| {
+                        cs.parents = izip!(&cs.parents)
+                            .map(|p| {
+                                (p == &child_id)
+                                    .then(|| target_id.clone())
+                                    .unwrap_or_else(|| p.clone())
+                            })
+                            .collect();
+                        cs.recompute_hash();
+                        self.repo.store_changeset(&cs).map_err(to_py_err)
+                    })
+                    .unwrap_or(Ok(()))
+            })?;
 
         self.repo
             .remove_changeset_file(&child_id)
@@ -1188,7 +1168,7 @@ impl DynaRepo {
                     change_id
                 )))
             }
-            1 => matches.into_iter().next().unwrap(),
+            1 => izip!(matches).next().map(|cs| cs).unwrap(),
             n => {
                 return Err(PyRuntimeError::new_err(format!(
                     "Ambiguous prefix '{}' matches {} changesets",
@@ -1206,9 +1186,7 @@ impl DynaRepo {
         let config = self.repo.load_config().map_err(to_py_err)?;
 
         // Build inverse patches
-        let inverse_patches: Vec<Patch> = target_cs
-            .patches
-            .iter()
+        let inverse_patches: Vec<Patch> = izip!(target_cs.patches)
             .map(|original| {
                 let base = original
                     .parent_snapshot
@@ -1266,19 +1244,15 @@ impl DynaRepo {
         self.repo.store_changeset(&revert_cs).map_err(to_py_err)?;
 
         // Update snapshots
-        for p in &revert_cs.patches {
-            if let Some(snap) = &p.result_snapshot {
+        izip!(&revert_cs.patches).try_for_each(|p| {
+            p.result_snapshot.as_ref().map(|snap| {
                 if snap.is_null() {
-                    self.repo
-                        .remove_snapshot(&p.target_resource)
-                        .map_err(to_py_err)?;
+                    self.repo.remove_snapshot(&p.target_resource).map_err(to_py_err)
                 } else {
-                    self.repo
-                        .save_snapshot(&p.target_resource, snap)
-                        .map_err(to_py_err)?;
+                    self.repo.save_snapshot(&p.target_resource, snap).map_err(to_py_err)
                 }
-            }
-        }
+            }).unwrap_or(Ok(()))
+        })?;
 
         // Update channel
         let mut channel = self
@@ -1329,7 +1303,7 @@ impl DynaRepo {
                     change_id
                 )))
             }
-            1 => matches.into_iter().next().unwrap(),
+            1 => izip!(matches).next().map(|cs| cs).unwrap(),
             n => {
                 return Err(PyRuntimeError::new_err(format!(
                     "Ambiguous prefix '{}' matches {} changesets",
@@ -1357,9 +1331,7 @@ impl DynaRepo {
         let config = self.repo.load_config().map_err(to_py_err)?;
 
         // Build cherry-pick patches
-        let cherry_patches: Vec<Patch> = source_cs
-            .patches
-            .iter()
+        let cherry_patches: Vec<Patch> = izip!(source_cs.patches)
             .map(|src_patch| {
                 let current_snapshot = self
                     .repo
@@ -1430,19 +1402,15 @@ impl DynaRepo {
         self.repo.store_changeset(&cherry_cs).map_err(to_py_err)?;
 
         // Update snapshots
-        for p in &cherry_cs.patches {
-            if let Some(snap) = &p.result_snapshot {
+        izip!(&cherry_cs.patches).try_for_each(|p| {
+            p.result_snapshot.as_ref().map(|snap| {
                 if snap.is_null() {
-                    self.repo
-                        .remove_snapshot(&p.target_resource)
-                        .map_err(to_py_err)?;
+                    self.repo.remove_snapshot(&p.target_resource).map_err(to_py_err)
                 } else {
-                    self.repo
-                        .save_snapshot(&p.target_resource, snap)
-                        .map_err(to_py_err)?;
+                    self.repo.save_snapshot(&p.target_resource, snap).map_err(to_py_err)
                 }
-            }
-        }
+            }).unwrap_or(Ok(()))
+        })?;
 
         // Update channel
         let mut channel = self
@@ -1477,7 +1445,7 @@ impl DynaRepo {
                 change_id
             ))),
             1 => {
-                let mut cs = matches.into_iter().next().unwrap();
+                let mut cs = izip!(matches).next().map(|cs| cs).unwrap();
                 if cs.immutable {
                     return Err(PyRuntimeError::new_err(
                         "Cannot describe an immutable changeset",

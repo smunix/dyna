@@ -350,21 +350,29 @@ impl Repository {
             .unwrap_or_else(|| Ok(Channel::new(name)))?;
 
         // Copy snapshots from source channel to the new channel
-        if let Some(source_name) = fork_from {
-            if let Ok(src_dir) = self.snapshot_dir_for(source_name) {
-                if let Ok(entries) = src_dir.read_dir() {
-                    let dst_dir = self.snapshot_dir_for(name)?;
-                    for entry in entries {
-                        if entry.extension().map_or(false, |ext| ext == "json") {
-                            if let Ok(content) = vfs_read(&entry) {
-                                let dst = dst_dir.join(&entry.filename())?;
-                                vfs_write(&dst, &content).ok();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        fork_from
+            .and_then(|source_name| {
+                self.snapshot_dir_for(source_name)
+                    .ok()
+                    .and_then(|src_dir| {
+                        src_dir.read_dir().ok().map(|entries| {
+                            let dst_dir = self.snapshot_dir_for(name).ok();
+                            dst_dir.map(|dst| {
+                                entries
+                                    .filter(|e| e.extension().map_or(false, |ext| ext == "json"))
+                                    .for_each(|entry| {
+                                        vfs_read(&entry)
+                                            .ok()
+                                            .and_then(|content| {
+                                                dst.join(&entry.filename())
+                                                    .ok()
+                                                    .and_then(|dst_path| vfs_write(&dst_path, &content).ok())
+                                            });
+                                    });
+                            });
+                        })
+                    })
+            });
 
         self.save_channel(&channel).map(|()| channel)
     }
@@ -383,14 +391,12 @@ impl Repository {
             channel_path.remove_file()?;
         }
         // Remove snapshot directory for this channel
-        if let Ok(snap_dir) = self.snapshot_dir_for(name) {
-            if let Ok(entries) = snap_dir.read_dir() {
-                for entry in entries {
-                    entry.remove_file().ok();
-                }
-            }
+        self.snapshot_dir_for(name).ok().map(|snap_dir| {
+            snap_dir.read_dir().ok().map(|entries| {
+                entries.for_each(|entry| { entry.remove_file().ok(); });
+            });
             snap_dir.remove_dir().ok();
-        }
+        });
         // If the current HEAD points to this channel, switch to main
         if self.current_channel_name().map_or(false, |c| c == name) {
             self.set_current_channel("main")?;
@@ -404,8 +410,8 @@ impl Repository {
     pub fn is_channel_promoted(&self, name: &str) -> Result<bool> {
         let channel = self.load_channel(name)?;
         let main = self.load_channel("main")?;
-        let main_set: std::collections::HashSet<&String> = main.changesets.iter().collect();
-        Ok(channel.changesets.iter().all(|id| main_set.contains(id)))
+        let main_set: std::collections::HashSet<&String> = izip!(&main.changesets).map(|id| id).collect();
+        Ok(izip!(&channel.changesets).all(|id| main_set.contains(id)))
     }
 
     // -----------------------------------------------------------------------

@@ -613,6 +613,7 @@ dependencies = [
  "anyhow",
  "dyna-cli",
  "dyna-core",
+ "itertools",
  "pyo3",
  "serde",
  "serde_json",

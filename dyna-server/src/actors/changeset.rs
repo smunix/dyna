@@ -241,7 +241,7 @@ async fn handle_push(
     // Validate and store each changeset, accumulating accepted count
     // We need sequential processing here due to async storage calls
     let mut accepted = 0usize;
-    for cs in &changesets {
+    for cs in izip!(&changesets) {
         // Verify integrity
         if !cs.verify() {
             return make_err(
@@ -261,7 +261,7 @@ async fn handle_push(
         }
 
         // Apply patches to snapshots
-        for patch in &cs.patches {
+        for patch in izip!(&cs.patches) {
             let save_value = patch
                 .result_snapshot
                 .clone()
@@ -359,7 +359,7 @@ async fn handle_pull(
 
     // Load changeset objects, filtering out failures
     let mut changesets = Vec::new();
-    for id in &changeset_ids {
+    for id in izip!(&changeset_ids) {
         load_changeset(ctx, id)
             .await
             .map(|cs| changesets.push(cs))
@@ -397,7 +397,7 @@ async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse 
 
     // Load all changesets, sort by creation time
     let mut changesets = Vec::new();
-    for id in &all_cs_ids {
+    for id in izip!(&all_cs_ids) {
         load_changeset(ctx, id)
             .await
             .map(|cs| changesets.push(cs));
@@ -405,9 +405,9 @@ async fn handle_clone(ctx: &Context, _channel: Option<String>) -> CloneResponse 
     changesets.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     // Load per-channel snapshots for the main channel (clients rebuild per-channel on their side)
-    let main_channel_name = channels
-        .iter()
+    let main_channel_name = izip!(&channels)
         .find(|c| c.name == "main")
+        .map(|c| c)
         .map(|c| c.name.clone())
         .unwrap_or_else(|| "main".to_string());
     let snapshots = ctx
@@ -457,13 +457,13 @@ async fn handle_promote(
     };
 
     // Mark promoted changesets as immutable and copy snapshots to target channel
-    for id in &promoted_ids {
+    for id in izip!(&promoted_ids) {
         if let Some(mut cs) = load_changeset(ctx, id).await {
             cs.immutable = true;
             let _ = store_changeset(ctx, &cs).await;
             // Copy affected resource snapshots from source to target channel
-            for patch in &cs.patches {
-                if let Some(ref result) = patch.result_snapshot {
+            for patch in izip!(&cs.patches) {
+                patch.result_snapshot.as_ref().map(|result| async {
                     let _ = ctx
                         .request(SaveSnapshot {
                             channel: target_name.clone(),
@@ -472,7 +472,7 @@ async fn handle_promote(
                         })
                         .resolve()
                         .await;
-                }
+                });
             }
         }
     }
@@ -597,8 +597,8 @@ async fn handle_resource_history(
     // Dedup: avoid loading the same changeset for every channel it appears in.
     let mut seen_changesets = std::collections::HashSet::new();
 
-    for channel in &channels {
-        for cs_id in &channel.changesets {
+    for channel in izip!(&channels) {
+        for cs_id in izip!(&channel.changesets) {
             // Skip if we already processed this changeset from another channel
             if !seen_changesets.insert(cs_id.clone()) {
                 continue;
@@ -607,22 +607,20 @@ async fn handle_resource_history(
             // Load changeset — this is the only allocation per iteration.
             // The `cs` binding is dropped at the end of this block, freeing
             // the snapshot blobs immediately.
-            if let Some(cs) = load_changeset(ctx, cs_id).await {
+            load_changeset(ctx, cs_id).await.map(|cs| {
                 // Extract only the lightweight operation metadata for matching
                 // patches. We deliberately avoid cloning parent_snapshot /
                 // result_snapshot to keep memory bounded.
-                let operations: Vec<serde_json::Value> = cs
-                    .patches
-                    .iter()
+                let operations: Vec<serde_json::Value> = izip!(&cs.patches)
                     .filter(|p| p.target_resource == resource_id)
                     .flat_map(|p| {
-                        p.operations.iter().map(|op| {
+                        izip!(&p.operations).map(|op| {
                             serde_json::to_value(op).unwrap_or(serde_json::json!(null))
                         })
                     })
                     .collect();
 
-                if !operations.is_empty() {
+                (!operations.is_empty()).then(|| {
                     entries.push(ResourceHistoryEntry {
                         change_id: cs.change_id.clone(),
                         commit_hash: cs.commit_hash.clone(),
@@ -632,9 +630,9 @@ async fn handle_resource_history(
                         channel: channel.name.clone(),
                         operations,
                     });
-                }
+                });
                 // `cs` (and its snapshot blobs) is dropped here.
-            }
+            });
         }
     }
 
@@ -713,8 +711,8 @@ async fn handle_delete_channel(ctx: &Context, body: DeleteChannelRequest) -> Del
                 }
             }
         };
-        let main_set: std::collections::HashSet<&String> = main.changesets.iter().collect();
-        let all_promoted = channel.changesets.iter().all(|id| main_set.contains(id));
+        let main_set: std::collections::HashSet<&String> = izip!(&main.changesets).map(|id| id).collect();
+        let all_promoted = izip!(&channel.changesets).all(|id| main_set.contains(id));
         if !all_promoted {
             return DeleteChannelResponse {
                 success: false,

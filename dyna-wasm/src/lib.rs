@@ -331,21 +331,23 @@ impl DynaClient {
     #[wasm_bindgen]
     pub fn unstage(&self, resource_id: &str) -> Result<(), JsError> {
         let staged_changes = self.repo.load_staged_changes().map_err(to_js_error)?;
-        let staged = staged_changes
-            .iter()
+        let staged = izip!(&staged_changes)
             .find(|s| s.resource_id == resource_id)
+            .map(|s| s)
             .ok_or_else(|| JsError::new(&format!("Resource '{}' is not staged.", resource_id)))?;
 
         // For staged deletions, restore the working directory file
-        if staged.current.is_null() {
-            if let Some(ref previous) = staged.previous {
-                let content = serde_json::to_string_pretty(previous)
-                    .map_err(|e| JsError::new(&e.to_string()))?;
-                self.repo
-                    .write_resource_file(resource_id, &content)
-                    .map_err(to_js_error)?;
-            }
-        }
+        staged.current.is_null().then(|| {
+            staged.previous.as_ref().map(|previous| {
+                serde_json::to_string_pretty(previous)
+                    .map_err(|e| JsError::new(&e.to_string()))
+                    .and_then(|content| {
+                        self.repo
+                            .write_resource_file(resource_id, &content)
+                            .map_err(to_js_error)
+                    })
+            })
+        });
 
         self.repo.remove_staging_file(resource_id).map_err(to_js_error)
     }
@@ -357,17 +359,19 @@ impl DynaClient {
         let staged_changes = self.repo.load_staged_changes().map_err(to_js_error)?;
         let count = staged_changes.len() as u32;
 
-        for staged in &staged_changes {
-            if staged.current.is_null() {
-                if let Some(ref previous) = staged.previous {
-                    let content = serde_json::to_string_pretty(previous)
-                        .map_err(|e| JsError::new(&e.to_string()))?;
-                    self.repo
-                        .write_resource_file(&staged.resource_id, &content)
-                        .map_err(to_js_error)?;
-                }
-            }
-        }
+        izip!(&staged_changes)
+            .filter(|staged| staged.current.is_null())
+            .try_for_each(|staged| {
+                staged.previous.as_ref().map(|previous| {
+                    serde_json::to_string_pretty(previous)
+                        .map_err(|e| JsError::new(&e.to_string()))
+                        .and_then(|content| {
+                            self.repo
+                                .write_resource_file(&staged.resource_id, &content)
+                                .map_err(to_js_error)
+                        })
+                }).unwrap_or(Ok(()))
+            })?;
 
         self.repo.clear_staging().map_err(to_js_error)?;
         Ok(count)
@@ -399,7 +403,7 @@ impl DynaClient {
         }
 
         let parent = self.repo.working_change_id().map_err(to_js_error)?;
-        let parents = parent.into_iter().collect::<Vec<_>>();
+        let parents = izip!(parent).map(|id| id).collect::<Vec<_>>();
 
         // Build patches from staged changes
         let patches: Vec<Patch> = izip!(&staged_changes)
@@ -525,7 +529,7 @@ impl DynaClient {
         let resource_state = if target_snapshots.is_empty() && !target_channel.changesets.is_empty() {
             let state: HashMap<String, serde_json::Value> = izip!(&target_channel.changesets)
                 .filter_map(|cid| self.repo.load_changeset(cid).ok())
-                .flat_map(|cs| cs.patches.into_iter())
+                .flat_map(|cs| izip!(cs.patches))
                 .fold(HashMap::new(), |mut state, p| {
                     let current_val = state
                         .entry(p.target_resource.clone())
@@ -574,8 +578,8 @@ impl DynaClient {
     pub fn is_promoted_to_main(&self, name: &str) -> Result<bool, JsError> {
         let main_channel = self.repo.load_channel("main").map_err(to_js_error)?;
         let target_channel = self.repo.load_channel(name).map_err(to_js_error)?;
-        let main_set: std::collections::HashSet<&String> = main_channel.changesets.iter().collect();
-        Ok(target_channel.changesets.iter().all(|id| main_set.contains(id)))
+        let main_set: std::collections::HashSet<&String> = izip!(&main_channel.changesets).map(|id| id).collect();
+        Ok(izip!(&target_channel.changesets).all(|id| main_set.contains(id)))
     }
 
     // -----------------------------------------------------------------------
@@ -605,7 +609,7 @@ impl DynaClient {
 
         let resource_state: HashMap<String, serde_json::Value> = izip!(&channel.changesets)
             .filter_map(|cid| self.repo.load_changeset(cid).ok())
-            .flat_map(|cs| cs.patches.into_iter())
+            .flat_map(|cs| izip!(cs.patches))
             .fold(HashMap::new(), |mut state, p| {
                 let current_val = state
                     .entry(p.target_resource.clone())
@@ -640,40 +644,36 @@ impl DynaClient {
 
         // Also check all channels for the changeset
         let all_channels = self.repo.list_channels().map_err(to_js_error)?;
-        let mut found_changesets: Vec<String> = Vec::new();
-        for ch in &all_channels {
-            if ch.changesets.contains(&change_id.to_string()) {
-                // Replay up to and including the target changeset
-                for cid in &ch.changesets {
-                    found_changesets.push(cid.clone());
-                    if cid == change_id {
-                        break;
-                    }
-                }
-                break;
-            }
-        }
+        let found_changesets: Vec<String> = izip!(&all_channels)
+            .find(|ch| ch.changesets.contains(&change_id.to_string()))
+            .map(|ch| {
+                izip!(&ch.changesets)
+                    .take_while(|cid| *cid != change_id)
+                    .map(|cid| cid.clone())
+                    .chain(std::iter::once(change_id.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
 
         if found_changesets.is_empty() {
             return Err(JsError::new(&format!("Changeset '{}' not found in any channel", change_id)));
         }
 
-        let mut resource_state: HashMap<String, serde_json::Value> = HashMap::new();
-        for cid in &found_changesets {
-            if let Ok(cs) = self.repo.load_changeset(cid) {
-                for p in cs.patches {
-                    let current_val = resource_state
-                        .entry(p.target_resource.clone())
-                        .or_insert_with(|| serde_json::json!({}));
-                    p.result_snapshot
-                        .as_ref()
-                        .map(|result| *current_val = result.clone())
-                        .unwrap_or_else(|| {
-                            let _ = diff::apply_patch(current_val, &p.operations);
-                        });
-                }
-            }
-        }
+        let resource_state: HashMap<String, serde_json::Value> = izip!(&found_changesets)
+            .filter_map(|cid| self.repo.load_changeset(cid).ok())
+            .flat_map(|cs| izip!(cs.patches))
+            .fold(HashMap::new(), |mut state, p| {
+                let current_val = state
+                    .entry(p.target_resource.clone())
+                    .or_insert_with(|| serde_json::json!({}));
+                p.result_snapshot
+                    .as_ref()
+                    .map(|result| *current_val = result.clone())
+                    .unwrap_or_else(|| {
+                        let _ = diff::apply_patch(current_val, &p.operations);
+                    });
+                state
+            });
 
         let value = resource_state
             .get(resource_id)
@@ -694,7 +694,7 @@ impl DynaClient {
 
         let resource_state: HashMap<String, serde_json::Value> = izip!(&channel.changesets)
             .filter_map(|cid| self.repo.load_changeset(cid).ok())
-            .flat_map(|cs| cs.patches.into_iter())
+            .flat_map(|cs| izip!(cs.patches))
             .fold(HashMap::new(), |mut state, p| {
                 let current_val = state
                     .entry(p.target_resource.clone())
@@ -722,10 +722,10 @@ impl DynaClient {
 
         let resource_ids: Vec<String> = izip!(&channel.changesets)
             .filter_map(|cid| self.repo.load_changeset(cid).ok())
-            .flat_map(|cs| cs.patches.into_iter())
+            .flat_map(|cs| izip!(cs.patches))
             .map(|p| p.target_resource)
             .collect::<std::collections::HashSet<_>>()
-            .into_iter()
+            .into_iter() // HashSet → Vec requires into_iter
             .collect();
 
         serde_json::to_string(&resource_ids).map_err(|e| JsError::new(&e.to_string()))
@@ -1101,10 +1101,9 @@ impl DynaClient {
         }).map_err(to_js_error)?;
 
         // Set HEAD to main (or first channel)
-        let head_channel = response
-            .channels
-            .iter()
+        let head_channel = izip!(&response.channels)
             .find(|c| c.name == "main")
+            .map(|c| c)
             .or_else(|| response.channels.first())
             .map(|c| c.name.clone())
             .unwrap_or_else(|| "main".to_string());
@@ -1120,7 +1119,7 @@ impl DynaClient {
             let mut channel_snapshots: HashMap<String, serde_json::Value> = HashMap::new();
             izip!(&channel.changesets)
                 .filter_map(|cid| self.repo.load_changeset(cid).ok())
-                .flat_map(|cs| cs.patches.into_iter())
+                .flat_map(|cs| izip!(cs.patches))
                 .for_each(|p| {
                     let entry = channel_snapshots
                         .entry(p.target_resource.clone())
@@ -1201,8 +1200,7 @@ impl DynaClient {
             return Ok(serde_json::json!({ "pushed": 0 }).to_string());
         }
 
-        let to_push: Vec<Changeset> = unpushed_ids
-            .iter()
+        let to_push: Vec<Changeset> = izip!(&unpushed_ids)
             .filter_map(|cid| self.repo.load_changeset(cid).ok())
             .collect();
 
@@ -1272,7 +1270,7 @@ impl DynaClient {
         let resource_state: HashMap<String, serde_json::Value> =
             izip!(&response.channel.changesets)
                 .filter_map(|cid| self.repo.load_changeset(cid).ok())
-                .flat_map(|cs| cs.patches.into_iter())
+                .flat_map(|cs| izip!(cs.patches))
                 .fold(HashMap::new(), |mut state, p| {
                     let current_val = state
                         .entry(p.target_resource.clone())

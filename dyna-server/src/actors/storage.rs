@@ -81,7 +81,7 @@ async fn list_and_load_all<T: serde::de::DeserializeOwned>(
         .map_err(|e| e.to_string())?;
 
     let mut results = Vec::new();
-    for obj in &list_result.objects {
+    for obj in izip!(&list_result.objects) {
         let name = obj
             .location
             .filename()
@@ -90,17 +90,13 @@ async fn list_and_load_all<T: serde::de::DeserializeOwned>(
             .trim_end_matches(".json")
             .to_string();
 
-        let loaded = store
+        store
             .get(&obj.location)
             .await
             .ok()
             .and_then(|gr| futures::executor::block_on(gr.bytes()).ok())
             .and_then(|data| compression::decompress_json::<T>(&data).ok())
-            .map(|value| (name, value));
-
-        if let Some(pair) = loaded {
-            results.push(pair);
-        }
+            .map(|value| results.push((name, value)));
     }
     Ok(results)
 }
@@ -210,11 +206,12 @@ pub fn new(store: Arc<dyn ObjectStore>) -> Blueprint {
                         let _ = store.delete(&channel_plain).await;
                         // Delete snapshot directory for this channel
                         let snap_prefix = ObjPath::from(format!("snapshots/{}/", name));
-                        if let Ok(list_result) = store.list_with_delimiter(Some(&snap_prefix)).await {
-                            for obj in &list_result.objects {
-                                let _ = store.delete(&obj.location).await;
+                        let snap_store = store.clone();
+                        store.list_with_delimiter(Some(&snap_prefix)).await.ok().map(|list_result| async move {
+                            for obj in izip!(&list_result.objects) {
+                                let _ = snap_store.delete(&obj.location).await;
                             }
-                        }
+                        });
                         tracing::info!(channel = %name, "Deleted channel from storage");
                         ctx.respond(token, DeleteChannelStorageResult::Ok);
                     }
