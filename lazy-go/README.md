@@ -1,6 +1,6 @@
 # lazy-go
 
-Lazy, on-demand resource loader for [Dyna](https://github.com/smunix/dyna) servers — Go edition.
+Lazy, on-demand resource loader for Dyna servers — Go edition.
 
 `LazyClient` uses `dyna-go` as a local caching layer and a WebSocket connection for live updates.
 

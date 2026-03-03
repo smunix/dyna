@@ -513,6 +513,31 @@
             pythonImportsCheck = [ "dyna_py" ];
           };
 
+          # ── Python package (lazy-py) ──────────────────────────────────
+
+          lazy-py = pkgs.python3Packages.buildPythonPackage {
+            pname = "lazy-py";
+            version = "0.1.0";
+            format = "pyproject";
+
+            src = ./lazy-py;
+
+            build-system = [
+              pkgs.python3Packages.setuptools
+            ];
+
+            dependencies = [
+              dyna-py
+              pkgs.python3Packages.websockets
+            ];
+
+            pythonImportsCheck = [ "lazy_py" ];
+
+            meta = {
+              description = "Lazy, on-demand resource loader for Dyna servers (Python)";
+            };
+          };
+
           # ── Go package (dyna-go) ──────────────────────────────────────
           dyna-go = pkgs.buildGoModule {
             pname = "dyna-go";
@@ -690,7 +715,7 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve lazy-cat lazy-go;
+            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve lazy-cat lazy-go lazy-py;
             inherit dyna-server-image dyna-server-je-image dyna-server-mim-image dyna-app-image;
             default = dyna-cli;
           };
@@ -762,6 +787,7 @@
               pkgs.maturin
               pkgs.python3Packages.click
               dyna-py
+              lazy-py
               lazy-cat
 
               # WASM tooling

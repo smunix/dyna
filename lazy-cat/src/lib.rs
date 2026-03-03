@@ -1,6 +1,6 @@
 //! # lazy-cat
 //!
-//! A lazy, on-demand resource loader for [Dyna](https://github.com/smunix/dyna)
+//! A lazy, on-demand resource loader for Dyna
 //! servers.  `LazyClient` maintains an in-memory repository (via `dyna-cli`)
 //! that is populated **only** with the resources that have been explicitly
 //! requested, while a background WebSocket listener keeps the local cache

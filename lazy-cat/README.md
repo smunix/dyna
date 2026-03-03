@@ -1,6 +1,6 @@
 # lazy-cat
 
-Lazy, on-demand resource loader for [Dyna](https://github.com/smunix/dyna) servers — Rust edition.
+Lazy, on-demand resource loader for Dyna servers — Rust edition.
 
 `LazyClient` uses `dyna-cli` as a local in-memory caching layer and a WebSocket connection for live updates. Resources are fetched from the remote server only when first requested.
 

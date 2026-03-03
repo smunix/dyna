@@ -1,6 +1,6 @@
 # lazy-py
 
-Lazy, on-demand resource loader for [Dyna](https://github.com/smunix/dyna) servers — Python edition.
+Lazy, on-demand resource loader for Dyna servers — Python edition.
 
 `LazyClient` uses `dyna-py` (PyO3 bindings to `dyna-cli`) as a local caching layer and a WebSocket connection for live updates.
 
