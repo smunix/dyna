@@ -2,18 +2,20 @@
 //!
 //! Connects to `GET /api/v1/ws` on the Dyna server and listens for
 //! [`Notification`] events.  When a push or promotion targets the tracked
-//! channel, the listener automatically pulls the new changesets and updates
-//! the in-memory repository.
+//! channel, the listener automatically pulls the new changesets, updates
+//! the in-memory repository, and fires the user callback with a rich
+//! [`UpdateEvent`].
 
-use crate::OnUpdateFn;
+use crate::{OnUpdateFn, UpdateEvent};
 use anyhow::Result;
 use dyna_cli::repository::Repository;
 use dyna_cli::sync_client::SyncClient;
-use dyna_core::notification::{Notification, NotificationKind, NotificationPayload};
+use dyna_core::notification::{ChangesetInfo, Notification, NotificationKind, NotificationPayload};
 use dyna_core::protocol::PullRequest;
 use futures::StreamExt;
 use itertools::izip;
-use std::collections::HashSet;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tokio_tungstenite::connect_async;
@@ -89,19 +91,17 @@ async fn try_listen(
             }
         };
 
-        // Determine which channel was affected and which resources changed
-        let (affected_channel, affected_resources) = match &notification.payload {
+        // Extract channel, changeset info, and new_head from the notification
+        let (affected_channel, changeset_infos, new_head) = match &notification.payload {
             NotificationPayload::Push(p) => (
                 p.channel.clone(),
-                izip!(&p.changesets)
-                    .flat_map(|cs| izip!(&cs.affected_resources).cloned())
-                    .collect::<Vec<_>>(),
+                p.changesets.clone(),
+                p.new_head.clone(),
             ),
             NotificationPayload::Promotion(p) => (
                 p.target_channel.clone(),
-                izip!(&p.promoted_changesets)
-                    .flat_map(|cs| izip!(&cs.affected_resources).cloned())
-                    .collect::<Vec<_>>(),
+                p.promoted_changesets.clone(),
+                p.new_head.clone(),
             ),
         };
 
@@ -110,11 +110,16 @@ async fn try_listen(
             continue;
         }
 
+        // Collect all affected resource IDs across all changesets
+        let affected_resource_ids: Vec<String> = izip!(&changeset_infos)
+            .flat_map(|cs| izip!(&cs.affected_resources).cloned())
+            .collect();
+
         tracing::info!(
             "Received {:?} notification for channel '{}', {} resource(s) affected",
             notification.kind,
             channel,
-            affected_resources.len()
+            affected_resource_ids.len()
         );
 
         // Pull the latest changesets
@@ -131,11 +136,33 @@ async fn try_listen(
             continue;
         }
 
+        // Collect updated snapshots for affected resources
+        let updated_snapshots: HashMap<String, Value> = {
+            let r = repo.read().await;
+            izip!(&affected_resource_ids)
+                .filter_map(|rid| {
+                    r.load_snapshot(rid)
+                        .ok()
+                        .flatten()
+                        .map(|v| (rid.clone(), v))
+                })
+                .collect()
+        };
+
+        // Build the rich UpdateEvent
+        let event = UpdateEvent {
+            kind: notification.kind.clone(),
+            timestamp: notification.timestamp.clone(),
+            channel: affected_channel,
+            changesets: changeset_infos,
+            new_head,
+            affected_resource_ids,
+            updated_snapshots,
+        };
+
         // Fire the user callback
         let guard = on_update.lock().await;
-        guard
-            .as_ref()
-            .map(|f| f(&affected_resources));
+        guard.as_ref().map(|f| f(&event));
     }
 
     Ok(())

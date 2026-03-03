@@ -39,12 +39,14 @@
 //! }
 //! ```
 
-mod ws;
+pub mod ws;
 
 use anyhow::{Context, Result};
 use dyna_cli::repository::Repository;
 use dyna_cli::sync_client::SyncClient;
-use dyna_core::notification::{Notification, NotificationKind, NotificationPayload};
+use dyna_core::notification::{
+    ChangesetInfo, Notification, NotificationKind, NotificationPayload,
+};
 use dyna_core::protocol::{CloneRequest, PullRequest};
 use itertools::izip;
 use serde_json::Value;
@@ -57,8 +59,34 @@ use vfs::{MemoryFS, VfsPath};
 // Public types
 // ---------------------------------------------------------------------------
 
+/// Detailed information about a live update received via WebSocket.
+///
+/// This struct is passed to the [`on_update`](LazyClient::on_update) callback
+/// and contains the full notification metadata alongside the updated resource
+/// snapshots.
+#[derive(Debug, Clone)]
+pub struct UpdateEvent {
+    /// The kind of event that triggered this update (`push` or `promotion`).
+    pub kind: NotificationKind,
+    /// ISO 8601 timestamp of when the event occurred on the server.
+    pub timestamp: String,
+    /// The channel that was affected.
+    pub channel: String,
+    /// Per-changeset metadata: author, message, patch count, affected
+    /// resources.
+    pub changesets: Vec<ChangesetInfo>,
+    /// The new head change_id of the channel (if available).
+    pub new_head: Option<String>,
+    /// Flat list of all affected resource IDs across all changesets.
+    pub affected_resource_ids: Vec<String>,
+    /// Updated snapshots for each affected resource that was successfully
+    /// materialised after the pull.  Keys are resource IDs, values are the
+    /// current JSON content.
+    pub updated_snapshots: HashMap<String, Value>,
+}
+
 /// A callback invoked whenever the local cache is updated from the server.
-pub type OnUpdateFn = Box<dyn Fn(&[String]) + Send + Sync>;
+pub type OnUpdateFn = Box<dyn Fn(&UpdateEvent) + Send + Sync>;
 
 /// A lazy, on-demand client that loads resources from a remote Dyna server
 /// only when they are first requested, then keeps them in sync via WebSocket
@@ -352,9 +380,12 @@ impl LazyClient {
     }
 
     /// Register a callback that is invoked whenever the local cache is
-    /// updated from the server.  The callback receives the list of resource
-    /// IDs that were affected.
-    pub async fn on_update(&self, f: impl Fn(&[String]) + Send + Sync + 'static) {
+    /// updated from the server.
+    ///
+    /// The callback receives an [`UpdateEvent`] containing the full
+    /// notification metadata (changeset info, author, message, timestamp,
+    /// patch operations) and the updated resource snapshots.
+    pub async fn on_update(&self, f: impl Fn(&UpdateEvent) + Send + Sync + 'static) {
         let mut guard = self.on_update.lock().await;
         *guard = Some(Box::new(f));
     }
