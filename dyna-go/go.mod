@@ -1,4 +1,4 @@
-module github.com/smunix/dyna/dyna-go
+module dyna-go
 
 go 1.23.0
 

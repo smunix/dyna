@@ -480,7 +480,6 @@
             '';
             meta = {
               description = "Go client library for Dyna — Distributed CRUD for Collaborative JSON Editing";
-              homepage = "https://github.com/smunix/dyna";
             };
           };
 

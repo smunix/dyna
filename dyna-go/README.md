@@ -1,6 +1,6 @@
 # dyna-go
 
-A pure-Go client library for [Dyna](https://github.com/smunix/dyna) — distributed CRUD for collaborative JSON editing. Uses [afero](https://github.com/spf13/afero) for filesystem abstraction, making it suitable for both in-memory usage (tests, embedded applications) and disk-backed repositories.
+A pure-Go client library for Dyna — distributed CRUD for collaborative JSON editing. Uses [afero](https://github.com/spf13/afero) for filesystem abstraction, making it suitable for both in-memory usage (tests, embedded applications) and disk-backed repositories.
 
 ## Features
 
@@ -20,7 +20,7 @@ A pure-Go client library for [Dyna](https://github.com/smunix/dyna) — distribu
 ## Installation
 
 ```bash
-go get github.com/smunix/dyna/dyna-go
+go get dyna-go
 ```
 
 ## Quick Start
@@ -33,7 +33,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/smunix/dyna/dyna-go/dynago"
+    "dyna-go/dynago"
 )
 
 func main() {

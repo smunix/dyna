@@ -12,7 +12,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/smunix/dyna/dyna-go/dynago"
+	"dyna-go/dynago"
 )
 
 func main() {

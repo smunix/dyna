@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/smunix/dyna/dyna-go/dynago"
+	"dyna-go/dynago"
 )
 
 func main() {
