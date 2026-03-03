@@ -60,10 +60,11 @@ where
         .and_then(|exists| {
             exists
                 .then(|| {
-                    dir.read_dir()
+                    dir.walk_dir()
                         .map_err(anyhow::Error::from)
                         .and_then(|entries| {
                             entries
+                                .filter_map(|p| p.ok())
                                 .filter(|p| p.extension().map_or(false, |ext| ext == "json"))
                                 .map(|p| map_fn(p))
                                 .try_collect()
@@ -86,8 +87,10 @@ fn collect_vfs_json_stems(dir: &VfsPath) -> Result<Vec<String>> {
 
 /// Write raw bytes to a VfsPath, creating the file (and overwriting if it exists).
 fn vfs_write_bytes(path: &VfsPath, data: &[u8]) -> Result<()> {
-    path.create_file()
+    path.parent()
+        .create_dir_all()
         .map_err(anyhow::Error::from)
+        .and_then(|()| path.create_file().map_err(anyhow::Error::from))
         .and_then(|mut writer| writer.write_all(data).map_err(Into::into))
 }
 

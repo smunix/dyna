@@ -3,11 +3,10 @@ package dynago
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"io/fs"
+	"path/filepath"
 	"sort"
 	"strings"
-
 	"github.com/spf13/afero"
 )
 
@@ -632,16 +631,23 @@ func (r *Repository) writeJSON(path string, v interface{}) error {
 }
 
 func (r *Repository) listJSONStems(dir string) ([]string, error) {
-	entries, err := afero.ReadDir(r.fs, dir)
+	var stems []string
+	err := afero.Walk(r.fs, dir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return nil // skip errors
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(info.Name(), ".json") {
+			// Compute relative path from dir, strip .json suffix
+			rel, _ := filepath.Rel(dir, path)
+			stems = append(stems, strings.TrimSuffix(rel, ".json"))
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, nil // directory doesn't exist → empty
-	}
-	var stems []string
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasSuffix(name, ".json") {
-			stems = append(stems, strings.TrimSuffix(name, ".json"))
-		}
 	}
 	sort.Strings(stems)
 	return stems, nil

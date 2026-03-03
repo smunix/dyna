@@ -75,17 +75,20 @@ async fn list_and_load_all<T: serde::de::DeserializeOwned>(
     store: &dyn ObjectStore,
     prefix: &ObjPath,
 ) -> Result<Vec<(String, T)>, String> {
-    let list_result = store
-        .list_with_delimiter(Some(prefix))
+    use futures::TryStreamExt;
+    let objects: Vec<_> = store
+        .list(Some(prefix))
+        .try_collect()
         .await
         .map_err(|e| e.to_string())?;
 
     let mut results = Vec::new();
-    for obj in izip!(&list_result.objects) {
+    for obj in izip!(&objects) {
         let name = obj
             .location
-            .filename()
-            .unwrap_or_default()
+            .as_ref()
+            .strip_prefix(prefix.as_ref())
+            .unwrap_or(obj.location.as_ref())
             .trim_end_matches(".json.gz")
             .trim_end_matches(".json")
             .to_string();
