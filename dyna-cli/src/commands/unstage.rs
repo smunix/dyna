@@ -5,7 +5,7 @@
 //! file from the previous snapshot stored in the staged change.
 
 use crate::repository::Repository;
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 /// Execute the unstage command.
 ///
@@ -64,7 +64,7 @@ fn unstage_one(
         if let Some(ref previous) = staged.previous {
             let content = serde_json::to_string_pretty(previous)?;
             repo.write_resource_file(resource_id, &content)?;
-            log::info!("Restored working file for deleted resource '{}'", resource_id);
+            println!("Restored working file for deleted resource '{}'", resource_id);
         }
     }
 
