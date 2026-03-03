@@ -66,7 +66,7 @@
           # Helper: resolve workspace dependency crate paths from Cargo.toml
           # ════════════════════════════════════════════════════════════════
 
-          workspaceMembers = [ "dyna-core" "dyna-cli" "dyna-server" "dyna-wasm" "dyna-py" ];
+          workspaceMembers = [ "dyna-core" "dyna-cli" "dyna-server" "dyna-wasm" "dyna-py" "lazy-cat" ];
 
           # Parse a crate's Cargo.toml and extract workspace dependency names
           # that are also workspace members (i.e. local crate deps).
@@ -378,6 +378,46 @@
           };
           dyna-server-mim = serverMimResult.package;
 
+          # ── lazy-cat package ─────────────────────────────────────────
+
+          lazyCatResult = mkRustPackage {
+            pname = "lazy-cat";
+            cratePath = ./lazy-cat;
+          };
+          lazy-cat = lazyCatResult.package;
+
+          # ── lazy-go package ──────────────────────────────────────────────
+
+          lazy-go = pkgs.buildGoModule {
+            pname = "lazy-go";
+            version = "0.1.0";
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                ./lazy-go
+                ./dyna-go
+              ];
+            };
+            vendorHash = null;
+            modRoot = "lazy-go";
+            subPackages = [ "lazycat" ];
+            buildPhase = ''
+              runHook preBuild
+              cd lazy-go
+              go build ./lazycat/...
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out/share/lazy-go
+              cp -r . $out/share/lazy-go/
+              runHook postInstall
+            '';
+            meta = {
+              description = "Lazy, on-demand resource loader for Dyna servers (Go)";
+            };
+          };
+
           # ── WASM package ───────────────────────────────────────────────
 
           wasmResult = mkWasmPackage {
@@ -624,7 +664,7 @@
         {
           # ── Checks ───────────────────────────────────────────────────
           checks = {
-            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-go;
+            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-go lazy-cat lazy-go;
 
             dyna-workspace-clippy = craneLib.cargoClippy {
               src = workspaceSrc;
@@ -650,7 +690,7 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve;
+            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve lazy-cat lazy-go;
             inherit dyna-server-image dyna-server-je-image dyna-server-mim-image dyna-app-image;
             default = dyna-cli;
           };
@@ -680,6 +720,10 @@
             dyna-py = {
               type = "app";
               program = "${dyna-py}/bin/dyna-py";
+            };
+            lazy-cat-demo = {
+              type = "app";
+              program = "${lazy-cat}/bin/demo";
             };
             default = {
               type = "app";
@@ -718,6 +762,7 @@
               pkgs.maturin
               pkgs.python3Packages.click
               dyna-py
+              lazy-cat
 
               # WASM tooling
               pkgs.wasm-pack
@@ -752,6 +797,9 @@
               echo "  ║    dyna-app-serve   — build & serve the Elm UI           ║"
               echo "  ║    dyna-py          — Python CLI (via PyO3)               ║"
               echo "  ║    dyna-go          — Go client library                    ║"
+              echo "  ║    lazy-cat         — Rust lazy resource loader             ║"
+              echo "  ║    lazy-go          — Go lazy resource loader               ║"
+              echo "  ║    lazy-py          — Python lazy resource loader            ║"
               echo "  ║                                                          ║"
               echo "  ║  Development commands:                                   ║"
               echo "  ║    cargo build      — build native crates from source    ║"

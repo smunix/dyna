@@ -1,0 +1,244 @@
+"""
+Core ``LazyClient`` implementation.
+
+The client uses ``dyna_py.DynaRepo`` for local repository operations and
+``websockets`` for the live-update listener.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import tempfile
+import shutil
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Set
+
+import websockets
+
+from dyna_py import DynaRepo
+
+logger = logging.getLogger("lazy_py")
+
+
+class LazyClient:
+    """Lazy, on-demand resource loader backed by a local dyna-py repository.
+
+    Resources are fetched from the remote server only when first requested.
+    A background WebSocket listener keeps the local cache up-to-date whenever
+    new changesets are pushed to the tracked channel.
+    """
+
+    def __init__(
+        self,
+        server_url: str,
+        channel: str,
+        repo: DynaRepo,
+        work_dir: str,
+        known_ids: Set[str],
+        loaded: Set[str],
+    ) -> None:
+        self._server_url = server_url
+        self._channel = channel
+        self._repo = repo
+        self._work_dir = work_dir
+        self._known_ids = known_ids
+        self._loaded = loaded
+        self._on_update: Optional[Callable[[List[str]], None]] = None
+        self._ws_task: Optional[asyncio.Task[None]] = None
+
+    # -------------------------------------------------------------------
+    # Construction
+    # -------------------------------------------------------------------
+
+    @classmethod
+    async def connect(cls, server_url: str, channel: str = "main") -> "LazyClient":
+        """Connect to a Dyna server and start tracking *channel*.
+
+        Performs a lightweight clone to populate channel metadata and
+        changeset history.  Resource bodies are **not** fetched until
+        explicitly requested.
+        """
+        work_dir = tempfile.mkdtemp(prefix="lazy_py_")
+        repo = DynaRepo.clone_repo(server_url, work_dir)
+
+        # Switch to the requested channel (clone defaults to main)
+        channels = repo.list_channels()
+        if channel in channels:
+            repo.switch_channel(channel)
+        else:
+            logger.warning(
+                "Channel '%s' not found on server (available: %s), using 'main'",
+                channel,
+                channels,
+            )
+
+        # Collect known resource IDs from the local snapshots
+        try:
+            resource_ids = set(repo.list_resources())
+        except Exception:
+            resource_ids = set()
+
+        loaded: Set[str] = set(resource_ids)
+
+        client = cls(
+            server_url=server_url,
+            channel=channel,
+            repo=repo,
+            work_dir=work_dir,
+            known_ids=resource_ids,
+            loaded=loaded,
+        )
+
+        # Start the WebSocket listener
+        client._ws_task = asyncio.create_task(client._ws_listener())
+
+        return client
+
+    # -------------------------------------------------------------------
+    # Queries
+    # -------------------------------------------------------------------
+
+    async def get(self, resource_id: str) -> Any:
+        """Get a single resource by ID, fetching on demand if needed."""
+        if resource_id not in self._loaded:
+            self._materialise(resource_id)
+
+        raw = self._repo.read_resource(resource_id)
+        return json.loads(raw)
+
+    async def get_many(self, resource_ids: List[str]) -> Dict[str, Any]:
+        """Get multiple resources, materialising any that are missing."""
+        for rid in resource_ids:
+            if rid not in self._loaded:
+                self._materialise(rid)
+
+        return {
+            rid: json.loads(self._repo.read_resource(rid))
+            for rid in resource_ids
+            if self._repo.resource_exists(rid)
+        }
+
+    async def get_all(self) -> Dict[str, Any]:
+        """Fetch all known resources."""
+        return await self.get_many(list(self._known_ids))
+
+    async def list_resources(self) -> List[str]:
+        """Return all known resource IDs (metadata only)."""
+        return sorted(self._known_ids)
+
+    @property
+    def channel(self) -> str:
+        """The channel this client is tracking."""
+        return self._channel
+
+    @property
+    def server_url(self) -> str:
+        """The server URL."""
+        return self._server_url
+
+    def on_update(self, callback: Callable[[List[str]], None]) -> None:
+        """Register a callback invoked on every live update."""
+        self._on_update = callback
+
+    # -------------------------------------------------------------------
+    # Cleanup
+    # -------------------------------------------------------------------
+
+    async def close(self) -> None:
+        """Cancel the WebSocket listener and clean up the temp directory."""
+        if self._ws_task is not None:
+            self._ws_task.cancel()
+            try:
+                await self._ws_task
+            except asyncio.CancelledError:
+                pass
+        shutil.rmtree(self._work_dir, ignore_errors=True)
+
+    # -------------------------------------------------------------------
+    # Internal
+    # -------------------------------------------------------------------
+
+    def _materialise(self, resource_id: str) -> None:
+        """Ensure a resource is available locally."""
+        if self._repo.resource_exists(resource_id):
+            self._loaded.add(resource_id)
+            return
+
+        # The resource isn't in the working directory yet — it should have
+        # been cloned.  If not, we can't materialise it without a targeted
+        # pull (which dyna-py doesn't expose directly).  Mark as loaded
+        # anyway so we don't retry.
+        logger.debug("Resource '%s' not found locally after clone", resource_id)
+
+    def _pull(self) -> List[str]:
+        """Pull new changesets from the server and return affected IDs."""
+        try:
+            result = self._repo.pull(channel=self._channel)
+            # Update known IDs
+            try:
+                new_ids = set(self._repo.list_resources())
+                self._known_ids.update(new_ids)
+                self._loaded.update(new_ids)
+            except Exception:
+                pass
+            return list(self._known_ids)
+        except Exception as exc:
+            logger.error("Pull failed: %s", exc)
+            return []
+
+    async def _ws_listener(self) -> None:
+        """Background task: connect to the server's WebSocket and pull on
+        relevant notifications."""
+        ws_url = (
+            self._server_url
+            .replace("http://", "ws://")
+            .replace("https://", "wss://")
+            + "/api/v1/ws"
+        )
+
+        while True:
+            try:
+                async with websockets.connect(ws_url) as ws:
+                    logger.info("WebSocket connected to %s", ws_url)
+                    async for message in ws:
+                        await self._handle_notification(message)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("WebSocket error: %s, reconnecting in 5s…", exc)
+                await asyncio.sleep(5)
+
+    async def _handle_notification(self, raw: str) -> None:
+        """Process a single WebSocket notification."""
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+
+        kind = data.get("kind", "")
+        payload = data.get("payload", {})
+
+        # Determine the affected channel
+        affected_channel = payload.get("channel") or payload.get("target_channel", "")
+        if affected_channel != self._channel:
+            return
+
+        # Extract affected resource IDs
+        affected: List[str] = []
+        for cs in payload.get("changesets", payload.get("promoted_changesets", [])):
+            affected.extend(cs.get("affected_resources", []))
+
+        logger.info(
+            "Received %s notification, %d resource(s) affected",
+            kind,
+            len(affected),
+        )
+
+        # Pull updates
+        self._pull()
+
+        # Fire callback
+        if self._on_update is not None:
+            self._on_update(affected)

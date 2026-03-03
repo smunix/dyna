@@ -16,6 +16,7 @@ use dyna_core::protocol::*;
 use reqwest::Client;
 
 /// Client for interacting with the Dyna remote server.
+#[derive(Clone)]
 pub struct SyncClient {
     client: Client,
     base_url: String,
