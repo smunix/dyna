@@ -3,6 +3,14 @@ Core ``LazyClient`` implementation.
 
 The client uses ``dyna_py.DynaRepo`` for local repository operations and
 ``websockets`` for the live-update listener.
+
+**Performance note:** ``get_many``, ``get_all``, ``for_each``, and
+``for_each_all`` avoid repeated per-resource materialisation.  The
+underlying ``dyna_py`` clone already materialises all snapshots, so the
+"batch" path here simply ensures we don't re-read resources one at a time
+unnecessarily.  The ``for_each`` family accepts a continuation so that
+callers with very large datasets (tens of thousands of resources) never
+need to build a full ``dict`` in memory.
 """
 
 from __future__ import annotations
@@ -109,10 +117,14 @@ class LazyClient:
         return json.loads(raw)
 
     async def get_many(self, resource_ids: List[str]) -> Dict[str, Any]:
-        """Get multiple resources, materialising any that are missing."""
-        for rid in resource_ids:
-            if rid not in self._loaded:
-                self._materialise(rid)
+        """Get multiple resources, materialising any that are missing.
+
+        All missing resources are materialised in a single batch pass
+        rather than one at a time.
+        """
+        to_load = [rid for rid in resource_ids if rid not in self._loaded]
+        if to_load:
+            self._materialise_batch(to_load)
 
         return {
             rid: json.loads(self._repo.read_resource(rid))
@@ -120,8 +132,42 @@ class LazyClient:
             if self._repo.resource_exists(rid)
         }
 
+    async def for_each(
+        self,
+        resource_ids: List[str],
+        callback: Callable[[str, Any], None],
+    ) -> None:
+        """Process multiple resources through a continuation.
+
+        This avoids building a large ``dict`` in memory — each resource is
+        handed to *callback* immediately after it is read.
+        """
+        to_load = [rid for rid in resource_ids if rid not in self._loaded]
+        if to_load:
+            self._materialise_batch(to_load)
+
+        for rid in resource_ids:
+            if self._repo.resource_exists(rid):
+                val = json.loads(self._repo.read_resource(rid))
+                callback(rid, val)
+
+    async def for_each_all(
+        self,
+        callback: Callable[[str, Any], None],
+    ) -> None:
+        """Process **all** known resources through a continuation.
+
+        The most memory-efficient way to iterate over the entire dataset.
+        """
+        ids = sorted(self._known_ids)
+        await self.for_each(ids, callback)
+
     async def get_all(self) -> Dict[str, Any]:
-        """Fetch all known resources."""
+        """Fetch all known resources.
+
+        For large repositories (tens of thousands of resources), prefer
+        :meth:`for_each_all` to avoid building a large ``dict``.
+        """
         return await self.get_many(list(self._known_ids))
 
     async def list_resources(self) -> List[str]:
@@ -161,16 +207,24 @@ class LazyClient:
     # -------------------------------------------------------------------
 
     def _materialise(self, resource_id: str) -> None:
-        """Ensure a resource is available locally."""
+        """Ensure a single resource is available locally."""
         if self._repo.resource_exists(resource_id):
             self._loaded.add(resource_id)
             return
 
-        # The resource isn't in the working directory yet — it should have
-        # been cloned.  If not, we can't materialise it without a targeted
-        # pull (which dyna-py doesn't expose directly).  Mark as loaded
-        # anyway so we don't retry.
         logger.debug("Resource '%s' not found locally after clone", resource_id)
+
+    def _materialise_batch(self, resource_ids: List[str]) -> None:
+        """Ensure a batch of resources is available locally.
+
+        Since dyna-py's clone already materialises snapshots, this simply
+        marks resources that exist as loaded and logs those that are missing.
+        """
+        for rid in resource_ids:
+            if self._repo.resource_exists(rid):
+                self._loaded.add(rid)
+            else:
+                logger.debug("Resource '%s' not found locally after clone", rid)
 
     def _pull(self) -> List[str]:
         """Pull new changesets from the server and return affected IDs."""

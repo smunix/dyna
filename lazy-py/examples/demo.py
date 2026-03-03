@@ -32,8 +32,10 @@ async def main() -> None:
     # List all known resource IDs
     ids = await client.list_resources()
     print(f"\nKnown resources ({len(ids)}):")
-    for rid in ids:
+    for rid in ids[:20]:
         print(f"  • {rid}")
+    if len(ids) > 20:
+        print(f"  … and {len(ids) - 20} more")
 
     # Lazily fetch the first resource
     if ids:
@@ -42,11 +44,19 @@ async def main() -> None:
         value = await client.get(first)
         print(json.dumps(value, indent=2))
 
-    # Fetch all resources
-    print("\nFetching all resources…")
-    all_resources = await client.get_all()
-    for rid, val in sorted(all_resources.items()):
-        print(f"  {rid}: {json.dumps(val)[:80]}")
+    # Stream all resources through a continuation — no large dict needed.
+    # This is the efficient path for 59,000+ resources.
+    print("\nStreaming all resources via for_each_all…")
+    count = 0
+
+    def process(rid: str, val: object) -> None:
+        nonlocal count
+        count += 1
+        if count <= 5:
+            print(f"  {rid}: {json.dumps(val)[:80]}")
+
+    await client.for_each_all(process)
+    print(f"  … streamed {count} resource(s) total")
 
     # Keep alive for WebSocket updates
     print("\nListening for live updates (Ctrl-C to quit)…")

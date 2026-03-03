@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sort"
 	"syscall"
 
 	"lazy-go/lazycat"
@@ -47,10 +46,16 @@ func main() {
 
 	// List all known resource IDs
 	ids := client.ListResources()
-	sort.Strings(ids)
 	fmt.Printf("\nKnown resources (%d):\n", len(ids))
-	for _, id := range ids {
+	limit := 20
+	if len(ids) < limit {
+		limit = len(ids)
+	}
+	for _, id := range ids[:limit] {
 		fmt.Printf("  • %s\n", id)
+	}
+	if len(ids) > 20 {
+		fmt.Printf("  … and %d more\n", len(ids)-20)
 	}
 
 	// Lazily fetch the first resource
@@ -69,20 +74,25 @@ func main() {
 		}
 	}
 
-	// Fetch all resources
-	fmt.Println("\nFetching all resources…")
-	all, err := client.GetAll()
-	if err != nil {
-		fmt.Printf("  Error: %v\n", err)
-	} else {
-		for id, val := range all {
+	// Stream all resources through a continuation — no large map needed.
+	// This is the efficient path for 59,000+ resources.
+	fmt.Println("\nStreaming all resources via ForEachAll…")
+	count := 0
+	err = client.ForEachAll(func(id string, val json.RawMessage) error {
+		count++
+		if count <= 5 {
 			s := string(val)
 			if len(s) > 80 {
 				s = s[:80] + "…"
 			}
 			fmt.Printf("  %s: %s\n", id, s)
 		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("  Error: %v\n", err)
 	}
+	fmt.Printf("  … streamed %d resource(s) total\n", count)
 
 	// Keep alive for WebSocket updates
 	fmt.Println("\nListening for live updates (Ctrl-C to quit)…")

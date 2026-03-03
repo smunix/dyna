@@ -7,7 +7,7 @@
 //!
 //! ```bash
 //! # Start a dyna-server first, then:
-//! cargo run --example lazy-cat-demo -- http://localhost:8080 main
+//! cargo run --bin demo -p lazy-cat -- http://localhost:8080 main
 //! ```
 
 use lazy_cat::LazyClient;
@@ -28,7 +28,6 @@ async fn main() -> anyhow::Result<()> {
     let channel = args.get(2).map(String::as_str).unwrap_or("main");
 
     println!("Connecting to {} (channel: {})…", server_url, channel);
-
     let client = LazyClient::connect(server_url, channel).await?;
 
     // Register a live-update callback
@@ -45,7 +44,10 @@ async fn main() -> anyhow::Result<()> {
     // List all known resource IDs
     let ids = client.list_resources().await?;
     println!("\nKnown resources ({}):", ids.len());
-    ids.iter().for_each(|id| println!("  • {id}"));
+    ids.iter().take(20).for_each(|id| println!("  • {id}"));
+    if ids.len() > 20 {
+        println!("  … and {} more", ids.len() - 20);
+    }
 
     // Lazily fetch the first resource (if any)
     if let Some(first_id) = ids.first() {
@@ -54,19 +56,26 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", serde_json::to_string_pretty(&value)?);
     }
 
-    // Fetch all resources at once
-    println!("\nFetching all resources…");
-    let all = client.get_all().await?;
-    all.iter().for_each(|(id, val)| {
-        println!(
-            "  {id}: {}",
-            serde_json::to_string(val)
-                .unwrap_or_else(|_| "<error>".to_string())
-                .chars()
-                .take(80)
-                .collect::<String>()
-        );
-    });
+    // Stream all resources through a continuation — no large HashMap needed.
+    // This is the efficient path for 59,000+ resources.
+    println!("\nStreaming all resources via for_each_all…");
+    let mut count = 0usize;
+    client
+        .for_each_all(|id, val| {
+            count += 1;
+            if count <= 5 {
+                println!(
+                    "  {id}: {}",
+                    serde_json::to_string(val)
+                        .unwrap_or_else(|_| "<error>".to_string())
+                        .chars()
+                        .take(80)
+                        .collect::<String>()
+                );
+            }
+        })
+        .await?;
+    println!("  … streamed {count} resource(s) total");
 
     // Keep the process alive to receive WebSocket updates
     println!("\nListening for live updates (Ctrl-C to quit)…");

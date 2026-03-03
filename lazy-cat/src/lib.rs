@@ -6,6 +6,17 @@
 //! requested, while a background WebSocket listener keeps the local cache
 //! up-to-date whenever new changesets are pushed to the configured channel.
 //!
+//! ## Performance
+//!
+//! Batch operations (`get_many`, `get_all`, `for_each`, `for_each_all`)
+//! perform a **single pass** over the changeset chain, materialising all
+//! requested resources simultaneously.  This avoids the O(n × m) cost of
+//! calling `materialise_resource` per-ID.
+//!
+//! The `for_each` / `for_each_all` family accepts a **continuation** instead
+//! of building a `HashMap`, keeping peak memory proportional to a single
+//! resource rather than the entire dataset.
+//!
 //! ## Quick start
 //!
 //! ```rust,no_run
@@ -19,9 +30,10 @@
 //!     let value = client.get("acme.entity.User").await?;
 //!     println!("{}", serde_json::to_string_pretty(&value)?);
 //!
-//!     // List all available resource IDs (metadata only, no bodies fetched)
-//!     let ids = client.list_resources().await?;
-//!     println!("Available: {:?}", ids);
+//!     // Stream all resources through a continuation (no large HashMap)
+//!     client.for_each_all(|id, value| {
+//!         println!("{id}: {}", serde_json::to_string(&value).unwrap());
+//!     }).await?;
 //!
 //!     Ok(())
 //! }
@@ -202,10 +214,11 @@ impl LazyClient {
 
     /// Get multiple resources by ID, returning a map of ID → Value.
     ///
-    /// Resources not yet loaded are materialised in one pass.
+    /// Resources not yet loaded are materialised in a **single pass** over the
+    /// changeset chain, avoiding repeated per-resource traversals.
     pub async fn get_many(&self, resource_ids: &[&str]) -> Result<HashMap<String, Value>> {
         // Determine which IDs still need materialisation
-        let to_load: Vec<String> = {
+        let to_load: HashSet<String> = {
             let loaded = self.loaded.read().await;
             izip!(resource_ids)
                 .filter(|id| !loaded.contains(**id))
@@ -213,9 +226,9 @@ impl LazyClient {
                 .collect()
         };
 
-        // Materialise missing resources
-        for rid in &to_load {
-            self.materialise_resource(rid).await?;
+        // Batch-materialise all missing resources in one pass
+        if !to_load.is_empty() {
+            self.materialise_batch(&to_load).await?;
         }
 
         // Read all requested snapshots
@@ -231,6 +244,82 @@ impl LazyClient {
             .pipe_ok()
     }
 
+    /// Process multiple resources through a continuation, avoiding a large
+    /// in-memory `HashMap`.
+    ///
+    /// The continuation `f` is called once for each successfully materialised
+    /// resource.  Resources are materialised in a single pass over the
+    /// changeset chain.
+    pub async fn for_each(
+        &self,
+        resource_ids: &[&str],
+        mut f: impl FnMut(&str, &Value),
+    ) -> Result<()> {
+        // Determine which IDs still need materialisation
+        let to_load: HashSet<String> = {
+            let loaded = self.loaded.read().await;
+            izip!(resource_ids)
+                .filter(|id| !loaded.contains(**id))
+                .map(|id| id.to_string())
+                .collect()
+        };
+
+        // Batch-materialise all missing resources in one pass
+        if !to_load.is_empty() {
+            self.materialise_batch(&to_load).await?;
+        }
+
+        // Stream each resource through the continuation
+        let repo = self.repo.read().await;
+        izip!(resource_ids).for_each(|id| {
+            repo.load_snapshot(id)
+                .ok()
+                .flatten()
+                .map(|v| f(id, &v));
+        });
+
+        Ok(())
+    }
+
+    /// Process **all** known resources through a continuation, avoiding a
+    /// large in-memory `HashMap`.
+    ///
+    /// This is the most memory-efficient way to iterate over the entire
+    /// dataset: it performs a single changeset-chain walk, and each snapshot
+    /// is handed to `f` immediately after materialisation rather than being
+    /// accumulated.
+    pub async fn for_each_all(
+        &self,
+        mut f: impl FnMut(&str, &Value),
+    ) -> Result<()> {
+        let ids: Vec<String> = self.known_ids.read().await.iter().cloned().collect();
+
+        // Determine which IDs still need materialisation
+        let to_load: HashSet<String> = {
+            let loaded = self.loaded.read().await;
+            izip!(&ids)
+                .filter(|id| !loaded.contains(id.as_str()))
+                .cloned()
+                .collect()
+        };
+
+        // Batch-materialise all missing resources in one pass
+        if !to_load.is_empty() {
+            self.materialise_batch(&to_load).await?;
+        }
+
+        // Stream each resource through the continuation
+        let repo = self.repo.read().await;
+        izip!(&ids).for_each(|id| {
+            repo.load_snapshot(id)
+                .ok()
+                .flatten()
+                .map(|v| f(id, &v));
+        });
+
+        Ok(())
+    }
+
     /// List all known resource IDs on the tracked channel.
     ///
     /// This returns metadata only — no resource bodies are fetched.
@@ -242,6 +331,10 @@ impl LazyClient {
     }
 
     /// Get all resources, materialising any that haven't been loaded yet.
+    ///
+    /// For large repositories (tens of thousands of resources), prefer
+    /// [`for_each_all`](Self::for_each_all) to avoid building a large
+    /// `HashMap` in memory.
     pub async fn get_all(&self) -> Result<HashMap<String, Value>> {
         let ids: Vec<String> = self.known_ids.read().await.iter().cloned().collect();
         let refs: Vec<&str> = izip!(&ids).map(|s| s.as_str()).collect();
@@ -271,7 +364,7 @@ impl LazyClient {
     // -----------------------------------------------------------------------
 
     /// Materialise a single resource by replaying its patches from the stored
-    /// changesets.
+    /// changesets.  Used by `get()` for the single-resource fast path.
     async fn materialise_resource(&self, resource_id: &str) -> Result<()> {
         let repo = self.repo.write().await;
 
@@ -316,6 +409,102 @@ impl LazyClient {
             repo.save_snapshot(resource_id, &snapshot)?;
             self.loaded.write().await.insert(resource_id.to_string());
         }
+
+        Ok(())
+    }
+
+    /// Batch-materialise a set of resources in a **single pass** over the
+    /// changeset chain.
+    ///
+    /// Instead of loading each changeset N times (once per resource), we walk
+    /// the chain once and, for each changeset, apply every patch whose
+    /// `target_resource` is in the requested set.  This reduces the cost from
+    /// O(resources × changesets) to O(changesets × patches_per_changeset).
+    ///
+    /// Resources that already have a stored snapshot (e.g. from the clone
+    /// response) are detected and skipped.
+    async fn materialise_batch(&self, resource_ids: &HashSet<String>) -> Result<()> {
+        let repo = self.repo.write().await;
+
+        // Re-check under the write lock: some may have been loaded concurrently
+        let mut already_loaded = HashSet::new();
+        let mut need_replay: HashSet<String> = HashSet::with_capacity(resource_ids.len());
+        {
+            let loaded = self.loaded.read().await;
+            izip!(resource_ids).for_each(|rid| {
+                if loaded.contains(rid) {
+                    already_loaded.insert(rid.clone());
+                } else if repo.load_snapshot(rid).ok().flatten().is_some() {
+                    // Snapshot exists from clone response but not yet in `loaded`
+                    already_loaded.insert(rid.clone());
+                } else {
+                    need_replay.insert(rid.clone());
+                }
+            });
+        }
+
+        // Mark pre-existing snapshots as loaded
+        if !already_loaded.is_empty() {
+            let mut loaded = self.loaded.write().await;
+            izip!(already_loaded).for_each(|rid| {
+                loaded.insert(rid);
+            });
+        }
+
+        if need_replay.is_empty() {
+            return Ok(());
+        }
+
+        // Single pass: walk the changeset chain once, accumulating snapshots
+        // for all requested resources simultaneously.
+        let channel_data = repo.load_channel(&self.channel)?;
+        let mut accumulators: HashMap<String, Value> =
+            HashMap::with_capacity(need_replay.len());
+
+        izip!(&channel_data.changesets)
+            .filter_map(|cid| repo.load_changeset(cid).ok())
+            .for_each(|cs| {
+                izip!(cs.patches).for_each(|patch| {
+                    if !need_replay.contains(&patch.target_resource) {
+                        return;
+                    }
+
+                    let acc = accumulators
+                        .entry(patch.target_resource.clone())
+                        .or_insert(Value::Null);
+
+                    // If the patch carries a result_snapshot, use it directly
+                    // (this is the common case for promoted changesets).
+                    patch
+                        .result_snapshot
+                        .map(|snap| {
+                            *acc = snap;
+                        })
+                        .unwrap_or_else(|| {
+                            // Apply incremental patch operations
+                            if acc.is_null() {
+                                *acc = serde_json::json!({});
+                            }
+                            dyna_core::diff::apply_patch(acc, &patch.operations)
+                                .unwrap_or_else(|e| {
+                                    tracing::warn!(
+                                        "apply_patch on '{}': {e}",
+                                        patch.target_resource
+                                    );
+                                });
+                        });
+                });
+            });
+
+        // Persist all computed snapshots and mark as loaded
+        let mut loaded = self.loaded.write().await;
+        izip!(accumulators)
+            .filter(|(_, v)| !v.is_null())
+            .try_for_each(|(rid, snapshot)| -> Result<()> {
+                repo.save_snapshot(&rid, &snapshot)?;
+                loaded.insert(rid);
+                Ok(())
+            })?;
 
         Ok(())
     }

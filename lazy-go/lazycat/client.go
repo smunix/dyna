@@ -4,6 +4,14 @@
 // only with resources that have been explicitly requested.  A background
 // WebSocket listener keeps the local cache up-to-date whenever new changesets
 // are pushed to the configured channel.
+//
+// # Performance
+//
+// Batch operations (GetMany, GetAll, ForEach, ForEachAll) ensure all missing
+// resources are materialised in a single pass rather than one at a time.
+// The ForEach family accepts a continuation so that callers with very large
+// datasets (tens of thousands of resources) never need to build a full map
+// in memory.
 package lazycat
 
 import (
@@ -11,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +32,10 @@ import (
 // OnUpdateFunc is called whenever the local cache is updated from the server.
 // It receives the list of resource IDs that were affected.
 type OnUpdateFunc func(affectedResources []string)
+
+// ResourceFunc is a continuation called for each resource during ForEach /
+// ForEachAll.  Returning a non-nil error stops the iteration.
+type ResourceFunc func(resourceID string, value json.RawMessage) error
 
 // LazyClient is a lazy, on-demand resource loader backed by a local dyna-go
 // repository.
@@ -113,15 +126,11 @@ func (lc *LazyClient) Get(resourceID string) (json.RawMessage, error) {
 }
 
 // GetMany returns multiple resources by ID.
+//
+// All missing resources are materialised in a single batch pass rather than
+// one at a time.
 func (lc *LazyClient) GetMany(resourceIDs []string) (map[string]json.RawMessage, error) {
-	for _, rid := range resourceIDs {
-		lc.mu.RLock()
-		isLoaded := lc.loaded[rid]
-		lc.mu.RUnlock()
-		if !isLoaded {
-			lc.materialise(rid)
-		}
-	}
+	lc.materialiseBatch(resourceIDs)
 
 	result := make(map[string]json.RawMessage, len(resourceIDs))
 	for _, rid := range resourceIDs {
@@ -133,13 +142,42 @@ func (lc *LazyClient) GetMany(resourceIDs []string) (map[string]json.RawMessage,
 	return result, nil
 }
 
+// ForEach processes multiple resources through a continuation, avoiding a
+// large map in memory.  The continuation is called once for each resource
+// that exists locally.  Return a non-nil error from f to stop iteration.
+func (lc *LazyClient) ForEach(resourceIDs []string, f ResourceFunc) error {
+	lc.materialiseBatch(resourceIDs)
+
+	for _, rid := range resourceIDs {
+		data, err := lc.client.ReadResource(rid)
+		if err != nil {
+			continue
+		}
+		if err := f(rid, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ForEachAll processes all known resources through a continuation.
+//
+// This is the most memory-efficient way to iterate over the entire dataset.
+func (lc *LazyClient) ForEachAll(f ResourceFunc) error {
+	ids := lc.ListResources()
+	return lc.ForEach(ids, f)
+}
+
 // GetAll fetches all known resources.
+//
+// For large repositories (tens of thousands of resources), prefer
+// ForEachAll to avoid building a large map in memory.
 func (lc *LazyClient) GetAll() (map[string]json.RawMessage, error) {
 	ids := lc.ListResources()
 	return lc.GetMany(ids)
 }
 
-// ListResources returns all known resource IDs (metadata only).
+// ListResources returns all known resource IDs (metadata only), sorted.
 func (lc *LazyClient) ListResources() []string {
 	lc.mu.RLock()
 	defer lc.mu.RUnlock()
@@ -148,6 +186,7 @@ func (lc *LazyClient) ListResources() []string {
 	for id := range lc.knownIDs {
 		ids = append(ids, id)
 	}
+	sort.Strings(ids)
 	return ids
 }
 
@@ -189,6 +228,34 @@ func (lc *LazyClient) materialise(resourceID string) {
 	// The resource should be available from the clone; just mark it loaded
 	if lc.client.ResourceExists(resourceID) {
 		lc.loaded[resourceID] = true
+	}
+}
+
+// materialiseBatch ensures a batch of resources is marked as loaded.
+// Since dyna-go's clone already materialises snapshots, this simply marks
+// resources that exist as loaded in a single lock acquisition.
+func (lc *LazyClient) materialiseBatch(resourceIDs []string) {
+	// Collect IDs that need loading
+	lc.mu.RLock()
+	var toLoad []string
+	for _, rid := range resourceIDs {
+		if !lc.loaded[rid] {
+			toLoad = append(toLoad, rid)
+		}
+	}
+	lc.mu.RUnlock()
+
+	if len(toLoad) == 0 {
+		return
+	}
+
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+
+	for _, rid := range toLoad {
+		if !lc.loaded[rid] && lc.client.ResourceExists(rid) {
+			lc.loaded[rid] = true
+		}
 	}
 }
 
