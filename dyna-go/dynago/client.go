@@ -163,6 +163,16 @@ func (c *Client) AddDelete(relativePath string) error {
 	return c.Repo.AddDelete(relativePath)
 }
 
+// Unstage removes a resource from the staging area.
+func (c *Client) Unstage(resourceID string) error {
+	return c.Repo.Unstage(resourceID)
+}
+
+// UnstageAll removes all resources from the staging area.
+func (c *Client) UnstageAll() (int, error) {
+	return c.Repo.UnstageAll()
+}
+
 // ---------------------------------------------------------------------------
 // Local operations (delegated to Repository)
 // ---------------------------------------------------------------------------

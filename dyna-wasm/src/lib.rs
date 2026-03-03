@@ -326,6 +326,53 @@ impl DynaClient {
         self.repo.stage_change(&staged).map_err(to_js_error)
     }
 
+    /// Unstage a previously staged resource, moving it back to the working directory.
+    /// For staged deletions, restores the working directory file from the previous snapshot.
+    #[wasm_bindgen]
+    pub fn unstage(&self, resource_id: &str) -> Result<(), JsError> {
+        let staged_changes = self.repo.load_staged_changes().map_err(to_js_error)?;
+        let staged = staged_changes
+            .iter()
+            .find(|s| s.resource_id == resource_id)
+            .ok_or_else(|| JsError::new(&format!("Resource '{}' is not staged.", resource_id)))?;
+
+        // For staged deletions, restore the working directory file
+        if staged.current.is_null() {
+            if let Some(ref previous) = staged.previous {
+                let content = serde_json::to_string_pretty(previous)
+                    .map_err(|e| JsError::new(&e.to_string()))?;
+                self.repo
+                    .write_resource_file(resource_id, &content)
+                    .map_err(to_js_error)?;
+            }
+        }
+
+        self.repo.remove_staging_file(resource_id).map_err(to_js_error)
+    }
+
+    /// Unstage all staged changes, moving them back to the working directory.
+    /// Returns the number of resources unstaged.
+    #[wasm_bindgen]
+    pub fn unstage_all(&self) -> Result<u32, JsError> {
+        let staged_changes = self.repo.load_staged_changes().map_err(to_js_error)?;
+        let count = staged_changes.len() as u32;
+
+        for staged in &staged_changes {
+            if staged.current.is_null() {
+                if let Some(ref previous) = staged.previous {
+                    let content = serde_json::to_string_pretty(previous)
+                        .map_err(|e| JsError::new(&e.to_string()))?;
+                    self.repo
+                        .write_resource_file(&staged.resource_id, &content)
+                        .map_err(to_js_error)?;
+                }
+            }
+        }
+
+        self.repo.clear_staging().map_err(to_js_error)?;
+        Ok(count)
+    }
+
     // -----------------------------------------------------------------------
     // Commit
     // -----------------------------------------------------------------------

@@ -271,6 +271,18 @@ pub enum Commands {
         filter: Option<String>,
     },
 
+    /// Unstage previously staged changes, moving them back to the working directory.
+    ///
+    /// Accepts a resource ID, a file path, or `--all` to unstage everything.
+    /// For staged deletions, the file is restored from its previous snapshot.
+    Unstage {
+        /// Resource ID or file path to unstage (optional if --all is used).
+        pattern: Option<String>,
+        /// Unstage all staged changes.
+        #[arg(short, long)]
+        all: bool,
+    },
+
     /// Describe (amend the message of) a changeset.
     ///
     /// Defaults to the current working changeset if no change_id is given.

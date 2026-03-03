@@ -112,6 +112,25 @@ def add(resource_id: str, delete: bool, path: str):
         click.echo(f"Staged {resource_id}")
 
 
+# ── unstage ────────────────────────────────────────────────────────────────
+
+@main.command()
+@click.argument("resource_id", required=False)
+@click.option("--all", "-a", "unstage_all", is_flag=True, help="Unstage all staged changes")
+@click.option("--path", "-C", default=".", help="Repository path")
+def unstage(resource_id: str | None, unstage_all: bool, path: str):
+    """Unstage a resource, moving it back to the working directory."""
+    repo = _repo(path)
+    if unstage_all:
+        count = repo.unstage_all()
+        click.echo(f"Unstaged {count} resource(s).")
+    elif resource_id:
+        repo.unstage(resource_id)
+        click.echo(f"Unstaged '{resource_id}'.")
+    else:
+        click.echo("Please provide a resource ID or use --all.", err=True)
+
+
 # ── commit ──────────────────────────────────────────────────────────────────
 
 @main.command()

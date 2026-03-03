@@ -89,6 +89,55 @@ func (r *Repository) AddDelete(relativePath string) error {
 }
 
 // ---------------------------------------------------------------------------
+// Unstage
+// ---------------------------------------------------------------------------
+
+// Unstage removes a resource from the staging area, moving it back to the
+// working directory. For staged deletions, restores the working directory
+// file from the previous snapshot.
+func (r *Repository) Unstage(resourceID string) error {
+	staged, _ := r.LoadStaged()
+	found := false
+	var remaining []StagedChange
+	for _, s := range staged {
+		if s.ResourceID == resourceID {
+			found = true
+			// For staged deletions, restore the working directory file
+			if string(s.Current) == "null" && s.Previous != nil {
+				pretty, err := json.MarshalIndent(json.RawMessage(s.Previous), "", "  ")
+				if err == nil {
+					_ = r.WriteResource(resourceID, pretty)
+				}
+			}
+		} else {
+			remaining = append(remaining, s)
+		}
+	}
+	if !found {
+		return fmt.Errorf("resource '%s' is not staged", resourceID)
+	}
+	return r.SaveStaged(remaining)
+}
+
+// UnstageAll removes all resources from the staging area.
+// For staged deletions, restores working directory files from previous snapshots.
+// Returns the number of resources unstaged.
+func (r *Repository) UnstageAll() (int, error) {
+	staged, _ := r.LoadStaged()
+	count := len(staged)
+	for _, s := range staged {
+		if string(s.Current) == "null" && s.Previous != nil {
+			pretty, err := json.MarshalIndent(json.RawMessage(s.Previous), "", "  ")
+			if err == nil {
+				_ = r.WriteResource(s.ResourceID, pretty)
+			}
+		}
+	}
+	err := r.SaveStaged(nil)
+	return count, err
+}
+
+// ---------------------------------------------------------------------------
 // Commit
 // ---------------------------------------------------------------------------
 

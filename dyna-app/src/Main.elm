@@ -397,6 +397,10 @@ type Msg
       -- Stage All / Commit All
     | StageAllWorking
     | GotStageAllResult Decode.Value
+      -- Unstage
+    | UnstageResource String
+    | UnstageAllStaged
+    | GotUnstageResult Decode.Value
       -- Sync main channel
     | SyncMain
     | GotSyncMainResult Decode.Value
@@ -1145,6 +1149,39 @@ update msg model =
                             val
                                 |> Decode.decodeValue (Decode.field "error" Decode.string)
                                 |> Result.withDefault "Stage all failed"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
+
+        -- Unstage
+        UnstageResource resourceId ->
+            ( { model | flashMessage = Just ("Unstaging '" ++ resourceId ++ "'..."), flashIsError = False }
+            , Ports.unstageResource resourceId
+            )
+
+        UnstageAllStaged ->
+            ( { model | flashMessage = Just "Unstaging all staged changes...", flashIsError = False }
+            , Ports.unstageAll ()
+            )
+
+        GotUnstageResult val ->
+            case Decode.decodeValue (Decode.field "success" Decode.bool) val of
+                Ok True ->
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "message" Decode.string)
+                                |> Result.withDefault "Unstaged successfully"
+                    in
+                    ( { model | flashMessage = Just detail, flashIsError = False }
+                    , Cmd.batch [ Ports.requestStatus (), Ports.listFiles () ]
+                    )
+
+                _ ->
+                    let
+                        detail =
+                            val
+                                |> Decode.decodeValue (Decode.field "error" Decode.string)
+                                |> Result.withDefault "Unstage failed"
                     in
                     ( { model | flashMessage = Just detail, flashIsError = True }, Cmd.none )
 
@@ -1954,6 +1991,13 @@ viewResources model =
                             , onClick ShowCommitDialog
                             ]
                             [ text "Commit All" ]
+                        , button
+                            [ class "btn btn-sm"
+                            , style "background" "#f87171"
+                            , style "color" "#fff"
+                            , onClick UnstageAllStaged
+                            ]
+                            [ text "Unstage All" ]
                         ]
                     ]
                 , if model.stagedSectionOpen then
@@ -2097,6 +2141,7 @@ viewStagedResourceItem model resourceId =
             ]
         , div [ class "resource-actions" ]
             [ button [ class "btn btn-sm btn-ghost", onClick (OpenResource resourceId) ] [ text "Edit" ]
+            , button [ class "btn btn-sm btn-ghost", style "color" "#f87171", onClick (UnstageResource resourceId) ] [ text "Unstage" ]
             , button [ class "btn btn-sm btn-ghost", onClick (OpenHistory resourceId) ] [ text "History" ]
             ]
         , if showTooltip then
@@ -3036,6 +3081,7 @@ subscriptions _ =
         , Ports.onPullChannelResult GotPullChannelResult
         , Ports.onStageAllResult GotStageAllResult
         , Ports.onSyncMainResult GotSyncMainResult
+        , Ports.onUnstageResult GotUnstageResult
         ]
 
 

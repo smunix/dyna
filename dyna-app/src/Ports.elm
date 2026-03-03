@@ -116,6 +116,11 @@ port listRemoteChannels : () -> Cmd msg
 port pullChannel : String -> Cmd msg
 
 
+port unstageResource : String -> Cmd msg
+
+
+port unstageAll : () -> Cmd msg
+
 
 -- =========================================================================
 -- Incoming ports (JS → Elm subscriptions)
@@ -207,3 +212,6 @@ port onStageAllResult : (Decode.Value -> msg) -> Sub msg
 
 
 port onSyncMainResult : (Decode.Value -> msg) -> Sub msg
+
+
+port onUnstageResult : (Decode.Value -> msg) -> Sub msg

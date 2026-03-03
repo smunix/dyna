@@ -197,6 +197,28 @@
             }
         });
 
+        safeSub('unstageResource', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onUnstageResult)) return;
+            try {
+                client.unstage(resourceId);
+                app.ports.onUnstageResult.send({ success: true, message: "Unstaged '" + resourceId + "'.", error: null });
+            } catch (e) {
+                app.ports.onUnstageResult.send({ success: false, message: null, error: e.message });
+            }
+        });
+
+        safeSub('unstageAll', async function(_) {
+            await wasmReady;
+            if (!requireClient(app.ports.onUnstageResult)) return;
+            try {
+                const count = client.unstage_all();
+                app.ports.onUnstageResult.send({ success: true, message: 'Unstaged ' + count + ' resource(s).', error: null });
+            } catch (e) {
+                app.ports.onUnstageResult.send({ success: false, message: null, error: e.message });
+            }
+        });
+
         safeSub('requestStatus', async function(_) {
             await wasmReady;
             if (!requireClient(null)) {

@@ -229,6 +229,53 @@ impl DynaRepo {
         self.repo.stage_change(&staged).map_err(to_py_err)
     }
 
+    /// Unstage a previously staged resource, moving it back to the working directory.
+    /// For staged deletions, restores the working directory file from the previous snapshot.
+    fn unstage(&self, resource_id: &str) -> PyResult<()> {
+        let staged_changes = self.repo.load_staged_changes().map_err(to_py_err)?;
+        let staged = staged_changes
+            .iter()
+            .find(|s| s.resource_id == resource_id)
+            .ok_or_else(|| {
+                PyRuntimeError::new_err(format!("Resource '{}' is not staged.", resource_id))
+            })?;
+
+        // For staged deletions, restore the working directory file
+        if staged.current.is_null() {
+            if let Some(ref previous) = staged.previous {
+                let content = serde_json::to_string_pretty(previous)
+                    .map_err(|e| PyRuntimeError::new_err(format!("JSON error: {}", e)))?;
+                self.repo
+                    .write_resource_file(resource_id, &content)
+                    .map_err(to_py_err)?;
+            }
+        }
+
+        self.repo.remove_staging_file(resource_id).map_err(to_py_err)
+    }
+
+    /// Unstage all staged changes, moving them back to the working directory.
+    /// Returns the number of resources unstaged.
+    fn unstage_all(&self) -> PyResult<u32> {
+        let staged_changes = self.repo.load_staged_changes().map_err(to_py_err)?;
+        let count = staged_changes.len() as u32;
+
+        for staged in &staged_changes {
+            if staged.current.is_null() {
+                if let Some(ref previous) = staged.previous {
+                    let content = serde_json::to_string_pretty(previous)
+                        .map_err(|e| PyRuntimeError::new_err(format!("JSON error: {}", e)))?;
+                    self.repo
+                        .write_resource_file(&staged.resource_id, &content)
+                        .map_err(to_py_err)?;
+                }
+            }
+        }
+
+        self.repo.clear_staging().map_err(to_py_err)?;
+        Ok(count)
+    }
+
     // -----------------------------------------------------------------------
     // Status
     // -----------------------------------------------------------------------
