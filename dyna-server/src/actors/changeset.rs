@@ -15,6 +15,7 @@
 use dyna_core::channel::promote_changesets;
 use dyna_core::diff;
 use dyna_core::models::{Changeset, Channel};
+use dyna_core::notification::ChangesetInfo;
 use dyna_core::protocol::*;
 use elfo::prelude::*;
 use itertools::{izip, Itertools};
@@ -437,6 +438,7 @@ async fn handle_promote(
     let make_err = |msg: String, head: Option<String>| PromoteResponse {
         success: false,
         promoted_changesets: vec![],
+        changeset_infos: vec![],
         new_head: head,
         error: Some(msg),
     };
@@ -456,11 +458,27 @@ async fn handle_promote(
         Err(e) => return make_err(e.to_string(), None),
     };
 
-    // Mark promoted changesets as immutable and copy snapshots to target channel
+    // Mark promoted changesets as immutable, copy snapshots, and collect info
+    let mut changeset_infos = Vec::with_capacity(promoted_ids.len());
     for id in izip!(&promoted_ids) {
         if let Some(mut cs) = load_changeset(ctx, id).await {
             cs.immutable = true;
             let _ = store_changeset(ctx, &cs).await;
+
+            // Build ChangesetInfo from the loaded changeset
+            let affected: Vec<String> = izip!(&cs.patches)
+                .map(|p| p.target_resource.clone())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+            changeset_infos.push(ChangesetInfo {
+                change_id: cs.change_id.clone(),
+                message: cs.message.clone(),
+                author: cs.author.clone(),
+                patch_count: cs.patches.len(),
+                affected_resources: affected,
+            });
+
             // Copy affected resource snapshots from source to target channel
             for patch in izip!(&cs.patches) {
                 patch.result_snapshot.as_ref().map(|result| async {
@@ -476,12 +494,13 @@ async fn handle_promote(
             }
         }
     }
-    // Save updated target channell
+    // Save updated target channel
     save_channel(ctx, &target)
         .await
         .map(|()| PromoteResponse {
             success: true,
             promoted_changesets: promoted_ids,
+            changeset_infos,
             new_head: target.head_change_id.clone(),
             error: None,
         })

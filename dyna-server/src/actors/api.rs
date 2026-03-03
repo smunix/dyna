@@ -40,7 +40,7 @@ use axum::{
     Json, Router,
 };
 use dyna_core::compression;
-use dyna_core::notification::{ChangesetInfo, Notification, PromotedChangesetInfo};
+use dyna_core::notification::{ChangesetInfo, Notification};
 use dyna_core::protocol::*;
 use elfo::prelude::*;
 use std::sync::Arc;
@@ -207,6 +207,7 @@ async fn dispatch_request(ctx: &Context, request: ApiRequest) {
                 .unwrap_or_else(|e| PromoteResponse {
                     success: false,
                     promoted_changesets: vec![],
+                    changeset_infos: vec![],
                     new_head: None,
                     error: Some(format!("Internal error: {}", e)),
                 });
@@ -501,23 +502,10 @@ async fn promote_handler(
         .map(|r| {
             // Broadcast detailed promotion notification on success
             if r.success {
-                // Build detailed changeset info by fetching each promoted changeset
-                let promoted_infos: Vec<PromotedChangesetInfo> = r
-                    .promoted_changesets
-                    .iter()
-                    .map(|cid| PromotedChangesetInfo {
-                        change_id: cid.clone(),
-                        message: String::new(),
-                        author: String::new(),
-                        patch_count: 0,
-                        affected_resources: vec![],
-                    })
-                    .collect();
-
                 let notification = Notification::promotion(
                     source,
                     target,
-                    promoted_infos,
+                    r.changeset_infos.clone(),
                     r.new_head.clone(),
                 );
                 let clients = state.notification_hub.broadcast(&notification);

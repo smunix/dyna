@@ -149,6 +149,9 @@ pub struct PromoteResponse {
     pub success: bool,
     /// Change IDs of the promoted changesets.
     pub promoted_changesets: Vec<String>,
+    /// Detailed info for each promoted changeset (for notifications).
+    #[serde(default)]
+    pub changeset_infos: Vec<crate::notification::ChangesetInfo>,
     /// The new head change_id of the target channel.
     pub new_head: Option<String>,
     pub error: Option<String>,
