@@ -400,16 +400,18 @@
             };
             vendorHash = null;
             modRoot = "lazy-go";
-            subPackages = [ "lazycat" ];
+            subPackages = [ "lazycat" "examples/demo" ];
             buildPhase = ''
               runHook preBuild
               cd lazy-go
               go build ./lazycat/...
+              go build -o lazy-go-demo ./examples/demo
               runHook postBuild
             '';
             installPhase = ''
               runHook preInstall
-              mkdir -p $out/share/lazy-go
+              mkdir -p $out/bin $out/share/lazy-go
+              cp lazy-go-demo $out/bin/lazy-go-demo
               cp -r . $out/share/lazy-go/
               runHook postInstall
             '';
@@ -750,6 +752,14 @@
               type = "app";
               program = "${lazy-cat}/bin/demo";
             };
+            lazy-go-demo = {
+              type = "app";
+              program = "${lazy-go}/bin/lazy-go-demo";
+            };
+            lazy-py-demo = {
+              type = "app";
+              program = "${lazy-py}/bin/lazy-py-demo";
+            };
             default = {
               type = "app";
               program = "${dyna-cli}/bin/dyna-cli";
@@ -826,6 +836,11 @@
               echo "  ║    lazy-cat         — Rust lazy resource loader             ║"
               echo "  ║    lazy-go          — Go lazy resource loader               ║"
               echo "  ║    lazy-py          — Python lazy resource loader            ║"
+              echo "  ║                                                          ║"
+              echo "  ║  Demo apps (nix run .#<name>):                           ║"
+              echo "  ║    lazy-cat-demo    — Rust lazy loader demo               ║"
+              echo "  ║    lazy-go-demo     — Go lazy loader demo                 ║"
+              echo "  ║    lazy-py-demo     — Python lazy loader demo             ║"
               echo "  ║                                                          ║"
               echo "  ║  Development commands:                                   ║"
               echo "  ║    cargo build      — build native crates from source    ║"

@@ -15,5 +15,8 @@ dependencies = [
     "websockets>=12.0",
 ]
 
+[project.scripts]
+lazy-py-demo = "lazy_py.examples.demo:main"
+
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio"]
