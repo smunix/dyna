@@ -51,6 +51,10 @@ flate2 = "1.0"
 # Itertools
 itertools = "0.13"
 
+# Allocators
+tikv-jemallocator = "0.6"
+mimalloc = "0.1"
+
 # HTTP
 axum = "0.8"
 reqwest = { version = "0.12", features = ["json"] }

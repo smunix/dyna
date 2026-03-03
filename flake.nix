@@ -360,6 +360,24 @@
           };
           dyna-server = serverResult.package;
 
+          serverJeResult = mkRustPackage {
+            pname = "dyna-server";
+            cratePath = ./dyna-server;
+            buildPackageArgs = {
+              cargoExtraArgs = "-p dyna-server --bin dyna-server-je";
+            };
+          };
+          dyna-server-je = serverJeResult.package;
+
+          serverMimResult = mkRustPackage {
+            pname = "dyna-server";
+            cratePath = ./dyna-server;
+            buildPackageArgs = {
+              cargoExtraArgs = "-p dyna-server --bin dyna-server-mim";
+            };
+          };
+          dyna-server-mim = serverMimResult.package;
+
           # ── WASM package ───────────────────────────────────────────────
 
           wasmResult = mkWasmPackage {
@@ -496,6 +514,28 @@
             };
           };
 
+          dyna-server-je-image = pkgs.dockerTools.buildLayeredImage {
+            name = "dyna-server-je";
+            tag = "latest";
+            contents = [ dyna-server-je pkgs.cacert ];
+            config = {
+              Cmd = [ "${dyna-server-je}/bin/dyna-server-je" ];
+              ExposedPorts = { "8080/tcp" = {}; };
+              Env = [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            };
+          };
+
+          dyna-server-mim-image = pkgs.dockerTools.buildLayeredImage {
+            name = "dyna-server-mim";
+            tag = "latest";
+            contents = [ dyna-server-mim pkgs.cacert ];
+            config = {
+              Cmd = [ "${dyna-server-mim}/bin/dyna-server-mim" ];
+              ExposedPorts = { "8080/tcp" = {}; };
+              Env = [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            };
+          };
+
           dyna-app-image = pkgs.dockerTools.buildLayeredImage {
             name = "dyna-app";
             tag = "latest";
@@ -584,7 +624,7 @@
         {
           # ── Checks ───────────────────────────────────────────────────
           checks = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-go;
+            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-go;
 
             dyna-workspace-clippy = craneLib.cargoClippy {
               src = workspaceSrc;
@@ -610,8 +650,8 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve;
-            inherit dyna-server-image dyna-app-image;
+            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve;
+            inherit dyna-server-image dyna-server-je-image dyna-server-mim-image dyna-app-image;
             default = dyna-cli;
           };
 
@@ -624,6 +664,14 @@
             dyna-server = {
               type = "app";
               program = "${dyna-server}/bin/dyna-server";
+            };
+            dyna-server-je = {
+              type = "app";
+              program = "${dyna-server-je}/bin/dyna-server-je";
+            };
+            dyna-server-mim = {
+              type = "app";
+              program = "${dyna-server-mim}/bin/dyna-server-mim";
             };
             dyna-app-serve = {
               type = "app";
@@ -658,6 +706,8 @@
               # Pre-built Dyna binaries on PATH
               dyna-cli
               dyna-server
+              dyna-server-je
+              dyna-server-mim
               dyna-app-serve
 
               # Go (dyna-go)
@@ -696,7 +746,9 @@
               echo "  ║                                                          ║"
               echo "  ║  Pre-built binaries (on PATH):                           ║"
               echo "  ║    dyna             — CLI client                         ║"
-              echo "  ║    dyna-server      — start the server                   ║"
+              echo "  ║    dyna-server      — start the server (default alloc)   ║"
+              echo "  ║    dyna-server-je   — start the server (jemalloc)         ║"
+              echo "  ║    dyna-server-mim  — start the server (mimalloc)         ║"
               echo "  ║    dyna-app-serve   — build & serve the Elm UI           ║"
               echo "  ║    dyna-py          — Python CLI (via PyO3)               ║"
               echo "  ║    dyna-go          — Go client library                    ║"

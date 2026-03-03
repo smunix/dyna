@@ -10,6 +10,14 @@ description = "Remote server for the Dyna distributed CRUD system, built with el
 name = "dyna-server"
 path = "src/main.rs"
 
+[[bin]]
+name = "dyna-server-je"
+path = "src/main_je.rs"
+
+[[bin]]
+name = "dyna-server-mim"
+path = "src/main_mim.rs"
+
 [dependencies]
 dyna-core = { workspace = true }
 serde = { workspace = true }
@@ -30,3 +38,5 @@ elfo = { version = "0.2.0-alpha.20", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "decompression-gzip"] }
 flate2 = { workspace = true }
 itertools = { workspace = true }
+tikv-jemallocator = { workspace = true }
+mimalloc = { workspace = true }
