@@ -6,13 +6,16 @@
 
 use crate::repository::Repository;
 use anyhow::Result;
+use dyna_core::models::StagedChange;
 
 /// Execute the unstage command.
 ///
 /// - If `all` is true, unstage every staged change.
 /// - Otherwise, `pattern` must be a resource ID or file path to unstage.
-pub fn execute(repo: &Repository, pattern: Option<String>, all: bool) -> Result<()> {
+pub async fn execute(pattern: Option<String>, all: bool) -> Result<()> {
+    let repo = Repository::find_current()?;
     let staged_changes = repo.load_staged_changes()?;
+
     if staged_changes.is_empty() {
         println!("Nothing staged to unstage.");
         return Ok(());
@@ -21,14 +24,16 @@ pub fn execute(repo: &Repository, pattern: Option<String>, all: bool) -> Result<
     if all {
         let count = staged_changes.len();
         for staged in &staged_changes {
-            unstage_one(repo, &staged.resource_id, &staged)?;
+            unstage_one(&repo, &staged.resource_id, staged)?;
         }
         println!("Unstaged {} resource(s).", count);
         return Ok(());
     }
 
     let pattern = pattern.ok_or_else(|| {
-        anyhow::anyhow!("Please provide a resource ID or file path, or use --all to unstage everything.")
+        anyhow::anyhow!(
+            "Please provide a resource ID or file path, or use --all to unstage everything."
+        )
     })?;
 
     // Resolve the pattern to a resource ID
@@ -44,7 +49,7 @@ pub fn execute(repo: &Repository, pattern: Option<String>, all: bool) -> Result<
         .find(|s| s.resource_id == resource_id)
         .ok_or_else(|| anyhow::anyhow!("Resource '{}' is not staged.", resource_id))?;
 
-    unstage_one(repo, &resource_id, staged)?;
+    unstage_one(&repo, &resource_id, staged)?;
     println!("Unstaged '{}'.", resource_id);
     Ok(())
 }
@@ -54,17 +59,16 @@ pub fn execute(repo: &Repository, pattern: Option<String>, all: bool) -> Result<
 /// 1. If the staged change is a deletion (current == Null), restore the
 ///    working directory file from the previous snapshot.
 /// 2. Remove the staging file.
-fn unstage_one(
-    repo: &Repository,
-    resource_id: &str,
-    staged: &dyna_core::models::StagedChange,
-) -> Result<()> {
+fn unstage_one(repo: &Repository, resource_id: &str, staged: &StagedChange) -> Result<()> {
     // For staged deletions, restore the working directory file
     if staged.current.is_null() {
         if let Some(ref previous) = staged.previous {
             let content = serde_json::to_string_pretty(previous)?;
             repo.write_resource_file(resource_id, &content)?;
-            println!("Restored working file for deleted resource '{}'", resource_id);
+            println!(
+                "Restored working file for deleted resource '{}'",
+                resource_id
+            );
         }
     }
 

@@ -78,10 +78,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Describe { change_id, message } => {
             commands::describe::execute(change_id, message).await
         }
-        Commands::Unstage { pattern, all } => {
-            let repo = dyna_cli::repository::Repository::open(".")?;
-            commands::unstage::execute(&repo, pattern, all)
-        }
+        Commands::Unstage { pattern, all } => commands::unstage::execute(pattern, all).await,
     };
 
     if let Err(e) = result {
