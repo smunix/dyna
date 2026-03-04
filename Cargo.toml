@@ -7,6 +7,7 @@ members = [
     "dyna-wasm",
     "dyna-py",
     "lazy-cat",
+    "lazy-wasm",
 ]
 
 [workspace.package]

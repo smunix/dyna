@@ -13,3 +13,4 @@ result-*
 
 # WASM build output
 pkg/
+lazy-elm-demo/elm-stuff/

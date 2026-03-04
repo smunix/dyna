@@ -428,7 +428,16 @@
           };
           dyna-wasm = wasmResult.package;
 
-          # ── Elm package ────────────────────────────────────────────────
+          # ── lazy-wasm WASM package ──────────────────────────────────────
+
+          lazyWasmResult = mkWasmPackage {
+            pname = "lazy-wasm";
+            cratePath = ./lazy-wasm;
+            wasmFileName = "lazy_wasm";
+          };
+          lazy-wasm = lazyWasmResult.package;
+
+          # ── Elm package (dyna-app) ──────────────────────────────────
           dyna-app = pkgs.stdenv.mkDerivation {
             pname = "dyna-app";
             version = "0.1.0";
@@ -451,6 +460,32 @@
               # Bundle the WASM package alongside the Elm app
               mkdir -p $out/pkg
               cp ${dyna-wasm}/* $out/pkg/ 2>/dev/null || true
+            '';
+          };
+
+          # ── Elm package (lazy-elm-demo) ──────────────────────────────
+          lazy-elm-demo = pkgs.stdenv.mkDerivation {
+            pname = "lazy-elm-demo";
+            version = "0.1.0";
+            src = ./lazy-elm-demo;
+            nativeBuildInputs = [ pkgs.elmPackages.elm ];
+
+            HOME = "$TMPDIR";
+
+            buildPhase = ''
+              mkdir -p $TMPDIR/.elm
+              export ELM_HOME=$TMPDIR/.elm
+              elm make src/Main.elm --optimize --output=elm.js
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+              cp -r public/* $out/ 2>/dev/null || true
+              cp elm.js $out/elm.js
+
+              # Bundle the lazy-wasm WASM package alongside the Elm app
+              mkdir -p $out/pkg
+              cp ${lazy-wasm}/* $out/pkg/ 2>/dev/null || true
             '';
           };
 
@@ -636,6 +671,53 @@
                 httpd.serve_forever()
           '';
 
+          # ── lazy-elm-serve script ────────────────────────────────────
+          lazy-elm-serve = pkgs.writeShellScriptBin "lazy-elm-serve" ''
+            set -euo pipefail
+
+            PORT="''${1:-3001}"
+
+            # Locate the lazy-elm-demo source directory
+            ELM_SRC="''${LAZY_ELM_SRC:-$(pwd)/lazy-elm-demo}"
+            if [ ! -f "$ELM_SRC/elm.json" ]; then
+              echo "Error: Cannot find lazy-elm-demo/elm.json"
+              echo "Run this from the workspace root, or set LAZY_ELM_SRC."
+              exit 1
+            fi
+
+            # Populate the WASM package (output goes into lazy-elm-demo/public/pkg)
+            PKG_DIR="$ELM_SRC/public/pkg"
+            mkdir -p "$PKG_DIR"
+            if [ ! -f "$PKG_DIR/lazy_wasm.js" ]; then
+              NIX_WASM="${lazy-wasm}"
+              if [ -f "$NIX_WASM/lazy_wasm.js" ]; then
+                echo "Copying pre-built lazy-wasm artifacts from Nix store..."
+                cp -f "$NIX_WASM"/lazy_wasm* "$PKG_DIR/"
+                echo "  WASM package ready."
+              else
+                echo "Building lazy-wasm from source..."
+                if wasm-pack build lazy-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
+                  echo "  WASM package built successfully."
+                else
+                  echo "  Error: wasm-pack build failed and no pre-built artifacts available."
+                  exit 1
+                fi
+              fi
+            fi
+
+            # Compile the Elm app
+            echo "Compiling Elm app..."
+            (cd "$ELM_SRC" && elm make src/Main.elm --optimize --output=public/elm.js)
+
+            # Serve with correct MIME types
+            echo ""
+            echo "  Serving lazy-elm-demo on http://localhost:$PORT"
+            echo "  Press Ctrl+C to stop."
+            echo ""
+            SERVE_DIR="$ELM_SRC/public" SERVE_PORT="$PORT" \
+              ${pkgs.python3}/bin/python3 ${dyna-serve-py}
+          '';
+
           dyna-app-serve = pkgs.writeShellScriptBin "dyna-app-serve" ''
             set -euo pipefail
 
@@ -690,7 +772,7 @@
         {
           # ── Checks ───────────────────────────────────────────────────
           checks = {
-            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-go lazy-cat lazy-go;
+            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm lazy-wasm dyna-app lazy-elm-demo dyna-go lazy-cat lazy-go;
 
             dyna-workspace-clippy = craneLib.cargoClippy {
               src = workspaceSrc;
@@ -716,7 +798,7 @@
 
           # ── Packages ─────────────────────────────────────────────────
           packages = {
-            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm dyna-app dyna-py dyna-go dyna-app-serve lazy-cat lazy-go lazy-py;
+            inherit dyna-cli dyna-server dyna-server-je dyna-server-mim dyna-wasm lazy-wasm dyna-app lazy-elm-demo dyna-py dyna-go dyna-app-serve lazy-elm-serve lazy-cat lazy-go lazy-py;
             inherit dyna-server-image dyna-server-je-image dyna-server-mim-image dyna-app-image;
             default = dyna-cli;
           };
@@ -758,6 +840,10 @@
             lazy-py-demo = {
               type = "app";
               program = "${lazy-py}/bin/lazy-py-demo";
+            };
+            lazy-elm-serve = {
+              type = "app";
+              program = "${lazy-elm-serve}/bin/lazy-elm-serve";
             };
             default = {
               type = "app";
@@ -835,11 +921,13 @@
               echo "  ║    lazy-cat         — Rust lazy resource loader             ║"
               echo "  ║    lazy-go          — Go lazy resource loader               ║"
               echo "  ║    lazy-py          — Python lazy resource loader            ║"
+              echo "  ║    lazy-wasm        — WASM lazy resource loader              ║"
               echo "  ║                                                          ║"
               echo "  ║  Demo apps (nix run .#<name>):                           ║"
               echo "  ║    lazy-cat-demo    — Rust lazy loader demo               ║"
               echo "  ║    lazy-go-demo     — Go lazy loader demo                 ║"
               echo "  ║    lazy-py-demo     — Python lazy loader demo             ║"
+              echo "  ║    lazy-elm-serve   — Elm lazy loader UI demo               ║"
               echo "  ║                                                          ║"
               echo "  ║  Development commands:                                   ║"
               echo "  ║    cargo build      — build native crates from source    ║"

@@ -1589,6 +1589,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy-wasm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "console_error_panic_hook",
+ "dyna-core",
+ "getrandom 0.4.1",
+ "itertools",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "sha2",
+ "toml",
+ "uuid",
+ "vfs",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
