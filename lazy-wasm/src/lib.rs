@@ -48,6 +48,15 @@ use std::rc::Rc;
 use sync_client::SyncClient;
 use wasm_bindgen::prelude::*;
 
+/// Serialize to JsValue using json_compatible mode so that
+/// serde_json::Value::Object becomes a plain JS object (not an ES Map).
+fn to_js_value<T: Serialize>(val: &T) -> Result<JsValue, JsError> {
+    val.serialize(
+        &serde_wasm_bindgen::Serializer::json_compatible(),
+    )
+    .map_err(|e| JsError::new(&e.to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // JS-serialisable event types
 // ---------------------------------------------------------------------------
@@ -212,7 +221,7 @@ impl LazyWasmClient {
         let st = self.state.borrow();
         let mut ids: Vec<&String> = st.known_ids.iter().collect();
         ids.sort();
-        serde_wasm_bindgen::to_value(&ids).map_err(|e| JsError::new(&e.to_string()))
+        to_js_value(&ids)
     }
 
     #[wasm_bindgen]
@@ -226,9 +235,7 @@ impl LazyWasmClient {
             .load_snapshot(resource_id)
             .map_err(to_js)?
             .ok_or_else(|| JsError::new(&format!("Resource '{}' not found", resource_id)))
-            .and_then(|v| {
-                serde_wasm_bindgen::to_value(&v).map_err(|e| JsError::new(&e.to_string()))
-            })
+            .and_then(|v| to_js_value(&v))
     }
 
     #[wasm_bindgen]
@@ -253,7 +260,7 @@ impl LazyWasmClient {
                 .flatten()
                 .map(|v| map.insert(id.clone(), v));
         });
-        serde_wasm_bindgen::to_value(&map).map_err(|e| JsError::new(&e.to_string()))
+        to_js_value(&map)
     }
 
     #[wasm_bindgen]
@@ -276,7 +283,7 @@ impl LazyWasmClient {
                 .load_snapshot(id)
                 .ok()
                 .flatten()
-                .and_then(|v| serde_wasm_bindgen::to_value(&v).ok())
+                .and_then(|v| to_js_value(&v).ok())
                 .map(|js_val| {
                     let _ = callback.call2(&this, &JsValue::from_str(id), &js_val);
                 });
@@ -563,7 +570,7 @@ fn spawn_ws_listener(
                             affected_resource_ids: affected_for_event,
                             updated_snapshots,
                         };
-                        if let Ok(js_event) = serde_wasm_bindgen::to_value(&event) {
+                        if let Ok(js_event) = to_js_value(&event) {
                             let _ = callback.call1(&JsValue::null(), &js_event);
                         }
                     }
