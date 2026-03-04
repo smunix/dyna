@@ -873,6 +873,7 @@
               dyna-server-je
               dyna-server-mim
               dyna-app-serve
+              lazy-elm-serve
 
               # Go (dyna-go)
               pkgs.go
@@ -922,6 +923,7 @@
               echo "  ║    lazy-go          — Go lazy resource loader               ║"
               echo "  ║    lazy-py          — Python lazy resource loader            ║"
               echo "  ║    lazy-wasm        — WASM lazy resource loader              ║"
+              echo "  ║    lazy-elm-serve   — build & serve the Elm lazy UI       ║"
               echo "  ║                                                          ║"
               echo "  ║  Demo apps (nix run .#<name>):                           ║"
               echo "  ║    lazy-cat-demo    — Rust lazy loader demo               ║"
