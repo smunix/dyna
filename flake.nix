@@ -66,7 +66,7 @@
           # Helper: resolve workspace dependency crate paths from Cargo.toml
           # ════════════════════════════════════════════════════════════════
 
-          workspaceMembers = [ "dyna-core" "dyna-cli" "dyna-server" "dyna-wasm" "dyna-py" "lazy-cat" ];
+          workspaceMembers = [ "dyna-core" "dyna-cli" "dyna-server" "dyna-wasm" "dyna-py" "lazy-cat" "lazy-wasm" ];
 
           # Parse a crate's Cargo.toml and extract workspace dependency names
           # that are also workspace members (i.e. local crate deps).
