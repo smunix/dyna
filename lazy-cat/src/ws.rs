@@ -199,7 +199,10 @@ async fn pull_updates(
     let mut loaded = loaded.write().await;
     let mut known = known_ids.write().await;
 
-    // Store new changesets and update snapshots for already-loaded resources
+    // Store new changesets and update snapshots for ALL affected resources.
+    // We materialise snapshots for every resource touched by the pulled
+    // changesets (not just previously-loaded ones) so that the UpdateEvent
+    // can include the new values.
     izip!(&response.changesets).try_for_each(|cs| -> Result<()> {
         repo.store_changeset(cs)?;
 
@@ -207,33 +210,35 @@ async fn pull_updates(
             // Track the resource as known
             known.insert(patch.target_resource.clone());
 
-            // If we already have this resource loaded, update its snapshot
-            if loaded.contains(&patch.target_resource) {
-                patch
-                    .result_snapshot
-                    .as_ref()
-                    .map(|snap| {
-                        let _ = repo.save_snapshot(&patch.target_resource, snap);
-                    })
-                    .unwrap_or_else(|| {
-                        // Apply patch operations to existing snapshot
-                        repo.load_snapshot(&patch.target_resource)
-                            .ok()
-                            .flatten()
-                            .map(|mut current| {
-                                dyna_core::diff::apply_patch(&mut current, &patch.operations)
-                                    .map(|()| {
-                                        let _ = repo.save_snapshot(&patch.target_resource, &current);
-                                    })
-                                    .unwrap_or_else(|e| {
-                                        tracing::warn!(
-                                            "Failed to apply patch to {}: {e}",
-                                            patch.target_resource
-                                        );
-                                    });
-                            });
-                    });
-            }
+            // Update or create the snapshot for this resource
+            patch
+                .result_snapshot
+                .as_ref()
+                .map(|snap| {
+                    let _ = repo.save_snapshot(&patch.target_resource, snap);
+                })
+                .unwrap_or_else(|| {
+                    // Apply patch operations to existing snapshot (or start from {})
+                    let current = repo
+                        .load_snapshot(&patch.target_resource)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let mut current = current;
+                    dyna_core::diff::apply_patch(&mut current, &patch.operations)
+                        .map(|()| {
+                            let _ = repo.save_snapshot(&patch.target_resource, &current);
+                        })
+                        .unwrap_or_else(|e| {
+                            tracing::warn!(
+                                "Failed to apply patch to {}: {e}",
+                                patch.target_resource
+                            );
+                        });
+                });
+
+            // Mark as loaded so subsequent reads hit the cache
+            loaded.insert(patch.target_resource.clone());
         });
 
         Ok(())

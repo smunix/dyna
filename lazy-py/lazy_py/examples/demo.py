@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 lazy-py demo — connects to a running Dyna server, lazily loads resources,
-and prints live updates as they arrive.
+and prints detailed live updates (metadata + content) as they arrive.
 
 Usage::
 
@@ -14,6 +14,7 @@ import json
 import sys
 
 from lazy_py import LazyClient
+from lazy_py.client import UpdateEvent
 
 
 async def async_main() -> None:
@@ -23,9 +24,45 @@ async def async_main() -> None:
     print(f"Connecting to {server_url} (channel: {channel})…")
     client = await LazyClient.connect(server_url, channel)
 
-    # Register a live-update callback
-    def on_update(affected: list[str]) -> None:
-        print(f"\n  ⚡ Live update — {len(affected)} resource(s) changed: {affected}")
+    # Register a live-update callback that prints full details
+    def on_update(event: UpdateEvent) -> None:
+        sep = "═" * 72
+        thin = "─" * 72
+
+        print(f"\n{sep}")
+        print(f"  ⚡ Live update — {event.kind} on channel '{event.channel}'")
+        print(f"     Timestamp : {event.timestamp}")
+        if event.new_head:
+            print(f"     New HEAD  : {event.new_head}")
+        print(f"     Resources : {len(event.affected_resource_ids)} affected")
+        print(thin)
+
+        # Print per-changeset metadata
+        for i, cs in enumerate(event.changesets):
+            print(f"\n  Changeset #{i + 1} [{cs.change_id}]")
+            print(f"    Author     : {cs.author}")
+            print(f"    Message    : {cs.message}")
+            print(f"    Patches    : {cs.patch_count}")
+            print(f"    Resources  : {', '.join(cs.affected_resources)}")
+
+        # Print updated resource snapshots
+        if event.updated_snapshots:
+            print(f"\n{thin}")
+            print("  Updated resource snapshots:\n")
+
+            for rid, value in event.updated_snapshots.items():
+                print(f"  📄 {rid}:")
+                try:
+                    pretty = json.dumps(value, indent=2)
+                    for line in pretty.splitlines():
+                        print(f"     {line}")
+                except Exception as e:
+                    print(f"     <serialisation error: {e}>")
+                print()
+        else:
+            print("\n  (no snapshots available)")
+
+        print(sep)
 
     client.on_update(on_update)
 

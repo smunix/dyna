@@ -1,5 +1,5 @@
 // lazy-go demo — connects to a running Dyna server, lazily loads resources,
-// and prints live updates as they arrive.
+// and prints detailed live updates (metadata + content) as they arrive.
 //
 // Usage:
 //
@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"lazy-go/lazycat"
@@ -39,9 +40,49 @@ func main() {
 	}
 	defer client.Close()
 
-	// Register a live-update callback
-	client.OnUpdate(func(affected []string) {
-		fmt.Printf("\n  ⚡ Live update — %d resource(s) changed: %v\n", len(affected), affected)
+	// Register a live-update callback that prints full details
+	client.OnUpdate(func(event *lazycat.UpdateEvent) {
+		sep := strings.Repeat("═", 72)
+		thin := strings.Repeat("─", 72)
+
+		fmt.Printf("\n%s\n", sep)
+		fmt.Printf("  ⚡ Live update — %s on channel '%s'\n", event.Kind, event.Channel)
+		fmt.Printf("     Timestamp : %s\n", event.Timestamp)
+		if event.NewHead != nil {
+			fmt.Printf("     New HEAD  : %s\n", *event.NewHead)
+		}
+		fmt.Printf("     Resources : %d affected\n", len(event.AffectedResourceIDs))
+		fmt.Printf("%s\n", thin)
+
+		// Print per-changeset metadata
+		for i, cs := range event.Changesets {
+			fmt.Printf("\n  Changeset #%d [%s]\n", i+1, cs.ChangeID)
+			fmt.Printf("    Author     : %s\n", cs.Author)
+			fmt.Printf("    Message    : %s\n", cs.Message)
+			fmt.Printf("    Patches    : %d\n", cs.PatchCount)
+			fmt.Printf("    Resources  : %s\n", strings.Join(cs.AffectedResources, ", "))
+		}
+
+		// Print updated resource snapshots
+		if len(event.UpdatedSnapshots) > 0 {
+			fmt.Printf("\n%s\n", thin)
+			fmt.Println("  Updated resource snapshots:\n")
+
+			for rid, snap := range event.UpdatedSnapshots {
+				fmt.Printf("  📄 %s:\n", rid)
+				var pretty json.RawMessage
+				if err := json.Unmarshal(snap, &pretty); err == nil {
+					out, _ := json.MarshalIndent(pretty, "     ", "  ")
+					fmt.Printf("     %s\n\n", string(out))
+				} else {
+					fmt.Printf("     %s\n\n", string(snap))
+				}
+			}
+		} else {
+			fmt.Println("\n  (no snapshots available)")
+		}
+
+		fmt.Printf("%s\n", sep)
 	})
 
 	// List all known resource IDs
@@ -81,11 +122,7 @@ func main() {
 	err = client.ForEachAll(func(id string, val json.RawMessage) error {
 		count++
 		if count <= 5 {
-			s := string(val)
-			if len(s) > 80 {
-				s = s[:80] + "…"
-			}
-			fmt.Printf("  %s: %s\n", id, s)
+			fmt.Printf("  %s: %s\n", id, prettyOneLine(val))
 		}
 		return nil
 	})
@@ -100,4 +137,20 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	fmt.Println("\nBye.")
+}
+
+func prettyOneLine(raw json.RawMessage) string {
+	var v interface{}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return string(raw)
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return string(raw)
+	}
+	s := string(out)
+	if len(s) > 80 {
+		s = s[:80] + "…"
+	}
+	return s
 }

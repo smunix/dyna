@@ -17,7 +17,7 @@ Quick start::
     asyncio.run(main())
 """
 
-from lazy_py.client import LazyClient
+from lazy_py.client import ChangesetInfo, LazyClient, UpdateEvent
 
-__all__ = ["LazyClient"]
+__all__ = ["ChangesetInfo", "LazyClient", "UpdateEvent"]
 __version__ = "0.1.0"

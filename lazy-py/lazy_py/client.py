@@ -20,6 +20,7 @@ import json
 import logging
 import tempfile
 import shutil
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
@@ -28,6 +29,30 @@ import websockets
 from dyna_py import DynaRepo
 
 logger = logging.getLogger("lazy_py")
+
+
+@dataclass
+class ChangesetInfo:
+    """Metadata about a single changeset in an update event."""
+
+    change_id: str = ""
+    message: str = ""
+    author: str = ""
+    patch_count: int = 0
+    affected_resources: List[str] = field(default_factory=list)
+
+
+@dataclass
+class UpdateEvent:
+    """Full details about a live update received via WebSocket."""
+
+    kind: str = ""
+    timestamp: str = ""
+    channel: str = ""
+    changesets: List[ChangesetInfo] = field(default_factory=list)
+    new_head: Optional[str] = None
+    affected_resource_ids: List[str] = field(default_factory=list)
+    updated_snapshots: Dict[str, Any] = field(default_factory=dict)
 
 
 class LazyClient:
@@ -53,7 +78,7 @@ class LazyClient:
         self._work_dir = work_dir
         self._known_ids = known_ids
         self._loaded = loaded
-        self._on_update: Optional[Callable[[List[str]], None]] = None
+        self._on_update: Optional[Callable[[UpdateEvent], None]] = None
         self._ws_task: Optional[asyncio.Task[None]] = None
 
     # -------------------------------------------------------------------
@@ -184,8 +209,12 @@ class LazyClient:
         """The server URL."""
         return self._server_url
 
-    def on_update(self, callback: Callable[[List[str]], None]) -> None:
-        """Register a callback invoked on every live update."""
+    def on_update(self, callback: Callable[[UpdateEvent], None]) -> None:
+        """Register a callback invoked on every live update.
+
+        The callback receives an :class:`UpdateEvent` with full metadata
+        and materialised resource snapshots.
+        """
         self._on_update = callback
 
     # -------------------------------------------------------------------
@@ -226,21 +255,31 @@ class LazyClient:
             else:
                 logger.debug("Resource '%s' not found locally after clone", rid)
 
-    def _pull(self) -> List[str]:
-        """Pull new changesets from the server and return affected IDs."""
+    def _pull(self, affected_ids: List[str]) -> Dict[str, Any]:
+        """Pull new changesets from the server and return updated snapshots."""
         try:
-            result = self._repo.pull(channel=self._channel)
-            # Update known IDs
+            self._repo.pull(channel=self._channel)
+            # Update known IDs and loaded set
             try:
                 new_ids = set(self._repo.list_resources())
                 self._known_ids.update(new_ids)
                 self._loaded.update(new_ids)
             except Exception:
                 pass
-            return list(self._known_ids)
+
+            # Collect updated snapshots for affected resources
+            snapshots: Dict[str, Any] = {}
+            for rid in affected_ids:
+                try:
+                    if self._repo.resource_exists(rid):
+                        raw = self._repo.read_resource(rid)
+                        snapshots[rid] = json.loads(raw)
+                except Exception:
+                    pass
+            return snapshots
         except Exception as exc:
             logger.error("Pull failed: %s", exc)
-            return []
+            return {}
 
     async def _ws_listener(self) -> None:
         """Background task: connect to the server's WebSocket and pull on
@@ -272,27 +311,66 @@ class LazyClient:
             return
 
         kind = data.get("kind", "")
+        timestamp = data.get("timestamp", "")
         payload = data.get("payload", {})
 
-        # Determine the affected channel
-        affected_channel = payload.get("channel") or payload.get("target_channel", "")
+        # Determine the affected channel and extract changeset info
+        cs_infos: List[ChangesetInfo] = []
+        new_head: Optional[str] = None
+
+        if kind == "push":
+            affected_channel = payload.get("channel", "")
+            new_head = payload.get("new_head")
+            for cs in payload.get("changesets", []):
+                cs_infos.append(ChangesetInfo(
+                    change_id=cs.get("change_id", ""),
+                    message=cs.get("message", ""),
+                    author=cs.get("author", ""),
+                    patch_count=cs.get("patch_count", 0),
+                    affected_resources=cs.get("affected_resources", []),
+                ))
+        elif kind == "promotion":
+            affected_channel = payload.get("target_channel", "")
+            new_head = payload.get("new_head")
+            for cs in payload.get("promoted_changesets", []):
+                cs_infos.append(ChangesetInfo(
+                    change_id=cs.get("change_id", ""),
+                    message=cs.get("message", ""),
+                    author=cs.get("author", ""),
+                    patch_count=cs.get("patch_count", 0),
+                    affected_resources=cs.get("affected_resources", []),
+                ))
+        else:
+            return
+
         if affected_channel != self._channel:
             return
 
-        # Extract affected resource IDs
-        affected: List[str] = []
-        for cs in payload.get("changesets", payload.get("promoted_changesets", [])):
-            affected.extend(cs.get("affected_resources", []))
+        # Collect all affected resource IDs
+        all_affected: List[str] = []
+        for cs in cs_infos:
+            all_affected.extend(cs.affected_resources)
 
         logger.info(
             "Received %s notification, %d resource(s) affected",
             kind,
-            len(affected),
+            len(all_affected),
         )
 
-        # Pull updates
-        self._pull()
+        # Pull updates and collect materialised snapshots
+        updated_snapshots = self._pull(all_affected)
+
+        # Build the rich UpdateEvent
+        event = UpdateEvent(
+            kind=kind,
+            timestamp=timestamp,
+            channel=affected_channel,
+            changesets=cs_infos,
+            new_head=new_head,
+            affected_resource_ids=all_affected,
+            updated_snapshots=updated_snapshots,
+        )
 
         # Fire callback
         if self._on_update is not None:
-            self._on_update(affected)
+            self._on_update(event)

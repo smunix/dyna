@@ -31,7 +31,7 @@ type PullRequest struct {
 
 // PullResponse is returned from POST /api/v1/pull.
 type PullResponse struct {
-	Channel     string      `json:"channel"`
+	Channel     Channel     `json:"channel"`
 	Changesets  []Changeset `json:"changesets"`
 	CurrentHead *string     `json:"current_head"`
 }

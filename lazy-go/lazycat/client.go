@@ -29,9 +29,36 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// ChangesetInfo contains metadata about a single changeset in an update event.
+type ChangesetInfo struct {
+	ChangeID          string   `json:"change_id"`
+	Message           string   `json:"message"`
+	Author            string   `json:"author"`
+	PatchCount        int      `json:"patch_count"`
+	AffectedResources []string `json:"affected_resources"`
+}
+
+// UpdateEvent contains full details about a live update received via WebSocket.
+type UpdateEvent struct {
+	// Kind is the notification type: "push" or "promotion".
+	Kind string
+	// Timestamp is the ISO 8601 timestamp of the event on the server.
+	Timestamp string
+	// Channel is the affected channel name.
+	Channel string
+	// Changesets contains per-changeset metadata.
+	Changesets []ChangesetInfo
+	// NewHead is the new head change_id of the channel (if available).
+	NewHead *string
+	// AffectedResourceIDs is the flat list of all affected resource IDs.
+	AffectedResourceIDs []string
+	// UpdatedSnapshots maps resource IDs to their new materialised values.
+	UpdatedSnapshots map[string]json.RawMessage
+}
+
 // OnUpdateFunc is called whenever the local cache is updated from the server.
-// It receives the list of resource IDs that were affected.
-type OnUpdateFunc func(affectedResources []string)
+// It receives a rich UpdateEvent with full metadata and materialised snapshots.
+type OnUpdateFunc func(event *UpdateEvent)
 
 // ResourceFunc is a continuation called for each resource during ForEach /
 // ForEachAll.  Returning a non-nil error stops the iteration.
@@ -259,11 +286,13 @@ func (lc *LazyClient) materialiseBatch(resourceIDs []string) {
 	}
 }
 
-func (lc *LazyClient) pull(ctx context.Context) []string {
+// pull fetches new changesets from the server and returns the list of affected
+// resource IDs along with their new materialised snapshots.
+func (lc *LazyClient) pull(ctx context.Context) ([]string, map[string]json.RawMessage) {
 	resp, err := lc.client.Pull(ctx)
 	if err != nil {
 		log.Printf("lazy-go: pull failed: %v", err)
-		return nil
+		return nil, nil
 	}
 
 	lc.mu.Lock()
@@ -277,7 +306,16 @@ func (lc *LazyClient) pull(ctx context.Context) []string {
 			affected = append(affected, p.TargetResource)
 		}
 	}
-	return affected
+
+	// Collect updated snapshots for all affected resources
+	snapshots := make(map[string]json.RawMessage, len(affected))
+	for _, rid := range affected {
+		if data, err := lc.client.ReadResource(rid); err == nil {
+			snapshots[rid] = data
+		}
+	}
+
+	return affected, snapshots
 }
 
 // wsListener connects to the server's WebSocket and pulls on relevant
@@ -308,21 +346,31 @@ func (lc *LazyClient) wsListener(ctx context.Context) {
 
 // notification mirrors the Rust Notification struct.
 type notification struct {
-	Kind    string          `json:"kind"`
-	Payload json.RawMessage `json:"payload"`
+	Kind      string          `json:"kind"`
+	Timestamp string          `json:"timestamp"`
+	Payload   json.RawMessage `json:"payload"`
 }
 
 type pushPayload struct {
-	Channel    string          `json:"channel"`
-	Changesets []changesetInfo `json:"changesets"`
+	Channel        string          `json:"channel"`
+	ChangesetCount int             `json:"changeset_count"`
+	NewHead        *string         `json:"new_head"`
+	Changesets     []changesetInfo `json:"changesets"`
 }
 
 type promotionPayload struct {
-	TargetChannel      string          `json:"target_channel"`
-	PromotedChangesets []changesetInfo `json:"promoted_changesets"`
+	SourceChannel          string          `json:"source_channel"`
+	TargetChannel          string          `json:"target_channel"`
+	PromotedChangesets     []changesetInfo `json:"promoted_changesets"`
+	NewHead                *string         `json:"new_head"`
+	TotalResourcesAffected int            `json:"total_resources_affected"`
 }
 
 type changesetInfo struct {
+	ChangeID          string   `json:"change_id"`
+	Message           string   `json:"message"`
+	Author            string   `json:"author"`
+	PatchCount        int      `json:"patch_count"`
 	AffectedResources []string `json:"affected_resources"`
 }
 
@@ -366,7 +414,8 @@ func (lc *LazyClient) handleNotification(ctx context.Context, raw []byte) {
 	}
 
 	var affectedChannel string
-	var affected []string
+	var csInfos []ChangesetInfo
+	var newHead *string
 
 	switch n.Kind {
 	case "push":
@@ -375,8 +424,15 @@ func (lc *LazyClient) handleNotification(ctx context.Context, raw []byte) {
 			return
 		}
 		affectedChannel = p.Channel
+		newHead = p.NewHead
 		for _, cs := range p.Changesets {
-			affected = append(affected, cs.AffectedResources...)
+			csInfos = append(csInfos, ChangesetInfo{
+				ChangeID:          cs.ChangeID,
+				Message:           cs.Message,
+				Author:            cs.Author,
+				PatchCount:        cs.PatchCount,
+				AffectedResources: cs.AffectedResources,
+			})
 		}
 	case "promotion":
 		var p promotionPayload
@@ -384,8 +440,15 @@ func (lc *LazyClient) handleNotification(ctx context.Context, raw []byte) {
 			return
 		}
 		affectedChannel = p.TargetChannel
+		newHead = p.NewHead
 		for _, cs := range p.PromotedChangesets {
-			affected = append(affected, cs.AffectedResources...)
+			csInfos = append(csInfos, ChangesetInfo{
+				ChangeID:          cs.ChangeID,
+				Message:           cs.Message,
+				Author:            cs.Author,
+				PatchCount:        cs.PatchCount,
+				AffectedResources: cs.AffectedResources,
+			})
 		}
 	default:
 		return
@@ -395,16 +458,33 @@ func (lc *LazyClient) handleNotification(ctx context.Context, raw []byte) {
 		return
 	}
 
-	log.Printf("lazy-go: %s notification, %d resource(s) affected", n.Kind, len(affected))
+	// Collect all affected resource IDs
+	var allAffected []string
+	for _, cs := range csInfos {
+		allAffected = append(allAffected, cs.AffectedResources...)
+	}
 
-	// Pull updates
-	lc.pull(ctx)
+	log.Printf("lazy-go: %s notification, %d resource(s) affected", n.Kind, len(allAffected))
+
+	// Pull updates and get materialised snapshots
+	_, updatedSnapshots := lc.pull(ctx)
+
+	// Build the rich UpdateEvent
+	event := &UpdateEvent{
+		Kind:                n.Kind,
+		Timestamp:           n.Timestamp,
+		Channel:             affectedChannel,
+		Changesets:          csInfos,
+		NewHead:             newHead,
+		AffectedResourceIDs: allAffected,
+		UpdatedSnapshots:    updatedSnapshots,
+	}
 
 	// Fire callback
 	lc.mu.RLock()
 	cb := lc.onUpdate
 	lc.mu.RUnlock()
 	if cb != nil {
-		cb(affected)
+		cb(event)
 	}
 }
