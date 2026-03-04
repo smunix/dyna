@@ -232,12 +232,31 @@ func (r *Repository) CreateChannel(name string, forkFrom *string) error {
 	return r.SaveChannel(&ch)
 }
 
-// SwitchChannel changes the active channel.
+// SwitchChannel changes the active channel and rebuilds the working directory
+// from the new channel's snapshots.
 func (r *Repository) SwitchChannel(name string) error {
 	if _, err := r.LoadChannel(name); err != nil {
 		return err
 	}
-	return r.setCurrentChannelName(name)
+
+	// Clear existing working directory JSON files
+	oldFiles, _ := r.ListWorkJSONFiles()
+	for _, f := range oldFiles {
+		_ = r.RemoveWorkFile(f)
+	}
+
+	// Switch the current channel
+	if err := r.setCurrentChannelName(name); err != nil {
+		return err
+	}
+
+	// Rebuild working directory from the new channel's snapshots
+	allSnaps, _ := r.LoadAllSnapshots()
+	for resourceID, snap := range allSnaps {
+		_ = r.WriteWorkFile(PathForResourceID(resourceID), snap)
+	}
+
+	return nil
 }
 
 // DeleteChannel removes a channel's JSON file and its snapshot directory.

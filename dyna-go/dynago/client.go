@@ -472,9 +472,41 @@ func (c *Client) CloneRepo(ctx context.Context, remoteURL string) error {
 		_ = c.Repo.SaveChangeset(&resp.Changesets[i])
 	}
 
-	// Save snapshots and working files
-	for resourceID, snap := range resp.Snapshots {
-		_ = c.Repo.SaveSnapshot(resourceID, snap)
+	// Build per-channel snapshots by replaying each channel's changesets.
+	// The server may return empty snapshots (e.g. in-memory store restart),
+	// so we always rebuild from changesets to be safe — matching dyna-cli
+	// clone.rs behaviour.
+	for _, ch := range resp.Channels {
+		channelSnapshots := make(map[string]json.RawMessage)
+		for _, cid := range ch.Changesets {
+			cs, err := c.Repo.LoadChangeset(cid)
+			if err != nil {
+				continue
+			}
+			for _, p := range cs.Patches {
+				if p.ResultSnapshot != nil {
+					channelSnapshots[p.TargetResource] = p.ResultSnapshot
+				} else {
+					snap, exists := channelSnapshots[p.TargetResource]
+					if !exists {
+						snap = json.RawMessage("{}")
+					}
+					if err := ApplyPatch(&snap, p.Operations); err == nil {
+						channelSnapshots[p.TargetResource] = snap
+					}
+				}
+			}
+		}
+		// Persist per-channel snapshots
+		for resourceID, snap := range channelSnapshots {
+			_ = c.Repo.SaveSnapshotForChannel(ch.Name, resourceID, snap)
+		}
+	}
+
+	// Write working directory files from the current channel's snapshots.
+	// After Init(), current channel is "main"; we switch below if needed.
+	allSnaps, _ := c.Repo.LoadAllSnapshots()
+	for resourceID, snap := range allSnaps {
 		_ = c.Repo.WriteWorkFile(PathForResourceID(resourceID), snap)
 	}
 
