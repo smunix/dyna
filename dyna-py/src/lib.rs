@@ -776,35 +776,56 @@ impl DynaRepo {
         izip!(&response.channels).try_for_each(|ch| {
             repo.save_channel(ch).map_err(to_py_err)
         })?;
-        izip!(&response.snapshots).try_for_each(|(resource_id, snapshot)| {
-            serde_json::to_string_pretty(snapshot)
-                .map_err(|e| to_py_err(e.into()))
-                .and_then(|json| {
-                    repo.write_resource_file(resource_id, &json)
-                        .map_err(to_py_err)
-                })
-                .and_then(|_| {
-                    repo.save_snapshot(resource_id, snapshot)
-                        .map_err(to_py_err)
-                })
-        })?;
+        // Build per-channel snapshots by replaying each channel's changesets
+        // (mirrors dyna-cli clone logic — response.snapshots may be empty).
+        izip!(&response.channels)
+            .try_for_each(|channel| -> PyResult<()> {
+                let mut channel_snapshots: std::collections::HashMap<String, Value> =
+                    std::collections::HashMap::new();
+                izip!(&channel.changesets)
+                    .filter_map(|cid| repo.load_changeset(cid).ok())
+                    .flat_map(|cs| cs.patches.into_iter())
+                    .for_each(|p| {
+                        let entry = channel_snapshots
+                            .entry(p.target_resource.clone())
+                            .or_insert_with(|| serde_json::json!({}));
+                        p.result_snapshot
+                            .as_ref()
+                            .map(|result| *entry = result.clone())
+                            .unwrap_or_else(|| {
+                                let _ = dyna_core::diff::apply_patch(entry, &p.operations);
+                            });
+                    });
+                izip!(&channel_snapshots)
+                    .try_for_each(|(resource_id, value)| {
+                        repo.save_snapshot_for_channel(&channel.name, resource_id, value)
+                            .map_err(to_py_err)
+                    })
+            })?;
 
+        // Set current channel to main (or first available).
         izip!(&response.channels)
             .find(|c| c.name == "main")
-            .map(|c| c)
-            .map(|main_ch| -> PyResult<()> {
-                repo.set_current_channel(&main_ch.name).map_err(to_py_err)?;
-                main_ch.head_change_id.as_ref().map(|head| {
+            .or_else(|| response.channels.first())
+            .map(|ch| -> PyResult<()> {
+                repo.set_current_channel(&ch.name).map_err(to_py_err)?;
+                ch.head_change_id.as_ref().map(|head| {
                     repo.set_working_change(Some(head)).map_err(to_py_err)
                 }).transpose()?;
                 Ok(())
             })
-            .or_else(|| {
-                response.channels.first().map(|first_ch| {
-                    repo.set_current_channel(&first_ch.name).map_err(to_py_err)
-                })
-            })
             .transpose()?;
+
+        // Write working directory files from the current channel's snapshots.
+        izip!(&repo.load_all_snapshots().map_err(to_py_err)?)
+            .try_for_each(|(resource_id, value)| -> PyResult<()> {
+                serde_json::to_string_pretty(value)
+                    .map_err(|e| to_py_err(e.into()))
+                    .and_then(|json| {
+                        repo.write_resource_file(resource_id, &json)
+                            .map_err(to_py_err)
+                    })
+            })?;
 
         let sync_state = izip!(&response.channels).fold(SyncState::default(), |mut state, ch| {
             ch.head_change_id.as_ref().map(|head| {
@@ -848,10 +869,21 @@ impl DynaRepo {
         Ok(())
     }
 
-    /// Switch to a channel.
+    /// Switch to a channel, rebuilding working directory files from the
+    /// new channel's snapshots.
     fn switch_channel(&self, name: &str) -> PyResult<()> {
         let _ch = self.repo.load_channel(name).map_err(to_py_err)?;
-        self.repo.set_current_channel(name).map_err(to_py_err)
+        self.repo.set_current_channel(name).map_err(to_py_err)?;
+        // Rebuild working directory from the new channel's snapshots
+        izip!(&self.repo.load_all_snapshots().map_err(to_py_err)?)
+            .try_for_each(|(resource_id, value)| -> PyResult<()> {
+                serde_json::to_string_pretty(value)
+                    .map_err(|e| to_py_err(e.into()))
+                    .and_then(|json| {
+                        self.repo.write_resource_file(resource_id, &json)
+                            .map_err(to_py_err)
+                    })
+            })
     }
 
     // -----------------------------------------------------------------------

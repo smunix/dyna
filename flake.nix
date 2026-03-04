@@ -403,7 +403,6 @@
             subPackages = [ "lazycat" "examples/demo" ];
             buildPhase = ''
               runHook preBuild
-              cd lazy-go
               go build ./lazycat/...
               go build -o lazy-go-demo ./examples/demo
               runHook postBuild
