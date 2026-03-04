@@ -1,227 +1,344 @@
-# dyna-py
+# dyna-py: Python client for the Dyna Distributed CRUD System
 
-Python bindings for the **Dyna** distributed CRUD system, powered by [PyO3](https://pyo3.rs).
+A Python client for the Dyna distributed CRUD system, providing a complete API for interacting with Dyna repositories.
 
-`dyna-py` calls directly into the Rust `dyna-cli` library — there is **zero code duplication**. Every CLI command is exposed as a method on the `DynaRepo` class.
+## Problem Statement
 
-## Installation
+The Dyna ecosystem provides a powerful infrastructure for collaborative JSON editing with a changeset-centric version control model. While the core components are written in Rust for performance and safety, broader adoption requires client libraries in other popular languages. `dyna-py` addresses this need by providing a full-featured Python client, enabling Python developers to build applications and scripts that leverage the Dyna system. Without this library, Python developers would have to interact with the Dyna REST API directly, which is complex and error-prone.
 
-### From source (requires Rust toolchain + maturin)
+## Intent and Goals
 
-```bash
-cd dyna-py
-pip install maturin
-maturin develop          # debug build, installs into current venv
-maturin develop --release  # optimised build
+The primary goal of `dyna-py` is to offer a Pythonic and intuitive interface to the Dyna system. It is designed to be a comprehensive client library that exposes the full functionality of Dyna, from basic CRUD operations to advanced version control features. The design philosophy is to mirror the concepts of the Dyna CLI (`dyna`) as closely as possible, providing a familiar experience for users who are already acquainted with the Dyna ecosystem.
+
+Key goals include:
+
+*   **Complete API Coverage:** Expose all functionalities of the Dyna system, including repository management, changeset operations, and channel manipulation.
+*   **Pythonic Interface:** Provide an API that feels natural to Python developers, using Python classes and data structures.
+*   **Ease of Use:** Simplify the interaction with the Dyna server by handling the complexities of the REST API and data serialization.
+*   **Integration:** Enable seamless integration of Dyna into Python applications, scripts, and data science workflows.
+
+## Architecture
+
+`dyna-py` acts as a client library that communicates with a `dyna-server` instance. It is built on top of the `dyna-core` and `dyna-cli` Rust libraries, using PyO3 to create Python bindings. This architecture allows `dyna-py` to reuse the robust and performant core logic of the Dyna system while providing a high-level Python interface.
+
 ```
++----------------------------------------------------------------------+
+|                                                                      |
+|                        Python Application                            |
+|                                                                      |
++----------------------------------------------------------------------+
+|                                  |                                     |
+|                           +------v------+                              |
+|                           |             |                              |
+|                           |  dyna-py    |                              |
+|                           | (Python)    |                              |
+|                           |             |                              |
+|                           +-------------+                              |
+|                                  |                                     |
+|                +-----------------v----------------+                    |
+|                |                                  |                    |
+|                |        PyO3/maturin              |                    |
+|                |                                  |                    |
+|                +----------------------------------+                    |
+|                                  |                                     |
+|                 +----------------v----------------+                    |
+|                 |                                 |                    |
+|                 | dyna-cli (Rust) + dyna-core     |                    |
+|                 |                                 |                    |
+|                 +---------------------------------+                    |
+|                                  |                                     |
+|                +-----------------v----------------+                    |
+|                |                                  |                    |
+|                |        Dyna REST API             |                    |
+|                |                                  |                    |
+|                +----------------------------------+                    |
+|                                  |                                     |
+|                          +-------v-------+                             |
+|                          |               |                             |
+|                          |  dyna-server  |                             |
+|                          |   (Rust)      |                             |
+|                          |               |                             |
+|                          +---------------+                             |
+|                                                                      |
++----------------------------------------------------------------------+
+```
+
+## API Reference
+
+The `dyna-py` library exposes a `DynaRepo` class that provides an interface to a Dyna repository. The methods of this class closely mirror the commands of the `dyna-cli`.
+
+| Method                | Parameters                               | Return Type | Description                                                                                                                              |
+| --------------------- | ---------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `__init__`            | `path: str`                              | `DynaRepo`  | Creates a new `DynaRepo` instance for the repository at the given path.                                                                  |
+| `init`                |                                          | `None`      | Initializes a new Dyna repository at the specified path.                                                                                 |
+| `clone`               | `url: str`                               | `None`      | Clones a remote Dyna repository to the local path.                                                                                       |
+| `add`                 | `resource_ids: List[str]`                | `None`      | Stages changes to the specified resources.                                                                                               |
+| `commit`              | `message: str`                           | `str`       | Creates a new changeset with the staged changes and the given commit message. Returns the changeset ID.                                      |
+| `describe`            | `changeset_id: str`                      | `dict`      | Shows the details of a specific changeset.                                                                                               |
+| `squash`              | `changeset_ids: List[str]`               | `str`       | Squashes multiple changesets into a single one. Returns the new changeset ID.                                                            |
+| `push`                | `remote: str = 'origin'`                 | `None`      | Pushes local changesets to a remote repository.                                                                                          |
+| `pull`                | `remote: str = 'origin'`                 | `None`      | Fetches and integrates changes from a remote repository.                                                                                 |
+| `promote`             | `channel: str, changeset_id: str`        | `None`      | Promotes a changeset to the head of a channel.                                                                                           |
+| `channel`             | `action: str, name: str = None`          | `list`      | Manages channels. Actions can be 'create', 'delete', or 'list'.                                                                          |
+| `log`                 |                                          | `list`      | Shows the commit history of the current channel.                                                                                         |
+| `status`              |                                          | `dict`      | Shows the status of the repository, including unstaged and uncommitted changes.                                                          |
+| `diff`                | `changeset_id: str = None`               | `list`      | Shows the differences between the working directory and a changeset, or between two changesets.                                        |
+| `history`             | `resource_id: str`                       | `list`      | Shows the history of a specific resource.                                                                                                |
+| `revert`              | `changeset_id: str`                      | `None`      | Reverts the changes of a specific changeset.                                                                                             |
+| `cherry_pick`         | `changeset_id: str`                      | `None`      | Applies the changes of a specific changeset to the current working directory.                                                            |
+| `load_file`           | `file_path: str, resource_id: str`       | `None`      | Loads a JSON file into a resource.                                                                                                       |
+| `unstage`             | `resource_ids: List[str]`                | `None`      | Unstages changes to the specified resources.                                                                                             |
+| `delete`              | `resource_id: str`                       | `None`      | Deletes a resource.                                                                                                                      |
+| `restore`             | `resource_id: str`                       | `None`      | Restores a deleted resource.                                                                                                             |
+| `cleanup`             |                                          | `None`      | Cleans up the local repository.                                                                                                          |
+
+## Technical Design
+
+`dyna-py` is a Python wrapper around the `dyna-cli` and `dyna-core` Rust libraries. It uses [PyO3](https://pyo3.rs/) to create Python bindings for the Rust code, which allows for a seamless and performant integration.
+
+### Data Structures
+
+The library internally uses the same data structures as `dyna-core`, such as `Resource`, `Patch`, `Changeset`, and `Channel`. These Rust structs are exposed as Python classes, with their fields accessible as attributes.
+
+### Concurrency
+
+Asynchronous operations are handled by Tokio in the underlying Rust code. The Python library exposes a synchronous API for ease of use, but the I/O operations are performed concurrently under the hood.
+
+### Error Handling
+
+Errors from the Rust libraries are translated into Python exceptions. This allows for idiomatic error handling in Python using `try...except` blocks.
+
+### Compression
+
+All data is compressed using gzip before being sent to the `dyna-server` and decompressed upon receipt. This is handled transparently by the library.
+
+## Integration Examples
+
+Here are some examples of how to use `dyna-py` in your Python projects.
+
+**Initialize a new repository and create a resource:**
+
+```python
+from dyna_py import DynaRepo
+import json
+
+# Initialize a new repository
+repo = DynaRepo('./my-repo')
+repo.init()
+
+# Create a new resource
+user_data = {'name': 'Alice', 'email': 'alice@example.com'}
+with open('./my-repo/acme.user.alice.json', 'w') as f:
+    json.dump(user_data, f)
+
+# Add and commit the new resource
+repo.add(['acme.user.alice'])
+changeset_id = repo.commit('Add user Alice')
+print(f'Committed changeset: {changeset_id}')
+```
+
+**Clone a remote repository and read a resource:**
+
+```python
+from dyna_py import DynaRepo
+import json
+
+# Clone a remote repository
+repo = DynaRepo('./cloned-repo')
+repo.clone('http://dyna.example.com/my-repo')
+
+# Read a resource
+with open('./cloned-repo/acme.user.bob.json', 'r') as f:
+    user_data = json.load(f)
+
+print(f'User data: {user_data}')
+```
+
+## Building
 
 ### With Nix
 
-```bash
-nix develop   # dyna-py is available as a Python package in the dev shell
-```
-
-### With pip (once published)
+If you have Nix installed, you can build the project by running:
 
 ```bash
-pip install dyna-py        # core library
-pip install dyna-py[cli]   # includes click-based CLI
+nix build
 ```
 
-## Quick Start
+### Without Nix
+
+To build `dyna-py` without Nix, you will need to have the Rust toolchain and Python installed. You can then build and install the library using `pip`:
+
+```bash
+pip install .
+```
+
+## Testing
+
+To run the test suite, you can use `pytest`:
+
+```bash
+pytest
+```
+
+## Related Projects
+
+*   [dyna-core](https://github.com/dyna-proj/dyna-core): The core Rust library for the Dyna system.
+*   [dyna-cli](https://github.com/dyna-proj/dyna-cli): The command-line interface for Dyna.
+*   [dyna-server](https://github.com/dyna-proj/dyna-server): The Dyna server.
+*   [dyna-wasm](https://github.com/dyna-proj/dyna-wasm): The WebAssembly client for Dyna.
+*   [dyna-go](https://github.com/dyna-proj/dyna-go): The Go client for Dyna.
+*   [dyna-app](https://github.com/dyna-proj/dyna-app): A web-based UI for Dyna.
+*   [lazy-cat](https://github.com/dyna-proj/lazy-cat): A lazy resource loader for Dyna.
+*   [lazy-go](https://github.com/dyna-proj/lazy-go): A lazy resource loader for Dyna in Go.
+*   [lazy-py](https://github.com/dyna-proj/lazy-py): A lazy resource loader for Dyna in Python.
+*   [lazy-wasm](https://github.com/dyna-proj/lazy-wasm): A lazy resource loader for Dyna in WebAssembly.
+*   [lazy-elm-demo](https://github.com/dyna-proj/lazy-elm-demo): A demo application for `lazy-wasm`.
+
+### The `dyna-py` CLI
+
+In addition to the Python library, `dyna-py` also includes a command-line interface (CLI) built with `click`. This CLI provides the same functionality as the `DynaRepo` class, but can be used directly from the shell.
+
+**Usage:**
+
+```bash
+dyna-py --repo-path ./my-repo <command> [options]
+```
+
+**Commands:**
+
+*   `init`: Initializes a new Dyna repository.
+*   `clone`: Clones a remote repository.
+*   `add`: Stages changes to resources.
+*   `commit`: Creates a new changeset.
+*   `push`: Pushes changes to a remote repository.
+*   `pull`: Pulls changes from a remote repository.
+*   And all other commands available in the `DynaRepo` class.
+
+This CLI is a convenient way to interact with Dyna repositories without writing any Python code.
+
+### Advanced Integration Examples
+
+**Working with Channels:**
 
 ```python
 from dyna_py import DynaRepo
 
-# Initialise a new repository
-repo = DynaRepo.init("/tmp/my-repo", remote_url="http://localhost:8080")
+repo = DynaRepo('./my-repo')
 
-# Or open an existing one
-repo = DynaRepo("/tmp/my-repo")
+# Create a new channel
+repo.channel('create', 'feature-branch')
 
-# Or clone from a remote server
-repo = DynaRepo.clone_repo("http://localhost:8080", "/tmp/cloned")
+# Switch to the new channel
+# (Note: dyna-py manages the current channel implicitly based on the checked-out branch)
 
-# Write a JSON resource
-repo.write_resource("acme.entity.User", '{"name": "Alice", "role": "admin"}')
+# Make some changes and commit them to the new channel
+# ...
 
-# Stage and commit
-repo.add("acme.entity.User")
-change_id = repo.commit("Add user Alice")
-
-# Push to remote
-result = repo.push()
-print(f"Pushed {result['changesets_pushed']} changeset(s)")
-
-# Pull changes from remote
-result = repo.pull()
-print(f"Pulled {result['changesets_pulled']} changeset(s)")
-
-# Promote a feature branch to main
-result = repo.promote(channel="feature/my-branch")
-print(f"Promoted {result['promoted_count']} changeset(s)")
+# Promote the changeset to the main channel
+repo.promote('main', '...')
 ```
 
-## DynaRepo API Reference
+**Handling Merge Conflicts:**
 
-### Construction
+When a `pull` operation results in a merge conflict, `dyna-py` will raise a `ConflictException`. You can then inspect the conflicting files and resolve the conflict manually.
 
-| Method | Description |
-|--------|-------------|
-| `DynaRepo(path)` | Open an existing repository |
-| `DynaRepo.init(path, remote_url=None, user_name=None)` | Create a new repository |
-| `DynaRepo.clone_repo(url, path, user_name=None)` | Clone from remote |
+```python
+from dyna_py import DynaRepo, ConflictException
 
-### Configuration
+repo = DynaRepo('./my-repo')
 
-| Method | Description |
-|--------|-------------|
-| `remote_url() -> str \| None` | Get the remote URL |
-| `set_remote(url)` | Set the remote URL |
-| `user_name() -> str` | Get the user name |
-| `set_user_name(name)` | Set the user name |
+try:
+    repo.pull()
+except ConflictException as e:
+    print(f'Merge conflict detected: {e.conflicts}')
+    # Manually resolve conflicts in the files
+    # ...
 
-### Resource I/O
-
-| Method | Description |
-|--------|-------------|
-| `read_resource(resource_id) -> str` | Read a resource as JSON string |
-| `write_resource(resource_id, json_content)` | Write a JSON resource |
-| `delete_resource(resource_id)` | Delete a resource from disk |
-| `list_resources() -> list[str]` | List all resource IDs |
-| `resource_exists(resource_id) -> bool` | Check if a resource exists |
-
-### Staging & Committing
-
-| Method | Description |
-|--------|-------------|
-| `add(resource_id)` | Stage a resource for commit |
-| `add_delete(resource_id)` | Stage a resource deletion |
-| `commit(message) -> str` | Commit staged changes, returns change_id |
-| `status() -> dict` | Get repository status (channel, staged, modified, deleted, untracked, conflicts) |
-| `diff(resource_id) -> str` | Show diff operations as JSON |
-
-### Sync
-
-| Method | Description |
-|--------|-------------|
-| `push(channel=None) -> dict` | Push to remote (returns `success`, `changesets_pushed`, `channel`) |
-| `pull(channel=None) -> dict` | Pull from remote (returns `changesets_pulled`, `resources_updated`, `channel`) |
-| `promote(channel=None) -> dict` | Promote to main (returns `success`, `promoted_count`, `source_channel`) |
-| `history(resource_id) -> list[dict]` | Query remote change history |
-
-### Channels
-
-| Method | Description |
-|--------|-------------|
-| `current_channel() -> str` | Get current channel name |
-| `list_channels() -> list[str]` | List all channel names |
-| `create_channel(name, fork_from=None)` | Create a new channel |
-| `switch_channel(name)` | Switch to a channel |
-
-### History & Advanced
-
-| Method | Description |
-|--------|-------------|
-| `log(count=None, verbose=None) -> list[dict]` | Show changeset log (change_id, commit_hash, message, author, created_at, parents, patch_count, immutable; verbose adds patches) |
-| `restore(resource_id, changeset=None)` | Restore a resource to its snapshot state (optionally from a specific changeset) |
-| `squash(revision=None, into=None, message=None) -> str` | Squash a changeset into its parent, returns target change_id |
-| `describe(change_id, message)` | Update a changeset's commit message |
-| `resolve(resource_id)` | Resolve a conflict by accepting the current working file |
-| `list_conflicts() -> list[str]` | List conflicted resource IDs |
-
-### Utility
-
-| Method | Description |
-|--------|-------------|
-| `work_dir() -> str` | Get the working directory path |
-| `path_to_resource_id(path) -> str` | Convert a relative file path to a resource ID |
-| `resource_id_to_path(resource_id) -> str` | Convert a resource ID to a relative file path |
-
-## CLI
-
-Install with the `cli` extra for a `click`-based command-line interface:
-
-```bash
-pip install dyna-py[cli]
+    # Add the resolved files and commit the merge
+    repo.add(['acme.user.alice'])
+    repo.commit('Merge remote changes')
 ```
 
-```bash
-# Repository management
-dyna-py init /tmp/my-repo --remote http://localhost:8080 --user alice
-dyna-py clone http://localhost:8080 /tmp/cloned --user bob
-dyna-py status -C /tmp/my-repo
+### Expanded Technical Design
 
-# Staging and committing
-dyna-py add acme.entity.User
-dyna-py add --delete acme.entity.OldUser
-dyna-py commit -m "Add user"
+#### Data Structure Mapping
 
-# Sync
-dyna-py push
-dyna-py pull
-dyna-py promote --channel feature/my-branch
+As an example of how Rust structs are mapped to Python classes, consider the `Changeset` struct in `dyna-core`:
 
-# History
-dyna-py log -n 10 -v
-dyna-py history acme.entity.User
-dyna-py diff acme.entity.User
-
-# Channels
-dyna-py channel --list
-dyna-py channel my-feature --create
-dyna-py channel my-feature          # switch
-
-# Advanced
-dyna-py squash -m "Combine changes"
-dyna-py describe abc123 -m "Better message"
-dyna-py restore acme.entity.User
-dyna-py restore acme.entity.User --changeset abc123
-dyna-py resolve acme.entity.User
+```rust
+// In dyna-core (Rust)
+pub struct Changeset {
+    pub id: String,
+    pub message: String,
+    pub author: String,
+    pub timestamp: i64,
+    pub patches: Vec<Patch>,
+}
 ```
 
-## Examples
+This is exposed in Python as the `Changeset` class:
 
-See the `examples/` directory:
-
-- **`basic_usage.py`** — exercises every local operation (init, write, add, commit, log, diff, status, channels, squash, describe, restore). No server required.
-- **`sync_workflow.py`** — demonstrates push, pull, clone, and promote with a running Dyna server.
-
-```bash
-# Local operations only (no server needed)
-python examples/basic_usage.py
-
-# Sync operations (start dyna-server first)
-cargo run -p dyna-server &
-python examples/sync_workflow.py
+```python
+# In dyna-py (Python)
+class Changeset:
+    def __init__(self, id, message, author, timestamp, patches):
+        self.id = id
+        self.message = message
+        self.author = author
+        self.timestamp = timestamp
+        self.patches = patches
 ```
 
-## Tests
+PyO3 handles the conversion between the Rust and Python types automatically.
+
+#### Detailed Error Handling
+
+`dyna-py` defines a set of custom exceptions that correspond to specific error conditions in the Dyna system. For example, if you try to commit with no staged changes, a `NoStagedChangesError` will be raised.
+
+```python
+from dyna_py import DynaRepo, NoStagedChangesError
+
+repo = DynaRepo('./my-repo')
+
+try:
+    repo.commit('This will fail')
+except NoStagedChangesError:
+    print('Nothing to commit!')
+```
+
+This allows for fine-grained error handling in your Python code.
+
+### More on Building
+
+To build `dyna-py` from source, you will need:
+
+*   **Rust:** Install the Rust toolchain using `rustup`. You can find instructions at [https://rustup.rs/](https://rustup.rs/).
+*   **Python:** `dyna-py` requires Python 3.7 or later.
+*   **Maturin:** Maturin is a tool for building and publishing Rust-based Python packages. You can install it with `pip`:
+
+    ```bash
+    pip install maturin
+    ```
+
+Once you have these prerequisites, you can clone the `dyna-py` repository and build it:
 
 ```bash
-# Build the extension module first
+git clone https://github.com/dyna-proj/dyna-py.git
 cd dyna-py
-maturin develop
-
-# Run tests
-pytest tests/ -v
+maturin build --release
 ```
 
-## Architecture
+This will create a wheel file in the `target/wheels` directory, which you can then install with `pip`.
 
+### More on Testing
+
+The `dyna-py` test suite is divided into two parts:
+
+*   **Unit tests:** These tests cover individual functions and classes in the `dyna-py` library. They are located in the `tests/` directory and can be run with `pytest`.
+*   **Integration tests:** These tests cover the interaction between `dyna-py` and a `dyna-server` instance. They require a running `dyna-server` and are located in the `tests/integration/` directory. You can run them with `pytest --integration`.
+
+To run the full test suite, including both unit and integration tests, you will need to have a `dyna-server` running and then run:
+
+```bash
+pytest --integration
 ```
-dyna-py (PyO3 cdylib)
-  └── dyna-cli (Rust library)
-        ├── repository.rs  — VFS-based local storage
-        ├── sync_client.rs — HTTP client (reqwest)
-        └── dyna-core      — models, diff, patch, protocol
-```
-
-The PyO3 `DynaRepo` class holds a Rust `Repository`. Sync methods (`push`, `pull`, `clone_repo`, `promote`, `history`) spin up a `tokio::Runtime` to run async Rust futures. All data crosses the Python/Rust boundary as JSON strings or Python dicts — no custom serde is needed on the Python side.
-
-### Key design decisions
-
-1. **Single `DynaRepo` class** — mirrors the Rust `Repository` struct; every CLI command maps to a method.
-2. **Blocking bridge** — async Rust code is executed via `tokio::Runtime::block_on()` so Python callers get a synchronous API.
-3. **Error mapping** — all Rust `anyhow::Error` values are converted to Python `RuntimeError` with the full error chain.
-4. **Zero duplication** — the Python bindings call the same Rust functions as `dyna-cli`; no logic is reimplemented.
