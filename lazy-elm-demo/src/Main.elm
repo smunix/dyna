@@ -471,8 +471,10 @@ viewResourceDetail model =
             Just res ->
                 div []
                     [ h3 [ class "resource-id" ] [ text res.id ]
-                    , pre [ class "json-view" ]
-                        [ text (jsonPretty res.value) ]
+                    , div [ style "margin-top" "8px" ]
+                        [ pre [ class "json-view" ]
+                            [ text (jsonPretty res.value) ]
+                        ]
                     ]
 
             Nothing ->
@@ -507,8 +509,15 @@ viewResourceCard : Resource -> Html Msg
 viewResourceCard res =
     div [ class "resource-card", onClick (FetchResource res.id) ]
         [ div [ class "resource-card-header" ] [ text res.id ]
-        , pre [ class "json-view json-view-small" ]
-            [ text (jsonPretty res.value) ]
+        , let
+            pretty = jsonPretty res.value
+          in
+          if String.length pretty > 2 then
+            pre [ class "json-view json-view-small" ]
+                [ text pretty ]
+          else
+            pre [ class "json-view json-view-small" ]
+                [ text pretty ]
         ]
 
 

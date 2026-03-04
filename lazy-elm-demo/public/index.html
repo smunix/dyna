@@ -164,7 +164,14 @@
             font-size: 0.75rem;
             color: var(--accent);
         }
-        .resource-list { list-style: none; }
+        .resource-list {
+            list-style: none;
+            max-height: calc(100vh - 420px);
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 4px;
+        }
         .resource-item {
             padding: 6px 8px;
             border-radius: 4px;
@@ -194,7 +201,7 @@
             word-break: break-word;
             line-height: 1.5;
         }
-        .json-view-small { font-size: 0.75rem; padding: 8px; }
+        .json-view-small { font-size: 0.75rem; padding: 8px; max-height: 200px; overflow-y: auto; }
 
         .resource-id {
             font-family: var(--font-mono);
@@ -205,8 +212,11 @@
         /* ── Resource Cards ───────────────────────────────────────────── */
         .all-resources {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 4px;
         }
         .resource-card {
             background: var(--bg);
@@ -226,7 +236,7 @@
         }
 
         /* ── Update Log ───────────────────────────────────────────────── */
-        .update-log-card { flex: 1; min-height: 200px; }
+        .update-log-card { flex: 1; min-height: 200px; max-height: 50vh; overflow-y: auto; }
         .card-header-row {
             display: flex;
             justify-content: space-between;
@@ -404,25 +414,32 @@
             }
         });
 
-        // ── Get Resource ────────────────────────────────────────────────
+        // ── Get Resource ────────────────────────────────────────────
         safeSub('getResource', async function(rid) {
             await wasmReady;
             if (!client) return;
             try {
                 const value = client.get(rid);
-                app.ports.onResourceResult.send({ id: rid, value: value });
+                // Ensure we send a proper object (not null/undefined)
+                const safeValue = value != null ? value : {};
+                console.log('[lazy-elm-demo] getResource', rid, '→', JSON.stringify(safeValue).substring(0, 200));
+                app.ports.onResourceResult.send({ id: rid, value: safeValue });
             } catch (e) {
                 console.error('[lazy-elm-demo] getResource error:', e);
+                // Send error state so the UI shows something
+                app.ports.onResourceResult.send({ id: rid, value: { _error: e.message || String(e) } });
             }
         });
 
-        // ── Get All Resources ───────────────────────────────────────────
+        // ── Get All Resources ───────────────────────────────────────
         safeSub('getAllResources', async function(_) {
             await wasmReady;
             if (!client) { app.ports.onAllResources.send({}); return; }
             try {
                 const all = client.get_all();
-                app.ports.onAllResources.send(all);
+                const safeAll = all != null ? all : {};
+                console.log('[lazy-elm-demo] getAllResources →', Object.keys(safeAll).length, 'resources');
+                app.ports.onAllResources.send(safeAll);
             } catch (e) {
                 console.error('[lazy-elm-demo] getAllResources error:', e);
                 app.ports.onAllResources.send({});
@@ -435,7 +452,8 @@
             if (!client) { app.ports.onStreamComplete.send(null); return; }
             try {
                 client.for_each_all(function(id, value) {
-                    app.ports.onStreamedResource.send({ id: id, value: value });
+                    const safeValue = value != null ? value : {};
+                    app.ports.onStreamedResource.send({ id: id, value: safeValue });
                 });
                 app.ports.onStreamComplete.send(null);
             } catch (e) {
