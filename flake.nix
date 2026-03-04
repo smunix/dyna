@@ -696,7 +696,7 @@
                 echo "  WASM package ready."
               else
                 echo "Building lazy-wasm from source..."
-                if wasm-pack build lazy-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
+                if ${pkgs.wasm-pack}/bin/wasm-pack build lazy-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
                   echo "  WASM package built successfully."
                 else
                   echo "  Error: wasm-pack build failed and no pre-built artifacts available."
@@ -707,7 +707,7 @@
 
             # Compile the Elm app
             echo "Compiling Elm app..."
-            (cd "$ELM_SRC" && elm make src/Main.elm --optimize --output=public/elm.js)
+            (cd "$ELM_SRC" && ${pkgs.elmPackages.elm}/bin/elm make src/Main.elm --optimize --output=public/elm.js)
 
             # Serve with correct MIME types
             echo ""
@@ -744,7 +744,7 @@
               else
                 # Fallback: build from source with wasm-pack
                 echo "Building dyna-wasm from source..."
-                if wasm-pack build dyna-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
+                if ${pkgs.wasm-pack}/bin/wasm-pack build dyna-wasm --target web --out-dir "$PKG_DIR" 2>&1; then
                   echo "  WASM package built successfully."
                 else
                   echo "  Error: wasm-pack build failed and no pre-built artifacts available."
@@ -757,7 +757,7 @@
 
             # Compile the Elm app
             echo "Compiling Elm app..."
-            (cd "$ELM_SRC" && elm make src/Main.elm --optimize --output=public/elm.js)
+            (cd "$ELM_SRC" && ${pkgs.elmPackages.elm}/bin/elm make src/Main.elm --optimize --output=public/elm.js)
 
             # Serve with correct MIME types (especially .wasm -> application/wasm)
             echo ""
