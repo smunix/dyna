@@ -126,6 +126,27 @@ impl LazyWasmClient {
             .await
             .map_err(to_js)?;
 
+        web_sys::console::log_1(
+            &format!(
+                "lazy-wasm: clone response: {} channels, {} changesets, {} snapshots",
+                clone_resp.channels.len(),
+                clone_resp.changesets.len(),
+                clone_resp.snapshots.len()
+            )
+            .into(),
+        );
+        izip!(&clone_resp.channels).for_each(|ch| {
+            web_sys::console::log_1(
+                &format!(
+                    "lazy-wasm: channel '{}': head={:?}, {} changesets",
+                    ch.name,
+                    ch.head_change_id,
+                    ch.changesets.len()
+                )
+                .into(),
+            );
+        });
+
         izip!(&clone_resp.changesets)
             .try_for_each(|cs| repo.store_changeset(cs))
             .map_err(to_js)?;
@@ -141,11 +162,18 @@ impl LazyWasmClient {
             .chain(clone_resp.snapshots.keys().cloned())
             .collect();
 
+        web_sys::console::log_1(
+            &format!("lazy-wasm: known_ids count: {}", known_ids.len()).into(),
+        );
+
         izip!(&clone_resp.snapshots)
             .try_for_each(|(rid, val)| repo.save_snapshot(rid, val))
             .map_err(to_js)?;
 
         let loaded: HashSet<String> = clone_resp.snapshots.keys().cloned().collect();
+        web_sys::console::log_1(
+            &format!("lazy-wasm: loaded (from snapshots): {}", loaded.len()).into(),
+        );
 
         clone_resp
             .channels
@@ -278,14 +306,27 @@ impl LazyWasmClient {
 
 fn materialise_resource(repo: &Repository, channel: &str, resource_id: &str) -> Result<()> {
     if repo.load_snapshot(resource_id)?.is_some() {
+        web_sys::console::log_1(
+            &format!("lazy-wasm: materialise_resource({resource_id}): already have snapshot").into(),
+        );
         return Ok(());
     }
     let channel_data = repo.load_channel(channel)?;
+    web_sys::console::log_1(
+        &format!(
+            "lazy-wasm: materialise_resource({resource_id}): channel '{}' has {} changesets",
+            channel,
+            channel_data.changesets.len()
+        )
+        .into(),
+    );
+    let mut patch_count = 0usize;
     let snapshot = izip!(&channel_data.changesets)
         .filter_map(|cid| repo.load_changeset(cid).ok())
         .flat_map(|cs| cs.patches.into_iter())
         .filter(|p| p.target_resource == resource_id)
         .try_fold(Value::Null, |acc, patch| -> Result<Value> {
+            patch_count += 1;
             patch
                 .result_snapshot
                 .map(Ok)
@@ -300,6 +341,13 @@ fn materialise_resource(repo: &Repository, channel: &str, resource_id: &str) -> 
                         .map_err(|e| anyhow::anyhow!("apply_patch: {e}"))
                 })
         })?;
+    web_sys::console::log_1(
+        &format!(
+            "lazy-wasm: materialise_resource({resource_id}): found {patch_count} patches, snapshot is_null={}",
+            snapshot.is_null()
+        )
+        .into(),
+    );
     if !snapshot.is_null() {
         repo.save_snapshot(resource_id, &snapshot)?;
     }
