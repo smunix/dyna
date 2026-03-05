@@ -1,0 +1,259 @@
+/*-- scss:defaults --*/
+
+// Dyna Easel Theme — gouache brushwork, warm cream backgrounds, burnt orange/teal accents
+$font-family-sans-serif: "DM Sans", "Inter", system-ui, sans-serif;
+$font-family-monospace: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+$presentation-font-size-root: 36px;
+$presentation-heading-font: "Playfair Display", "Georgia", serif;
+$presentation-heading-color: #2d2a26;
+$presentation-heading-font-weight: 700;
+
+// Colour palette
+$body-bg: #faf6f0;
+$body-color: #3a3632;
+$link-color: #c25e30;
+$link-color-hover: #a04820;
+$selection-bg: #c25e30;
+$selection-color: #faf6f0;
+
+// Accent colours as CSS custom properties
+$dyna-orange: #c25e30;
+$dyna-teal: #2a7a72;
+$dyna-cream: #faf6f0;
+$dyna-dark: #2d2a26;
+$dyna-muted: #7a7570;
+
+/*-- scss:rules --*/
+
+.reveal {
+  --dyna-orange: #{$dyna-orange};
+  --dyna-teal: #{$dyna-teal};
+  --dyna-cream: #{$dyna-cream};
+  --dyna-dark: #{$dyna-dark};
+  --dyna-muted: #{$dyna-muted};
+}
+
+// Title slide
+.reveal .slides section.title-slide {
+  text-align: left;
+  padding-left: 60px;
+
+  h1 {
+    font-size: 2.2em;
+    color: $dyna-dark;
+    border-bottom: 4px solid $dyna-orange;
+    padding-bottom: 0.3em;
+    margin-bottom: 0.4em;
+  }
+
+  p.subtitle {
+    font-size: 0.7em;
+    color: $dyna-muted;
+    font-style: italic;
+  }
+
+  p.author, p.date {
+    font-size: 0.55em;
+    color: $dyna-muted;
+  }
+}
+
+// Section headers (level 1 slides)
+.reveal .slides section.section-header {
+  background: linear-gradient(135deg, $dyna-dark 0%, darken($dyna-teal, 15%) 100%);
+
+  h2 {
+    color: $dyna-cream;
+    font-size: 2em;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+}
+
+// General slide styling
+.reveal .slides section {
+  text-align: left;
+  padding: 40px 60px;
+
+  h2 {
+    font-size: 1.3em;
+    color: $dyna-dark;
+    border-left: 5px solid $dyna-orange;
+    padding-left: 0.5em;
+    margin-bottom: 0.6em;
+  }
+
+  h3 {
+    font-size: 0.85em;
+    color: $dyna-teal;
+    font-weight: 600;
+    margin-bottom: 0.4em;
+  }
+}
+
+// Accent text
+.reveal .accent {
+  color: $dyna-orange;
+  font-weight: 700;
+}
+
+.reveal .teal {
+  color: $dyna-teal;
+  font-weight: 600;
+}
+
+// Tables
+.reveal table {
+  font-size: 0.55em;
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+
+  th {
+    background: $dyna-dark;
+    color: $dyna-cream;
+    padding: 0.5em 0.8em;
+    text-align: left;
+    font-weight: 600;
+  }
+
+  td {
+    padding: 0.4em 0.8em;
+    border-bottom: 1px solid darken($dyna-cream, 10%);
+  }
+
+  tr:nth-child(even) td {
+    background: darken($dyna-cream, 3%);
+  }
+}
+
+// Code blocks
+.reveal pre {
+  font-size: 0.5em;
+  background: $dyna-dark;
+  color: #e8e2d8;
+  border-radius: 8px;
+  padding: 1em;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-left: 4px solid $dyna-orange;
+}
+
+.reveal code {
+  font-family: $font-family-monospace;
+}
+
+.reveal p code, .reveal li code {
+  background: darken($dyna-cream, 6%);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  font-size: 0.85em;
+  color: $dyna-teal;
+}
+
+// Mermaid diagrams
+.reveal .mermaid {
+  background: transparent;
+}
+
+// Blockquotes
+.reveal blockquote {
+  border-left: 4px solid $dyna-teal;
+  background: darken($dyna-cream, 2%);
+  padding: 0.6em 1em;
+  font-style: italic;
+  color: $dyna-muted;
+  margin: 0.5em 0;
+  font-size: 0.75em;
+}
+
+// Columns
+.reveal .columns {
+  display: flex;
+  gap: 2em;
+}
+
+// Lists
+.reveal ul, .reveal ol {
+  font-size: 0.7em;
+  line-height: 1.6;
+}
+
+.reveal ul li::marker {
+  color: $dyna-orange;
+}
+
+.reveal ol li::marker {
+  color: $dyna-teal;
+  font-weight: 700;
+}
+
+// Fragment highlights
+.reveal .fragment.highlight-orange {
+  &.visible {
+    color: $dyna-orange;
+    font-weight: 700;
+  }
+}
+
+// Footer
+.reveal .slide-footer {
+  font-size: 0.35em;
+  color: $dyna-muted;
+  opacity: 0.6;
+}
+
+// Progress bar
+.reveal .progress span {
+  background: $dyna-orange;
+}
+
+// Slide number
+.reveal .slide-number {
+  color: $dyna-muted;
+  font-size: 0.4em;
+}
+
+// Callout boxes
+.reveal .callout {
+  border-radius: 6px;
+  padding: 0.6em 1em;
+  margin: 0.5em 0;
+  font-size: 0.65em;
+
+  &.callout-note {
+    background: lighten($dyna-teal, 50%);
+    border-left: 4px solid $dyna-teal;
+  }
+
+  &.callout-warning {
+    background: lighten($dyna-orange, 40%);
+    border-left: 4px solid $dyna-orange;
+  }
+}
+
+// Two-column layout helpers
+.reveal .side-by-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+  align-items: start;
+}
+
+// Metric cards
+.reveal .metric {
+  text-align: center;
+  padding: 0.5em;
+
+  .metric-value {
+    font-size: 2em;
+    font-weight: 800;
+    color: $dyna-orange;
+    font-family: $presentation-heading-font;
+  }
+
+  .metric-label {
+    font-size: 0.55em;
+    color: $dyna-muted;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+}

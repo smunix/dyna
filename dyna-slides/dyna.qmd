@@ -1,0 +1,652 @@
+---
+title: "Dyna"
+subtitle: "Distributed Version Control for Resource Catalogs"
+author: "SDMF Engineering"
+date: "2026"
+format:
+  revealjs:
+    theme: [default, dyna-theme.scss]
+    transition: fade
+    transition-speed: fast
+    slide-number: true
+    hash: true
+    history: true
+    center: false
+    width: 1280
+    height: 720
+    margin: 0.05
+    highlight-style: monokai
+    code-line-numbers: false
+    code-overflow: wrap
+    mermaid:
+      theme: neutral
+    footer: "Dyna — Distributed Version Control for Resource Catalogs"
+    logo: ""
+    preview-links: auto
+    navigation-mode: linear
+    controls: true
+    progress: true
+    touch: true
+---
+
+## {.title-slide}
+
+### Dyna
+
+**Distributed Version Control for Resource Catalogs**
+
+A Pijul-inspired system for collaborative JSON resource editing with S3 storage, changeset-based versioning, and an elfo-rs actor server.
+
+::: {.fragment}
+*From monolithic pain to distributed gain.*
+:::
+
+---
+
+## SDMF: A Massive Catalog of 40,000+ Resources
+
+The **Semantic Data Modeling Framework** became the backbone of enterprise data architecture — a living catalog of interconnected JSON resources.
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### Scale
+
+- **40,000+** JSON resources
+- **Hundreds** of namespaces
+- Entities, connectors, threat models
+- Semantic mappings and schemas
+
+:::
+
+::: {.column width="50%"}
+
+### Resource Types
+
+| Type | Count |
+|------|-------|
+| Entity Definitions | ~12,000 |
+| Connector Configs | ~8,000 |
+| Threat Models | ~5,000 |
+| Semantic Mappings | ~15,000 |
+
+:::
+
+::::
+
+---
+
+## Users Reported Critical Friction {background-color="#2d2a26"}
+
+::: {style="color: #faf6f0;"}
+
+### The pain was real and growing
+
+1. [**Minutes-long startup**]{.accent} — loading 40K resources into memory at launch
+2. [**Destructive overwrites**]{.accent} — no version history, last-write-wins
+3. [**No concurrent editing**]{.accent} — single-user lock on the entire catalog
+4. [**No branching**]{.accent} — experimental changes polluted production
+5. [**Excessive memory pressure**]{.accent} — entire catalog resident in RAM
+
+> "We lost three days of work because someone overwrote the connector namespace. There was no way to recover."
+
+:::
+
+---
+
+## The Vision: Git-Like Version Control for JSON
+
+We envisioned a system where every change is tracked, every branch is isolated, and every client stays in sync.
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### Core Principles
+
+- **Immutable changesets** — content-addressed, tamper-proof
+- **Channels** — isolated branches for safe experimentation
+- **Distributed sync** — push/pull like Git, but for JSON
+- **Lazy loading** — on-demand, not all-at-once
+
+:::
+
+::: {.column width="50%"}
+
+### Inspired By
+
+| System | Borrowed Concept |
+|--------|-----------------|
+| **Pijul** | Patch commutativity |
+| **Git** | Content-addressable storage |
+| **CouchDB** | JSON-native documents |
+| **Nix** | Reproducible builds |
+
+:::
+
+::::
+
+---
+
+## Data Model: Resources → Patches → Changesets → Channels
+
+Four layers, each building on the last — from raw JSON documents to named branches.
+
+```{mermaid}
+%%| fig-width: 11
+graph LR
+    R["Resource<br/><i>JSON document</i>"] --> P["Patch<br/><i>RFC 6902 diff + snapshot</i>"]
+    P --> CS["Changeset<br/><i>Content-addressed commit</i>"]
+    CS --> CH["Channel<br/><i>Named branch with HEAD</i>"]
+    style R fill:#c25e30,color:#fff,stroke:#a04820
+    style P fill:#2a7a72,color:#fff,stroke:#1d5c56
+    style CS fill:#2d2a26,color:#faf6f0,stroke:#1a1816
+    style CH fill:#7a7570,color:#fff,stroke:#5a5550
+```
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+| Layer | Identity | Immutable? |
+|-------|----------|-----------|
+| Resource | UUID | No (evolves) |
+| Patch | SHA-256 | Yes |
+| Changeset | SHA-256 | Yes |
+| Channel | Name string | No (HEAD moves) |
+
+:::
+
+::: {.column width="50%"}
+
+### RFC 6902 Operations
+
+```json
+[
+  {"op": "replace", "path": "/role", "value": "admin"},
+  {"op": "add", "path": "/permissions/-", "value": "write"},
+  {"op": "remove", "path": "/deprecated"}
+]
+```
+
+:::
+
+::::
+
+---
+
+## Architecture: One Protocol, Five Languages
+
+A Rust server at the center, with clients in Rust, Go, Python, WebAssembly, and Elm — all sharing the same REST + WebSocket protocol.
+
+```{mermaid}
+%%| fig-width: 11
+graph TB
+    subgraph Clients
+        CLI["dyna-cli<br/><i>Rust</i>"]
+        GO["dyna-go<br/><i>Go + afero</i>"]
+        PY["dyna-py<br/><i>Python/PyO3</i>"]
+        WASM["dyna-wasm<br/><i>Browser WASM</i>"]
+        ELM["dyna-app<br/><i>Elm UI</i>"]
+    end
+    subgraph Server
+        API["API Gateway<br/><i>axum</i>"]
+        CM["Changeset Manager<br/><i>elfo actor</i>"]
+        ST["S3 Storage<br/><i>object_store</i>"]
+    end
+    CLI --> API
+    GO --> API
+    PY --> API
+    WASM --> API
+    ELM --> WASM
+    API --> CM
+    CM --> ST
+    ST --> S3[("S3 Bucket")]
+    style API fill:#c25e30,color:#fff
+    style CM fill:#2a7a72,color:#fff
+    style ST fill:#2d2a26,color:#faf6f0
+    style S3 fill:#7a7570,color:#fff
+```
+
+---
+
+## Actor-Based Server with S3 Persistence
+
+The server uses the **elfo** actor framework for fault isolation, clean message-passing, and structured concurrency.
+
+:::: {.columns}
+
+::: {.column width="55%"}
+
+### Actor Hierarchy
+
+| Actor | Responsibility |
+|-------|---------------|
+| **API Gateway** | HTTP ↔ elfo bridge (axum) |
+| **Changeset Manager** | Validation, channels, merge |
+| **Storage Actor** | S3 I/O via `object_store` |
+| **Notification Actor** | WebSocket broadcast |
+
+### Message Flow
+
+```
+HTTP → API Gateway → Changeset Manager → Storage Actor → S3
+                                       ↘ Notification Actor → WebSocket
+```
+
+:::
+
+::: {.column width="45%"}
+
+### REST Endpoints
+
+| Method | Path |
+|--------|------|
+| `POST` | `/resources` |
+| `GET` | `/resources/:id` |
+| `PUT` | `/resources/:id` |
+| `DELETE` | `/resources/:id` |
+| `POST` | `/changesets` |
+| `POST` | `/push` |
+| `POST` | `/pull` |
+| `POST` | `/clone` |
+| `GET` | `/channels` |
+| `POST` | `/channels` |
+| `WS` | `/ws` |
+
+:::
+
+::::
+
+---
+
+## Lazy Loading: Minutes → Milliseconds
+
+Instead of loading 40,000 resources at startup, lazy clients fetch only metadata, materialise on-demand, cache locally, and receive real-time updates.
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### Traditional Loading
+
+```
+Startup: Load ALL 40K resources
+         ├── Fetch from S3        ~45s
+         ├── Deserialize JSON     ~30s
+         ├── Build index          ~15s
+         └── Ready                ~90s total
+         Memory: ~2.4 GB resident
+```
+
+### Lazy Loading
+
+```
+Startup: Connect + fetch metadata
+         ├── WebSocket connect    ~50ms
+         ├── List resource IDs    ~200ms
+         └── Ready                ~250ms total
+         Memory: ~12 MB baseline
+```
+
+:::
+
+::: {.column width="50%"}
+
+### On-Demand Materialisation
+
+1. User requests resource by ID
+2. Client fetches patches from server
+3. Replays RFC 6902 operations
+4. Caches materialised snapshot
+5. Subsequent reads hit local cache
+
+### Cache Invalidation
+
+- WebSocket push on changeset commit
+- Client re-materialises affected resources
+- Delivers `UpdateEvent` with full metadata
+
+:::
+
+::::
+
+---
+
+## Lazy Loaders in Four Languages
+
+Identical semantics across Rust, Go, Python, and WebAssembly — connect, list, get, subscribe.
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### Rust (lazy-cat)
+
+```rust
+let client = LazyClient::connect(url).await?;
+let ids = client.list_resources().await?;
+let resource = client.get_resource(&id).await?;
+client.on_update(|event| {
+    println!("Updated: {:?}", event.affected_resources);
+}).await;
+```
+
+### Go (lazy-go)
+
+```go
+client := lazydyna.NewClient(url)
+client.Connect(ctx)
+ids, _ := client.ListResources(ctx)
+res, _ := client.GetResource(ctx, id)
+client.OnUpdate(func(e UpdateEvent) {
+    fmt.Printf("Updated: %v\n", e.AffectedResources)
+})
+```
+
+:::
+
+::: {.column width="50%"}
+
+### Python (lazy-py)
+
+```python
+async with LazyClient(url) as client:
+    ids = await client.list_resources()
+    resource = await client.get_resource(id)
+    async for event in client.updates():
+        print(f"Updated: {event.affected_resources}")
+```
+
+### WASM (lazy-wasm)
+
+```javascript
+const client = await LazyWasmClient.new(url);
+const ids = client.list_resources();
+const resource = client.get_resource(id);
+client.on_update((event) => {
+    console.log("Updated:", event.affected_resources);
+});
+```
+
+:::
+
+::::
+
+---
+
+## Real-Time Collaboration via WebSocket
+
+Changes propagate to all connected clients within milliseconds. Every client receives rich `UpdateEvent` objects with full changeset metadata.
+
+```{mermaid}
+%%| fig-width: 11
+sequenceDiagram
+    participant A as Client A (Rust CLI)
+    participant S as Dyna Server
+    participant B as Client B (Go)
+    participant C as Client C (Elm UI)
+
+    A->>S: POST /push (changeset)
+    S->>S: Validate & store in S3
+    S-->>A: 200 OK
+    par WebSocket broadcast
+        S-->>B: UpdateEvent { changeset, affected_resources }
+        S-->>C: UpdateEvent { changeset, affected_resources }
+    end
+    B->>B: Re-materialise affected resources
+    C->>C: Re-materialise & update UI
+```
+
+### UpdateEvent Structure
+
+```json
+{
+  "changeset_id": "sha256:a1b2c3...",
+  "author": "alice",
+  "channel": "main",
+  "affected_resources": ["res-001", "res-042"],
+  "operations_count": 5,
+  "timestamp": "2026-03-05T10:30:00Z"
+}
+```
+
+---
+
+## Browser UI: Elm + WebAssembly
+
+Two browser applications for visual resource management — **dyna-app** for full CRUD editing and **lazy-elm-demo** for lazy-loading demonstration.
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### dyna-app (Full Editor)
+
+- Elm 0.19 + WASM bridge via ports
+- Create, read, update, delete resources
+- Channel management (create, switch, promote)
+- Changeset history and diff viewer
+- Real-time sync via WebSocket
+
+### Architecture
+
+```
+Elm App ←→ Ports ←→ JS Bridge ←→ WASM Client
+                                      ↕
+                                 Dyna Server
+```
+
+:::
+
+::: {.column width="50%"}
+
+### lazy-elm-demo (Lazy Viewer)
+
+- Two-panel layout with scrollable resource list
+- JSON detail view with syntax highlighting
+- Live update log with changeset metadata
+- On-demand resource materialisation
+- Minimal memory footprint
+
+### Key Features
+
+| Feature | Implementation |
+|---------|---------------|
+| Resource list | Scrollable, click-to-select |
+| Detail view | Pretty-printed JSON |
+| Live updates | Streaming event log |
+| Lazy fetch | WASM `get_resource()` |
+
+:::
+
+::::
+
+---
+
+## Reproducible Builds: One Nix Flake, 24+ Packages
+
+The entire ecosystem — server, CLI, clients, demos, OCI images — is built and deployed from a single `flake.nix`.
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### Package Matrix
+
+| Package | Language | Builder |
+|---------|----------|---------|
+| dyna-core | Rust | crane |
+| dyna-server | Rust | crane |
+| dyna-cli | Rust | crane |
+| dyna-wasm | Rust→WASM | wasm-pack |
+| dyna-py | Rust→Python | maturin |
+| dyna-go | Go | buildGoModule |
+| dyna-app | Elm | elmPackages |
+| lazy-cat | Rust | crane |
+| lazy-go | Go | buildGoModule |
+| lazy-py | Rust→Python | maturin |
+| lazy-wasm | Rust→WASM | wasm-pack |
+| lazy-elm-demo | Elm | elmPackages |
+
+:::
+
+::: {.column width="50%"}
+
+### Build Commands
+
+```bash
+# Build everything
+nix build .#all
+
+# Build specific package
+nix build .#dyna-server
+
+# Run demo
+nix run .#lazy-cat-demo
+
+# Development shell
+nix develop
+
+# OCI image
+nix build .#dyna-server-oci
+docker load < result
+```
+
+### Guarantees
+
+- **Hermetic** — no ambient system dependencies
+- **Reproducible** — same inputs → same outputs
+- **Cacheable** — Nix binary cache for CI
+- **Cross-platform** — Linux, macOS, WASM
+
+:::
+
+::::
+
+---
+
+## Impact: Transforming How Teams Work
+
+Dyna fundamentally changed the SDMF workflow — from fragile single-user editing to robust distributed collaboration.
+
+:::: {.columns}
+
+::: {.column width="33%"}
+
+::: {.metric}
+::: {.metric-value}
+360×
+:::
+::: {.metric-label}
+Faster Startup
+:::
+:::
+
+::: {.metric}
+::: {.metric-value}
+200×
+:::
+::: {.metric-label}
+Less Memory
+:::
+:::
+
+:::
+
+::: {.column width="33%"}
+
+::: {.metric}
+::: {.metric-value}
+100%
+:::
+::: {.metric-label}
+Audit Trail
+:::
+:::
+
+::: {.metric}
+::: {.metric-value}
+5
+:::
+::: {.metric-label}
+Client Languages
+:::
+:::
+
+:::
+
+::: {.column width="33%"}
+
+### Before → After
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Startup | ~90s | ~250ms |
+| Memory | 2.4 GB | 12 MB |
+| History | None | Full |
+| Concurrency | 1 user | Unlimited |
+| Branching | None | Channels |
+
+:::
+
+::::
+
+---
+
+## Roadmap: What Comes Next
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+### Near Term
+
+- **Three-way merge** — automatic conflict resolution for non-overlapping edits
+- **Partial namespace sync** — subscribe to subsets of the catalog
+- **JSON Schema validation** — enforce resource structure at commit time
+- **Incremental materialisation** — apply only new patches, skip replayed history
+
+:::
+
+::: {.column width="50%"}
+
+### Long Term
+
+- **Federated catalogs** — multi-server sync across organizational boundaries
+- **Conflict resolution UI** — visual merge tool in the Elm app
+- **Performance benchmarks** — published comparisons of full vs. lazy loading
+- **Branch/merge operations** — Git-like workflows with channel promotion
+
+:::
+
+::::
+
+::: {.fragment}
+
+### Design Principles Going Forward
+
+> Every feature must preserve the core invariants: immutable changesets, content-addressable storage, and lazy-by-default loading.
+
+:::
+
+---
+
+## {background-color="#2d2a26"}
+
+::: {style="text-align: center; color: #faf6f0; padding-top: 120px;"}
+
+### Thank You {style="font-size: 2em; color: #faf6f0; border: none;"}
+
+[Dyna — Distributed Version Control for Resource Catalogs]{style="color: #c25e30; font-size: 1.2em;"}
+
+<br/>
+
+*Questions?*
+
+<br/>
+
+[Built with Rust · Go · Python · Elm · WebAssembly · Nix]{style="color: #7a7570; font-size: 0.6em;"}
+
+:::
