@@ -206,17 +206,17 @@ This will run all the tests in the `tests` directory.
 
 ## 9. Related Projects
 
-*   [dyna-core](https://github.com/example/dyna-core): The core Rust library for the Dyna ecosystem.
-*   [dyna-cli](https://github.com/example/dyna-cli): A command-line interface for Dyna.
-*   [dyna-server](https://github.com/example/dyna-server): The Dyna server.
-*   [dyna-wasm](https://github.com/example/dyna-wasm): The WebAssembly module used by `dyna-app`.
-*   [dyna-py](https://github.com/example/dyna-py): Python bindings for Dyna.
-*   [dyna-go](https://github.com/example/dyna-go): Go client library for Dyna.
-*   [lazy-cat](https://github.com/example/lazy-cat): A lazy resource loader for Dyna.
-*   [lazy-go](https://github.com/example/lazy-go): A Go lazy resource loader for Dyna.
-*   [lazy-py](https://github.com/example/lazy-py): A Python lazy resource loader for Dyna.
-*   [lazy-wasm](https://github.com/example/lazy-wasm): A WebAssembly lazy resource loader for Dyna.
-*   [lazy-elm-demo](https://github.com/example/lazy-elm-demo): A demo application for `lazy-wasm`.
+*   **dyna-core**: The core Rust library for the Dyna ecosystem.
+*   **dyna-cli**: A command-line interface for Dyna.
+*   **dyna-server**: The Dyna server.
+*   **dyna-wasm**: The WebAssembly module used by `dyna-app`.
+*   **dyna-py**: Python bindings for Dyna.
+*   **dyna-go**: Go client library for Dyna.
+*   **lazy-cat**: A lazy resource loader for Dyna.
+*   **lazy-go**: A Go lazy resource loader for Dyna.
+*   **lazy-py**: A Python lazy resource loader for Dyna.
+*   **lazy-wasm**: A WebAssembly lazy resource loader for Dyna.
+*   **lazy-elm-demo**: A demo application for `lazy-wasm`.
 
 ## 10. Features
 

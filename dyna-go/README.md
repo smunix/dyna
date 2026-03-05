@@ -136,7 +136,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/spf13/afero"
+	"spf13/afero"
 	"your/project/path/dyna-go"
 )
 
@@ -185,8 +185,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gorilla/websocket"
-	"github.com/spf13/afero"
+	"gorilla/websocket"
+	"spf13/afero"
 	"your/project/path/dyna-go"
 )
 
@@ -237,7 +237,7 @@ func main() {
 To use `dyna-go` in your project, simply add it as a dependency in your `go.mod` file:
 
 ```sh
-go get github.com/dyna-proj/dyna-go
+go get dyna-go
 ```
 
 To build your application:
@@ -278,20 +278,20 @@ The tests use the `afero` in-memory filesystem and a mock HTTP server to test th
 
 ## 9. Related Projects
 
-*   [dyna-core](https://github.com/dyna-proj/dyna-core): The core Rust library for the Dyna ecosystem.
-*   [dyna-cli](https://github.com/dyna-proj/dyna-cli): A command-line interface for Dyna.
-*   [dyna-server](https://github.com/dyna-proj/dyna-server): The Dyna server implementation.
-*   [dyna-wasm](https://github.com/dyna-proj/dyna-wasm): A WebAssembly client for Dyna.
-*   [dyna-py](https://github.com/dyna-proj/dyna-py): A Python client for Dyna.
-*   [dyna-app](https://github.com/dyna-proj/dyna-app): A web-based UI for Dyna.
-*   [lazy-cat](https://github.com/dyna-proj/lazy-cat): A lazy resource loader for Dyna.
-*   [lazy-go](https://github.com/dyna-proj/lazy-go): A lazy resource loader for Dyna in Go.
-*   [lazy-py](https://github.com/dyna-proj/lazy-py): A lazy resource loader for Dyna in Python.
-*   [lazy-wasm](https://github.com/dyna-proj/lazy-wasm): A lazy resource loader for Dyna in WebAssembly.
-*   [lazy-elm-demo](https://github.com/dyna-proj/lazy-elm-demo): A demo application for `lazy-wasm`.
+*   **dyna-core**: The core Rust library for the Dyna ecosystem.
+*   **dyna-cli**: A command-line interface for Dyna.
+*   **dyna-server**: The Dyna server implementation.
+*   **dyna-wasm**: A WebAssembly client for Dyna.
+*   **dyna-py**: A Python client for Dyna.
+*   **dyna-app**: A web-based UI for Dyna.
+*   **lazy-cat**: A lazy resource loader for Dyna.
+*   **lazy-go**: A lazy resource loader for Dyna in Go.
+*   **lazy-py**: A lazy resource loader for Dyna in Python.
+*   **lazy-wasm**: A lazy resource loader for Dyna in WebAssembly.
+*   **lazy-elm-demo**: A demo application for `lazy-wasm`.
 
 ---
 
 This README provides a comprehensive overview of the `dyna-go` library, its architecture, API, and usage. It is intended to be a living document that will be updated as the library evolves. We welcome contributions and feedback from the community.
 
-For more information on the Dyna ecosystem, please refer to the main [Dyna project repository](https://github.com/dyna-proj).
+For more information on the Dyna ecosystem, please refer to the main **Dyna project repository**.

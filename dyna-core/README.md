@@ -326,14 +326,14 @@ cargo test
 
 ## Related Projects
 
-*   [dyna-cli](https://github.com/example/dyna-cli): A command-line interface for interacting with the Dyna system.
-*   [dyna-server](https://github.com/example/dyna-server): The server component of the Dyna system.
-*   [dyna-wasm](https://github.com/example/dyna-wasm): A WebAssembly build of `dyna-core` for use in web browsers.
-*   [dyna-py](https://github.com/example/dyna-py): Python bindings for `dyna-core`.
-*   [dyna-go](https://github.com/example/dyna-go): Go bindings for `dyna-core`.
-*   [dyna-app](https://github.com/example/dyna-app): A web application that uses `dyna-wasm` to provide a rich user interface for the Dyna system.
-*   [lazy-cat](https://github.com/example/lazy-cat): A lazy resource loader for Dyna.
-*   [lazy-go](https://github.com/example/lazy-go): A Go implementation of the lazy resource loader.
-*   [lazy-py](https://github.com/example/lazy-py): A Python implementation of the lazy resource loader.
-*   [lazy-wasm](https://github.com/example/lazy-wasm): A WebAssembly build of the lazy resource loader.
-*   [lazy-elm-demo](https://github.com/example/lazy-elm-demo): A demo application that showcases the capabilities of the lazy loader.
+*   **dyna-cli**: A command-line interface for interacting with the Dyna system.
+*   **dyna-server**: The server component of the Dyna system.
+*   **dyna-wasm**: A WebAssembly build of `dyna-core` for use in web browsers.
+*   **dyna-py**: Python bindings for `dyna-core`.
+*   **dyna-go**: Go bindings for `dyna-core`.
+*   **dyna-app**: A web application that uses `dyna-wasm` to provide a rich user interface for the Dyna system.
+*   **lazy-cat**: A lazy resource loader for Dyna.
+*   **lazy-go**: A Go implementation of the lazy resource loader.
+*   **lazy-py**: A Python implementation of the lazy resource loader.
+*   **lazy-wasm**: A WebAssembly build of the lazy resource loader.
+*   **lazy-elm-demo**: A demo application that showcases the capabilities of the lazy loader.

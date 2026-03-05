@@ -12,7 +12,7 @@ Dyna enables multiple users to concurrently edit a shared set of JSON resources 
 |-------|----------|-------------|
 | **dyna-core** | Rust | Shared library: models, diff/patch engine (RFC 6902), protocol types, compression, notifications. |
 | **dyna-cli** | Rust | Command-line client with VFS-abstracted local repository storage. |
-| **dyna-server** | Rust | Remote server built on [elfo-rs](https://github.com/elfo-rs/elfo) actors + Axum, with S3 storage and WebSocket notifications. |
+| **dyna-server** | Rust | Remote server built on elfo-rs actors + Axum, with S3 storage and WebSocket notifications. |
 | **dyna-wasm** | Rust → WASM | Full WebAssembly client for browser-based usage, with in-memory VFS and `web-sys` fetch/WebSocket. |
 | **dyna-app** | Elm | Browser UI that uses `dyna-wasm` for full collaborative JSON editing. |
 | **dyna-py** | Python (PyO3) | Python bindings that call directly into `dyna-cli`, with a `click`-based CLI. |

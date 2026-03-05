@@ -38,14 +38,14 @@ The design philosophy behind `lazy-elm-demo` is to serve as a living blueprint f
 To get the `lazy-elm-demo` application up and running, you will need to have the following prerequisites installed:
 
 *   [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html)
-*   [A running `dyna-server` instance](https://github.com/dyna-proj/dyna-server)
+*   **A running `dyna-server` instance**
 
 Once you have the prerequisites installed, you can follow these steps:
 
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/dyna-proj/lazy-elm-demo.git
+    git clone <repository>
     cd lazy-elm-demo
     ```
 
@@ -332,7 +332,7 @@ src/
 
 ## 11. Contributing
 
-Contributions to `lazy-elm-demo` are welcome! If you find a bug or have an idea for an improvement, please open an issue on the [GitHub repository](https://github.com/dyna-proj/lazy-elm-demo/issues). If you would like to contribute code, please fork the repository and submit a pull request.
+Contributions to `lazy-elm-demo` are welcome! If you find a bug or have an idea for an improvement, please open an issue on the **GitHub repository**. If you would like to contribute code, please fork the repository and submit a pull request.
 
 When contributing, please ensure that your code adheres to the existing style and that you have added appropriate tests.
 
@@ -346,9 +346,9 @@ When contributing, please ensure that your code adheres to the existing style an
 
 ## 13. Related Projects
 
-*   **[dyna-core](https://github.com/dyna-proj/dyna-core):** The core Rust library for the Dyna ecosystem.
-*   **[dyna-cli](https://github.com/dyna-proj/dyna-cli):** A command-line interface for interacting with a Dyna server.
-*   **[dyna-server](https://github.com/dyna-proj/dyna-server):** The `axum`-based HTTP server for the Dyna ecosystem.
-*   **[dyna-wasm](https://github.com/dyna-proj/dyna-wasm):** The WebAssembly client library for Dyna.
-*   **[lazy-cat](https://github.com/dyna-proj/lazy-cat):** A lazy resource loader for the Dyna ecosystem.
-*   **[lazy-wasm](https://github.com/dyna-proj/lazy-wasm):** The WebAssembly version of the lazy resource loader.
+*   ****dyna-core**:** The core Rust library for the Dyna ecosystem.
+*   ****dyna-cli**:** A command-line interface for interacting with a Dyna server.
+*   ****dyna-server**:** The `axum`-based HTTP server for the Dyna ecosystem.
+*   ****dyna-wasm**:** The WebAssembly client library for Dyna.
+*   ****lazy-cat**:** A lazy resource loader for the Dyna ecosystem.
+*   ****lazy-wasm**:** The WebAssembly version of the lazy resource loader.

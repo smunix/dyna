@@ -154,7 +154,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/dyna-project/lazy-go"
+	"lazy-go"
 )
 
 func main() {
@@ -224,17 +224,17 @@ go test ./...
 
 ## Related Projects
 
-*   [dyna-core](https://github.com/dyna-project/dyna-core): The core Rust library for the Dyna ecosystem.
-*   [dyna-cli](https://github.com/dyna-project/dyna-cli): A command-line interface for interacting with a Dyna server.
-*   [dyna-server](https://github.com/dyna-project/dyna-server): The main server implementation for the Dyna ecosystem.
-*   [dyna-wasm](https://github.com/dyna-project/dyna-wasm): A WebAssembly client for the Dyna ecosystem.
-*   [dyna-py](https://github.com/dyna-project/dyna-py): Python bindings for the Dyna ecosystem.
-*   [dyna-go](https://github.com/dyna-project/dyna-go): A Go client library for the Dyna ecosystem.
-*   [dyna-app](https://github.com/dyna-project/dyna-app): A web-based user interface for the Dyna ecosystem.
-*   [lazy-cat](https://github.com/dyna-project/lazy-cat): A Rust lazy resource loader for the Dyna ecosystem.
-*   [lazy-py](https://github.com/dyna-project/lazy-py): A Python lazy resource loader for the Dyna ecosystem.
-*   [lazy-wasm](https://github.com/dyna-project/lazy-wasm): A WebAssembly lazy resource loader for the Dyna ecosystem.
-*   [lazy-elm-demo](https://github.com/dyna-project/lazy-elm-demo): A demo application showcasing the use of `lazy-wasm`.
+*   **dyna-core**: The core Rust library for the Dyna ecosystem.
+*   **dyna-cli**: A command-line interface for interacting with a Dyna server.
+*   **dyna-server**: The main server implementation for the Dyna ecosystem.
+*   **dyna-wasm**: A WebAssembly client for the Dyna ecosystem.
+*   **dyna-py**: Python bindings for the Dyna ecosystem.
+*   **dyna-go**: A Go client library for the Dyna ecosystem.
+*   **dyna-app**: A web-based user interface for the Dyna ecosystem.
+*   **lazy-cat**: A Rust lazy resource loader for the Dyna ecosystem.
+*   **lazy-py**: A Python lazy resource loader for the Dyna ecosystem.
+*   **lazy-wasm**: A WebAssembly lazy resource loader for the Dyna ecosystem.
+*   **lazy-elm-demo**: A demo application showcasing the use of `lazy-wasm`.
 
 ### Detailed Architecture
 
@@ -304,7 +304,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/dyna-project/lazy-go"
+	"lazy-go"
 )
 
 func main() {

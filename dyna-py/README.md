@@ -182,17 +182,17 @@ pytest
 
 ## Related Projects
 
-*   [dyna-core](https://github.com/dyna-proj/dyna-core): The core Rust library for the Dyna system.
-*   [dyna-cli](https://github.com/dyna-proj/dyna-cli): The command-line interface for Dyna.
-*   [dyna-server](https://github.com/dyna-proj/dyna-server): The Dyna server.
-*   [dyna-wasm](https://github.com/dyna-proj/dyna-wasm): The WebAssembly client for Dyna.
-*   [dyna-go](https://github.com/dyna-proj/dyna-go): The Go client for Dyna.
-*   [dyna-app](https://github.com/dyna-proj/dyna-app): A web-based UI for Dyna.
-*   [lazy-cat](https://github.com/dyna-proj/lazy-cat): A lazy resource loader for Dyna.
-*   [lazy-go](https://github.com/dyna-proj/lazy-go): A lazy resource loader for Dyna in Go.
-*   [lazy-py](https://github.com/dyna-proj/lazy-py): A lazy resource loader for Dyna in Python.
-*   [lazy-wasm](https://github.com/dyna-proj/lazy-wasm): A lazy resource loader for Dyna in WebAssembly.
-*   [lazy-elm-demo](https://github.com/dyna-proj/lazy-elm-demo): A demo application for `lazy-wasm`.
+*   **dyna-core**: The core Rust library for the Dyna system.
+*   **dyna-cli**: The command-line interface for Dyna.
+*   **dyna-server**: The Dyna server.
+*   **dyna-wasm**: The WebAssembly client for Dyna.
+*   **dyna-go**: The Go client for Dyna.
+*   **dyna-app**: A web-based UI for Dyna.
+*   **lazy-cat**: A lazy resource loader for Dyna.
+*   **lazy-go**: A lazy resource loader for Dyna in Go.
+*   **lazy-py**: A lazy resource loader for Dyna in Python.
+*   **lazy-wasm**: A lazy resource loader for Dyna in WebAssembly.
+*   **lazy-elm-demo**: A demo application for `lazy-wasm`.
 
 ### The `dyna-py` CLI
 
@@ -323,7 +323,7 @@ To build `dyna-py` from source, you will need:
 Once you have these prerequisites, you can clone the `dyna-py` repository and build it:
 
 ```bash
-git clone https://github.com/dyna-proj/dyna-py.git
+git clone <repository>
 cd dyna-py
 maturin build --release
 ```

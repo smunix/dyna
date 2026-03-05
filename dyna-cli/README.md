@@ -189,17 +189,17 @@ cargo test
 
 ## 9. Related Projects
 
-*   [dyna-core](https://github.com/example/dyna-core): The core Rust library for the Dyna ecosystem.
-*   [dyna-server](https://github.com/example/dyna-server): The `axum`-based server for Dyna.
-*   [dyna-wasm](https://github.com/example/dyna-wasm): A WebAssembly client for using Dyna in the browser.
-*   [dyna-py](https://github.com/example/dyna-py): Python bindings for Dyna.
-*   [dyna-go](https://github.com/example/dyna-go): A Go client library for Dyna.
-*   [dyna-app](https://github.com/example/dyna-app): An Elm web UI for Dyna.
-*   [lazy-cat](https://github.com/example/lazy-cat): A lazy resource loader for Dyna.
-*   [lazy-go](https://github.com/example/lazy-go): A Go lazy resource loader for Dyna.
-*   [lazy-py](https://github.com/example/lazy-py): A Python lazy resource loader for Dyna.
-*   [lazy-wasm](https://github.com/example/lazy-wasm): A WebAssembly lazy resource loader for Dyna.
-*   [lazy-elm-demo](https://github.com/example/lazy-elm-demo): An Elm UI demo for `lazy-wasm`.
+*   **dyna-core**: The core Rust library for the Dyna ecosystem.
+*   **dyna-server**: The `axum`-based server for Dyna.
+*   **dyna-wasm**: A WebAssembly client for using Dyna in the browser.
+*   **dyna-py**: Python bindings for Dyna.
+*   **dyna-go**: A Go client library for Dyna.
+*   **dyna-app**: An Elm web UI for Dyna.
+*   **lazy-cat**: A lazy resource loader for Dyna.
+*   **lazy-go**: A Go lazy resource loader for Dyna.
+*   **lazy-py**: A Python lazy resource loader for Dyna.
+*   **lazy-wasm**: A WebAssembly lazy resource loader for Dyna.
+*   **lazy-elm-demo**: An Elm UI demo for `lazy-wasm`.
 
 ## 10. Advanced Usage
 

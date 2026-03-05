@@ -71,7 +71,7 @@ The primary goal of `lazy-wasm` is to provide a simple, yet powerful, interface 
 
 ## Getting Started
 
-To get started with `lazy-wasm`, you will need to have a Dyna server running. You can find instructions on how to set up a Dyna server in the [dyna-server](https://github.com/dyna-proj/dyna-server) repository.
+To get started with `lazy-wasm`, you will need to have a Dyna server running. You can find instructions on how to set up a Dyna server in the **dyna-server** repository.
 
 Once you have a Dyna server running, you can install `lazy-wasm` in your project:
 
@@ -310,14 +310,14 @@ This project adheres to the [Contributor Covenant Code of Conduct](https://www.c
 
 ## Related Projects
 
-*   [dyna-core](https://github.com/dyna-proj/dyna-core): Core Rust library for the Dyna ecosystem.
-*   [dyna-cli](https://github.com/dyna-proj/dyna-cli): Command-line interface for Dyna.
-*   [dyna-server](https://github.com/dyna-proj/dyna-server): Dyna server implementation.
-*   [dyna-wasm](https://github.com/dyna-proj/dyna-wasm): WebAssembly client for Dyna.
-*   [dyna-py](https://github.com/dyna-proj/dyna-py): Python client for Dyna.
-*   [dyna-go](https://github.com/dyna-proj/dyna-go): Go client for Dyna.
-*   [dyna-app](https://github.com/dyna-proj/dyna-app): Elm web application for Dyna.
-*   [lazy-cat](https://github.com/dyna-proj/lazy-cat): Lazy resource loader for Dyna.
-*   [lazy-go](https://github.com/dyna-proj/lazy-go): Go lazy resource loader for Dyna.
-*   [lazy-py](https://github.com/dyna-proj/lazy-py): Python lazy resource loader for Dyna.
-*   [lazy-elm-demo](https://github.com/dyna-proj/lazy-elm-demo): Elm demo application for `lazy-wasm`.
+*   **dyna-core**: Core Rust library for the Dyna ecosystem.
+*   **dyna-cli**: Command-line interface for Dyna.
+*   **dyna-server**: Dyna server implementation.
+*   **dyna-wasm**: WebAssembly client for Dyna.
+*   **dyna-py**: Python client for Dyna.
+*   **dyna-go**: Go client for Dyna.
+*   **dyna-app**: Elm web application for Dyna.
+*   **lazy-cat**: Lazy resource loader for Dyna.
+*   **lazy-go**: Go lazy resource loader for Dyna.
+*   **lazy-py**: Python lazy resource loader for Dyna.
+*   **lazy-elm-demo**: Elm demo application for `lazy-wasm`.

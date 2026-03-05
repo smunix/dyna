@@ -29,7 +29,6 @@ keywords = [
     "async",
 ]
 license = "Apache-2.0"
-repository = "https://github.com/manuel-woelker/rust-vfs"
 
 [package.metadata.docs.rs]
 features = [

@@ -1,7 +1,7 @@
 
 # `lazy-cat`: Lazy, On-Demand Resource Loader for Dyna
 
-`lazy-cat` is a high-performance, asynchronous resource loader for the [Dyna](https://github.com/dyna-proj) distributed CRUD system. It enables lazy, on-demand fetching of JSON resources and provides real-time updates through a persistent WebSocket connection.
+`lazy-cat` is a high-performance, asynchronous resource loader for the **Dyna** distributed CRUD system. It enables lazy, on-demand fetching of JSON resources and provides real-time updates through a persistent WebSocket connection.
 
 ## Problem Statement
 
@@ -293,10 +293,10 @@ Contributions are welcome! If you would like to contribute to `lazy-cat`, please
 
 `lazy-cat` is part of the broader Dyna ecosystem. Here are some other related projects:
 
-*   [dyna-core](https://github.com/dyna-proj/dyna-core): The core library for the Dyna ecosystem, containing shared data structures, protocols, and the patch engine.
-*   [dyna-cli](https://github.com/dyna-proj/dyna-cli): A command-line interface for interacting with a Dyna server.
-*   [dyna-server](https://github.com/dyna-proj/dyna-server): The reference implementation of the Dyna server.
-*   [lazy-go](https://github.com/dyna-proj/lazy-go): A Go implementation of the `lazy-cat` client.
-*   [lazy-py](https://github.com/dyna-proj/lazy-py): A Python implementation of the `lazy-cat` client.
-*   [lazy-wasm](https://github.com/dyna-proj/lazy-wasm): A WebAssembly version of the `lazy-cat` client for use in web browsers.
-*   [lazy-elm-demo](https://github.com/dyna-proj/lazy-elm-demo): A demonstration application showcasing the use of `lazy-wasm` in an Elm web application.
+*   **dyna-core**: The core library for the Dyna ecosystem, containing shared data structures, protocols, and the patch engine.
+*   **dyna-cli**: A command-line interface for interacting with a Dyna server.
+*   **dyna-server**: The reference implementation of the Dyna server.
+*   **lazy-go**: A Go implementation of the `lazy-cat` client.
+*   **lazy-py**: A Python implementation of the `lazy-cat` client.
+*   **lazy-wasm**: A WebAssembly version of the `lazy-cat` client for use in web browsers.
+*   **lazy-elm-demo**: A demonstration application showcasing the use of `lazy-wasm` in an Elm web application.

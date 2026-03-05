@@ -329,8 +329,6 @@ $ dyna log --changeset 2a8f3b4c --patches
 
 ## 12. References
 
-[1]: https://github.com/martinvonz/jj "Jujutsu GitHub Repository"
-[2]: https://martinvonz.github.io/jj/main/technical/design.html "Jujutsu Design Document"
 [3]: https://actoromicon.rs/ "The Actoromicon (elfo-rs documentation)"
 [4]: https://docs.rs/object_store "object-store Crate Documentation (docs.rs)"
 [5]: https://www.allthingsdistributed.com/2021/04/s3-strong-consistency.html "Diving Deep on S3 Consistency"

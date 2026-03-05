@@ -174,17 +174,17 @@ pytest
 
 ## 9. Related Projects
 
-*   [dyna-core](https://github.com/dyna-proj/dyna-core): The core Rust library for the Dyna system.
-*   [dyna-cli](https://github.com/dyna-proj/dyna-cli): A command-line interface for interacting with a Dyna repository.
-*   [dyna-server](https://github.com/dyna-proj/dyna-server): The `dyna-server` for the Dyna system.
-*   [dyna-wasm](https://github.com/dyna-proj/dyna-wasm): A WebAssembly client for Dyna.
-*   [dyna-py](https://github.com/dyna-proj/dyna-py): Python bindings for the core Dyna functionality.
-*   [dyna-go](https://github.com/dyna-proj/dyna-go): A Go client library for Dyna.
-*   [dyna-app](https://github.com/dyna-proj/dyna-app): A web-based UI for Dyna, built with Elm.
-*   [lazy-cat](https://github.com/dyna-proj/lazy-cat): A Rust implementation of the lazy resource loader.
-*   [lazy-go](https://github.com/dyna-proj/lazy-go): A Go implementation of the lazy resource loader.
-*   [lazy-wasm](https://github.com/dyna-proj/lazy-wasm): A WebAssembly implementation of the lazy resource loader.
-*   [lazy-elm-demo](https://github.com/dyna-proj/lazy-elm-demo): A demo application showcasing the use of `lazy-wasm` with Elm.
+*   **dyna-core**: The core Rust library for the Dyna system.
+*   **dyna-cli**: A command-line interface for interacting with a Dyna repository.
+*   **dyna-server**: The `dyna-server` for the Dyna system.
+*   **dyna-wasm**: A WebAssembly client for Dyna.
+*   **dyna-py**: Python bindings for the core Dyna functionality.
+*   **dyna-go**: A Go client library for Dyna.
+*   **dyna-app**: A web-based UI for Dyna, built with Elm.
+*   **lazy-cat**: A Rust implementation of the lazy resource loader.
+*   **lazy-go**: A Go implementation of the lazy resource loader.
+*   **lazy-wasm**: A WebAssembly implementation of the lazy resource loader.
+*   **lazy-elm-demo**: A demo application showcasing the use of `lazy-wasm` with Elm.
 
 | `connect()` | `url: str` | `None` | Establishes a WebSocket connection to the Dyna server at the given URL. |
 | `get()` | `resource_id: str` | `dict` | Fetches a single resource by its ID. This is a lazy operation; the resource is only fetched if it's not already in the local cache. |
@@ -289,13 +289,13 @@ pytest
 
 ## 9. Related Projects
 
-*   [dyna-core](https://github.com/dyna-proj/dyna-core): The core Rust library for the Dyna system.
-*   [dyna-server](https://github.com/dyna-proj/dyna-server): The `axum`-based HTTP and WebSocket server for Dyna.
-*   [dyna-py](https://github.com/dyna-proj/dyna-py): The underlying Python bindings for the Dyna core library.
-*   [lazy-cat](https://github.com/dyna-proj/lazy-cat): A similar lazy resource loader for Rust applications.
-*   [lazy-go](https://github.com/dyna-proj/lazy-go): A Go version of the lazy resource loader.
-*   [lazy-wasm](https://github.com/dyna-proj/lazy-wasm): A WebAssembly version for use in browsers.
-*   [lazy-elm-demo](https://github.com/dyna-proj/lazy-elm-demo): A demo Elm application that uses `lazy-wasm`.
+*   **dyna-core**: The core Rust library for the Dyna system.
+*   **dyna-server**: The `axum`-based HTTP and WebSocket server for Dyna.
+*   **dyna-py**: The underlying Python bindings for the Dyna core library.
+*   **lazy-cat**: A similar lazy resource loader for Rust applications.
+*   **lazy-go**: A Go version of the lazy resource loader.
+*   **lazy-wasm**: A WebAssembly version for use in browsers.
+*   **lazy-elm-demo**: A demo Elm application that uses `lazy-wasm`.
 
 
 ### Dependency on dyna-py

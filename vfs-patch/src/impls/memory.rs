@@ -502,7 +502,7 @@ mod tests {
         Ok(())
     }
 
-    // cf. https://github.com/manuel-woelker/rust-vfs/issues/70
+    // cf. rust-vfs issue #70
     #[test]
     fn flush_then_read_with_new_handle() {
         let root = VfsPath::new(MemoryFS::new());

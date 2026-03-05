@@ -269,7 +269,7 @@ Clients connect to `GET /api/v1/ws` and receive JSON text frames:
 
 ### Actor Model (elfo-rs)
 
-The server uses the [elfo](https://github.com/elfo-rs/elfo) actor framework for structured concurrency:
+The server uses the **elfo** actor framework for structured concurrency:
 
 | Actor Group | Responsibility | Messages Handled |
 |-------------|---------------|------------------|
