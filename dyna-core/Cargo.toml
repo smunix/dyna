@@ -1,0 +1,20 @@
+[package]
+name = "dyna-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Shared types, data model, patch engine, and protocol for the Dyna distributed CRUD system"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+itertools = { workspace = true }
+flate2 = { workspace = true }

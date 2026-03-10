@@ -1,0 +1,33 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "dyna-py"
+version = "0.1.0"
+description = "Python bindings for the Dyna distributed CRUD system"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = ["dyna", "crdt", "json", "distributed", "collaboration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Version Control",
+]
+
+[project.optional-dependencies]
+cli = ["click>=8.0"]
+
+[project.scripts]
+dyna-py = "dyna_py.cli:main"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "dyna_py._native"
+manifest-path = "Cargo.toml"
+python-source = "python"

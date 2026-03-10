@@ -1,0 +1,21 @@
+[package]
+name = "dyna-py"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Python bindings for the Dyna distributed CRUD system via PyO3"
+
+[lib]
+name = "dyna_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+dyna-core = { workspace = true }
+dyna-cli = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+itertools = { workspace = true }
+tokio = { workspace = true }
+pyo3 = { workspace = true, features = ["extension-module", "anyhow"] }

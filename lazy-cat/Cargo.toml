@@ -1,0 +1,30 @@
+[package]
+name = "lazy-cat"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Lazy, on-demand resource loader for Dyna with WebSocket live updates"
+
+[lib]
+name = "lazy_cat"
+path = "src/lib.rs"
+
+[[bin]]
+name = "demo"
+path = "examples/demo.rs"
+
+[dependencies]
+dyna-core = { workspace = true }
+dyna-cli = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+itertools = { workspace = true }
+vfs = "0.12"
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+toml = { workspace = true }
+tracing-subscriber = { workspace = true }

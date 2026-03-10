@@ -1,9 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "dyna-common",
+    "dyna-core",
     "dyna-cli",
     "dyna-server",
+    "dyna-wasm",
+    "dyna-py",
+    "lazy-cat",
+    "lazy-wasm",
 ]
 
 [workspace.package]
@@ -11,8 +15,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Dyna Contributors"]
 license = "MIT"
-repository = "https://github.com/smunix/dyna"
-description = "A Pijul-inspired distributed CRUD application for collaborative JSON resource editing"
+description = "A distributed CRUD application for collaborative JSON resource editing"
 
 [workspace.dependencies]
 # Serialization
@@ -44,12 +47,29 @@ anyhow = "1"
 # Bytes
 bytes = "1"
 
+# Compression
+flate2 = "1.0"
+
+# Itertools
+itertools = "0.13"
+
+# Allocators
+tikv-jemallocator = "0.6"
+mimalloc = "0.1"
+
 # HTTP
-axum = "0.7"
+axum = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
 
 # Object store (S3)
 object_store = { version = "0.11", features = ["aws"] }
 
+# PyO3
+pyo3 = { version = "0.23", features = ["extension-module"] }
+
 # Internal crates
-dyna-common = { path = "dyna-common" }
+dyna-core = { path = "dyna-core" }
+dyna-cli = { path = "dyna-cli" }
+
+[patch.crates-io]
+vfs = { path = "vfs-patch" }

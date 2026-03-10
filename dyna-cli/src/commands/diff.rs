@@ -9,7 +9,8 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use dyna_common::models::PatchOperation;
+use dyna_core::models::PatchOperation;
+use itertools::{izip, Itertools};
 use std::path::PathBuf;
 
 use crate::repository::Repository;
@@ -28,44 +29,42 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
     }
 
     // Optionally filter to a specific file
-    let filtered: Vec<_> = if let Some(ref filter_path) = path {
-        let filter_str = filter_path.display().to_string();
-        let abs_filter = if filter_path.is_absolute() {
-            filter_path.clone()
-        } else {
-            std::env::current_dir()?.join(filter_path)
-        };
-        let filter_resource_id = Repository::resource_id_from_path(&abs_filter);
+    let filtered = path
+        .as_ref()
+        .map(|filter_path| {
+            let filter_str = filter_path.display().to_string();
+            let abs_filter = filter_path
+                .is_absolute()
+                .then(|| filter_path.clone())
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(filter_path));
+            let filter_resource_id = repo.resource_id_from_path(&abs_filter);
 
-        staged
-            .iter()
-            .filter(|s| s.file_path == filter_str || s.resource_id == filter_resource_id)
-            .collect()
-    } else {
-        staged.iter().collect()
-    };
+            izip!(&staged)
+                .filter(|s| s.file_path == filter_str || s.resource_id == filter_resource_id)
+                .collect_vec()
+        })
+        .unwrap_or_else(|| izip!(&staged).collect_vec());
 
     if filtered.is_empty() {
-        if let Some(ref p) = path {
+        path.as_ref().map(|p| {
             println!(
                 "No staged changes found for '{}'.",
                 p.display().to_string().bold()
             );
-        }
+        });
         return Ok(());
     }
 
-    for (idx, change) in filtered.iter().enumerate() {
-        if idx > 0 {
-            println!("{}", "─".repeat(72).dimmed());
-        }
+    izip!(&filtered).enumerate().for_each(|(idx, change)| {
+        (idx > 0).then(|| println!("{}", "─".repeat(72).dimmed()));
 
         // Header
-        let status_label = if change.previous.is_none() {
-            "new file".green().bold()
-        } else {
-            "modified".yellow().bold()
-        };
+        let status_label = change
+            .previous
+            .is_none()
+            .then(|| "new file".green().bold())
+            .unwrap_or_else(|| "modified".yellow().bold());
+
         println!(
             "{} {}  (resource: {})",
             status_label,
@@ -77,47 +76,43 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
             change.operations.len().to_string().cyan()
         );
 
-        // Print each operation in detail
-        for (op_idx, op) in change.operations.iter().enumerate() {
-            print_operation(op_idx + 1, op);
-        }
+        // Print each operation
+        izip!(&change.operations)
+            .enumerate()
+            .for_each(|(op_idx, op)| print_operation(op_idx + 1, op));
 
         // Print a compact before/after summary for replace operations
-        let replaces: Vec<_> = change
-            .operations
-            .iter()
+        let replaces = izip!(&change.operations)
             .filter(|op| matches!(op, PatchOperation::Replace { .. }))
-            .collect();
-        if !replaces.is_empty() && change.previous.is_some() {
+            .collect_vec();
+
+        (!replaces.is_empty() && change.previous.is_some()).then(|| {
             println!("\n  {}:", "Value changes".underline());
-            for op in replaces {
+            izip!(&replaces).for_each(|op| {
                 if let PatchOperation::Replace { path, value } = op {
                     let old_value = change
                         .previous
                         .as_ref()
                         .and_then(|prev| resolve_json_pointer(prev, path));
+
                     println!("    {}:", path.bold());
-                    if let Some(old) = old_value {
-                        println!(
-                            "      {} {}",
-                            "-".red(),
-                            format_value_compact(&old).red()
-                        );
-                    }
+                    old_value.map(|old| {
+                        println!("      {} {}", "-".red(), format_value_compact(&old).red());
+                    });
                     println!(
                         "      {} {}",
                         "+".green(),
                         format_value_compact(value).green()
                     );
                 }
-            }
-        }
+            });
+        });
 
         println!();
-    }
+    });
 
     // Summary
-    let total_ops: usize = filtered.iter().map(|s| s.operations.len()).sum();
+    let total_ops: usize = izip!(&filtered).map(|s| s.operations.len()).sum();
     println!(
         "{}: {} file(s), {} total operation(s)",
         "Staged diff summary".bold(),
@@ -130,63 +125,27 @@ pub async fn execute(path: Option<PathBuf>) -> Result<()> {
 
 /// Print a single patch operation with formatting.
 fn print_operation(index: usize, op: &PatchOperation) {
+    let idx = index.to_string().dimmed();
     match op {
         PatchOperation::Add { path, value } => {
-            println!(
-                "  {}. {} {} {}",
-                index.to_string().dimmed(),
-                "ADD".green().bold(),
-                path.bold(),
-                "=".dimmed()
-            );
+            println!("  {}. {} {} {}", idx, "ADD".green().bold(), path.bold(), "=".dimmed());
             print_value_indented(value, 6);
         }
         PatchOperation::Remove { path } => {
-            println!(
-                "  {}. {} {}",
-                index.to_string().dimmed(),
-                "REMOVE".red().bold(),
-                path.bold()
-            );
+            println!("  {}. {} {}", idx, "REMOVE".red().bold(), path.bold());
         }
         PatchOperation::Replace { path, value } => {
-            println!(
-                "  {}. {} {} {}",
-                index.to_string().dimmed(),
-                "REPLACE".yellow().bold(),
-                path.bold(),
-                "=".dimmed()
-            );
+            println!("  {}. {} {} {}", idx, "REPLACE".yellow().bold(), path.bold(), "=".dimmed());
             print_value_indented(value, 6);
         }
         PatchOperation::Move { from, path } => {
-            println!(
-                "  {}. {} {} {} {}",
-                index.to_string().dimmed(),
-                "MOVE".blue().bold(),
-                from.bold(),
-                "->".dimmed(),
-                path.bold()
-            );
+            println!("  {}. {} {} {} {}", idx, "MOVE".blue().bold(), from.bold(), "->".dimmed(), path.bold());
         }
         PatchOperation::Copy { from, path } => {
-            println!(
-                "  {}. {} {} {} {}",
-                index.to_string().dimmed(),
-                "COPY".blue().bold(),
-                from.bold(),
-                "->".dimmed(),
-                path.bold()
-            );
+            println!("  {}. {} {} {} {}", idx, "COPY".blue().bold(), from.bold(), "->".dimmed(), path.bold());
         }
         PatchOperation::Test { path, value } => {
-            println!(
-                "  {}. {} {} {}",
-                index.to_string().dimmed(),
-                "TEST".magenta().bold(),
-                path.bold(),
-                "==".dimmed()
-            );
+            println!("  {}. {} {} {}", idx, "TEST".magenta().bold(), path.bold(), "==".dimmed());
             print_value_indented(value, 6);
         }
     }
@@ -194,11 +153,11 @@ fn print_operation(index: usize, op: &PatchOperation) {
 
 /// Print a JSON value with indentation.
 fn print_value_indented(value: &serde_json::Value, indent: usize) {
-    let formatted = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
     let prefix = " ".repeat(indent);
-    for line in formatted.lines() {
-        println!("{}{}", prefix, line);
-    }
+    serde_json::to_string_pretty(value)
+        .unwrap_or_else(|_| value.to_string())
+        .lines()
+        .for_each(|line| println!("{}{}", prefix, line));
 }
 
 /// Format a JSON value compactly for inline display.
@@ -208,24 +167,30 @@ fn format_value_compact(value: &serde_json::Value) -> String {
         serde_json::Value::Null => "null".to_string(),
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Number(n) => n.to_string(),
-        _ => {
-            let s = serde_json::to_string(value).unwrap_or_else(|_| value.to_string());
-            if s.len() > 80 {
-                format!("{}...", &s[..77])
-            } else {
-                s
-            }
-        }
+        _ => serde_json::to_string(value)
+            .unwrap_or_else(|_| value.to_string())
+            .chars()
+            .take(80)
+            .collect::<String>()
+            .pipe_truncate(80),
+    }
+}
+
+trait PipeTruncate {
+    fn pipe_truncate(self, max: usize) -> String;
+}
+
+impl PipeTruncate for String {
+    fn pipe_truncate(self, max: usize) -> String {
+        (self.len() > max)
+            .then(|| format!("{}...", &self[..max.saturating_sub(3)]))
+            .unwrap_or(self)
     }
 }
 
 /// Resolve a JSON Pointer (RFC 6901) against a JSON value.
-fn resolve_json_pointer<'a>(
-    value: &'a serde_json::Value,
-    pointer: &str,
-) -> Option<serde_json::Value> {
-    if pointer == "/" || pointer.is_empty() {
-        return Some(value.clone());
-    }
-    value.pointer(pointer).cloned()
+fn resolve_json_pointer(value: &serde_json::Value, pointer: &str) -> Option<serde_json::Value> {
+    (pointer == "/" || pointer.is_empty())
+        .then(|| value.clone())
+        .or_else(|| value.pointer(pointer).cloned())
 }

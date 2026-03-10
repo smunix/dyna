@@ -1,0 +1,17 @@
+# dyna-go v0.0.0 => ../dyna-go
+## explicit; go 1.23.0
+dyna-go/dynago
+# github.com/gorilla/websocket v1.5.3
+## explicit; go 1.12
+github.com/gorilla/websocket
+# github.com/spf13/afero v1.15.0
+## explicit; go 1.23.0
+github.com/spf13/afero
+github.com/spf13/afero/internal/common
+github.com/spf13/afero/mem
+# golang.org/x/text v0.28.0
+## explicit; go 1.23.0
+golang.org/x/text/runes
+golang.org/x/text/transform
+golang.org/x/text/unicode/norm
+# dyna-go => ../dyna-go

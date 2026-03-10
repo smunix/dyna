@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dyna — Collaborative JSON Editor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="elm-root"></div>
+
+    <!-- Elm application -->
+    <script src="elm.js"></script>
+
+    <!-- dyna-wasm bindings -->
+    <script type="module">
+        // -----------------------------------------------------------------
+        // Boot the Elm app immediately — do NOT gate on WASM loading.
+        // WASM ports are wired up asynchronously once the module loads.
+        // -----------------------------------------------------------------
+        const app = Elm.Main.init({
+            node: document.getElementById('elm-root'),
+            flags: {
+                serverUrl: window.DYNA_SERVER_URL || 'http://localhost:8080'
+            }
+        });
+
+        // Helper: send an error result to a port
+        function sendError(port, msg) {
+            if (port) port.send({ success: false, error: msg });
+        }
+
+        // -----------------------------------------------------------------
+        // WASM loading — best-effort, non-blocking
+        // -----------------------------------------------------------------
+        let client = null;
+
+        async function loadWasm() {
+            try {
+                const { default: init, DynaClient } = await import('./pkg/dyna_wasm.js');
+                await init();
+                client = new DynaClient();
+                console.log('[dyna] WASM module loaded successfully');
+            } catch (e) {
+                console.warn('[dyna] WASM module not available:', e.message);
+                console.warn('[dyna] The UI will render but repository operations will not work.');
+            }
+        }
+
+        // Start loading WASM in the background
+        const wasmReady = loadWasm();
+
+        // Helper: ensure WASM is loaded before calling client methods
+        function requireClient(errorPort) {
+            if (!client) {
+                const msg = 'WASM module not loaded. Ensure the pkg/ directory contains dyna_wasm.js and dyna_wasm_bg.wasm.';
+                console.error('[dyna]', msg);
+                if (errorPort) sendError(errorPort, msg);
+                return false;
+            }
+            return true;
+        }
+
+        // -----------------------------------------------------------------
+        // Elm → JS ports (commands)
+        // -----------------------------------------------------------------
+
+        function safeSub(portName, fn) {
+            const port = app.ports[portName];
+            if (port && typeof port.subscribe === 'function') {
+                port.subscribe(fn);
+            } else {
+                console.debug('[dyna] port', portName, 'not available (unused by Elm) — skipping');
+            }
+        }
+
+        safeSub('initRepo', async function(url) {
+            await wasmReady;
+            if (!requireClient(app.ports.onInitResult)) return;
+            try {
+                client.init_repo(url);
+                app.ports.onInitResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onInitResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('cloneRepo', async function(url) {
+            await wasmReady;
+            if (!requireClient(app.ports.onCloneResult)) return;
+            try {
+                await client.clone_repo(url);
+                app.ports.onCloneResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onCloneResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('writeFile', async function(args) {
+            await wasmReady;
+            if (!requireClient(app.ports.onWriteResult)) return;
+            try {
+                client.write_file(args.path, args.content);
+                app.ports.onWriteResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onWriteResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('readFile', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onReadResult)) return;
+            try {
+                const path = resourceId.replace(/\./g, '/') + '.json';
+                const content = client.read_file(path);
+                app.ports.onReadResult.send({ resourceId: resourceId, content: content, error: null });
+            } catch (e) {
+                app.ports.onReadResult.send({ resourceId: resourceId, content: null, error: e.message });
+            }
+        });
+
+        safeSub('deleteFile', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onDeleteResult)) return;
+            try {
+                const path = resourceId.replace(/\./g, '/') + '.json';
+                client.delete_file(path);
+                app.ports.onDeleteResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onDeleteResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('addFile', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onAddResult)) return;
+            try {
+                const path = resourceId.replace(/\./g, '/') + '.json';
+                client.add(path);
+                app.ports.onAddResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onAddResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('addDelete', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onAddResult)) return;
+            try {
+                const path = resourceId.replace(/\./g, '/') + '.json';
+                client.add_delete(path);
+                app.ports.onAddResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onAddResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('stageAll', async function(_) {
+            await wasmReady;
+            if (!requireClient(app.ports.onStageAllResult)) return;
+            try {
+                // Get all working directory files
+                const filesJson = client.list_files();
+                const files = JSON.parse(filesJson);
+                // Get current status to know which are already staged
+                const statusJson = client.status();
+                const status = JSON.parse(statusJson);
+                const stagedPaths = (status.staged || []).map(s => s.file_path);
+                let count = 0;
+                // Stage each working file that isn't already staged
+                for (const filePath of files) {
+                    if (!stagedPaths.includes(filePath)) {
+                        try {
+                            client.add(filePath);
+                            count++;
+                        } catch (e) {
+                            console.warn('Failed to stage ' + filePath + ': ' + e.message);
+                        }
+                    }
+                }
+                // Also stage deletions
+                for (const resourceId of (status.deleted || [])) {
+                    try {
+                        const path = resourceId.replace(/\./g, '/') + '.json';
+                        client.add_delete(path);
+                        count++;
+                    } catch (e) {
+                        console.warn('Failed to stage deletion ' + resourceId + ': ' + e.message);
+                    }
+                }
+                app.ports.onStageAllResult.send({ success: true, count: count, error: null });
+            } catch (e) {
+                app.ports.onStageAllResult.send({ success: false, count: 0, error: e.message });
+            }
+        });
+
+        safeSub('unstageResource', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onUnstageResult)) return;
+            try {
+                client.unstage(resourceId);
+                app.ports.onUnstageResult.send({ success: true, message: "Unstaged '" + resourceId + "'.", error: null });
+            } catch (e) {
+                app.ports.onUnstageResult.send({ success: false, message: null, error: e.message });
+            }
+        });
+
+        safeSub('unstageAll', async function(_) {
+            await wasmReady;
+            if (!requireClient(app.ports.onUnstageResult)) return;
+            try {
+                const count = client.unstage_all();
+                app.ports.onUnstageResult.send({ success: true, message: 'Unstaged ' + count + ' resource(s).', error: null });
+            } catch (e) {
+                app.ports.onUnstageResult.send({ success: false, message: null, error: e.message });
+            }
+        });
+
+        safeSub('deleteChannel', async function(data) {
+            await wasmReady;
+            if (!requireClient(app.ports.onDeleteChannelResult)) return;
+            try {
+                const name = data.name;
+                const force = data.force;
+                if (name === 'main') {
+                    app.ports.onDeleteChannelResult.send({ success: false, channel: name, error: "Cannot delete the 'main' channel: it is protected." });
+                    return;
+                }
+                if (!force) {
+                    // Check if promoted to main
+                    try {
+                        const promoted = client.is_promoted_to_main(name);
+                        if (!promoted) {
+                            app.ports.onDeleteChannelResult.send({ success: false, channel: name, error: "Channel '" + name + "' has not been fully promoted to main. Use Force Delete to delete anyway." });
+                            return;
+                        }
+                    } catch (e) {
+                        // If check fails, proceed with caution
+                    }
+                }
+                client.delete_channel(name);
+                app.ports.onDeleteChannelResult.send({ success: true, channel: name, error: null });
+            } catch (e) {
+                app.ports.onDeleteChannelResult.send({ success: false, channel: data.name, error: e.message });
+            }
+        });
+
+        safeSub('requestStatus', async function(_) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onStatusResult.send({
+                    channel: 'unknown',
+                    staged: [],
+                    modified: [],
+                    deleted: [],
+                    unstaged_on_staged: [],
+                    conflicts: []
+                });
+                return;
+            }
+            try {
+                const status = JSON.parse(client.status());
+                app.ports.onStatusResult.send(status);
+            } catch (e) {
+                app.ports.onStatusResult.send({
+                    channel: 'unknown',
+                    staged: [],
+                    modified: [],
+                    deleted: [],
+                    unstaged_on_staged: [],
+                    conflicts: []
+                });
+            }
+        });
+
+        safeSub('commitChanges', async function(message) {
+            await wasmReady;
+            if (!requireClient(app.ports.onCommitResult)) return;
+            try {
+                const changeId = client.commit(message);
+                app.ports.onCommitResult.send({ success: true, changeId: changeId, error: null });
+            } catch (e) {
+                app.ports.onCommitResult.send({ success: false, changeId: null, error: e.message });
+            }
+        });
+
+        safeSub('pushChanges', async function(_) {
+            await wasmReady;
+            if (!requireClient(app.ports.onPushResult)) return;
+            try {
+                await client.push();
+                app.ports.onPushResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onPushResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('promoteChanges', async function(channel) {
+            await wasmReady;
+            if (!requireClient(app.ports.onPromoteResult)) return;
+            try {
+                const source = channel || 'main';
+                await client.promote(source, 'main');
+                app.ports.onPromoteResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onPromoteResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('requestChannels', async function(_) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onChannelsResult.send([]);
+                return;
+            }
+            try {
+                const channels = JSON.parse(client.list_channels());
+                app.ports.onChannelsResult.send(channels);
+            } catch (e) {
+                app.ports.onChannelsResult.send([]);
+            }
+        });
+
+        safeSub('createChannel', async function(name) {
+            await wasmReady;
+            if (!requireClient(app.ports.onCreateChannelResult)) return;
+            try {
+                client.create_channel(name);
+                app.ports.onCreateChannelResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onCreateChannelResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('switchChannel', async function(name) {
+            await wasmReady;
+            if (!requireClient(app.ports.onSwitchChannelResult)) return;
+            try {
+                client.switch_channel(name);
+                app.ports.onSwitchChannelResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onSwitchChannelResult.send({ success: false, error: e.message });
+            }
+        });
+
+        safeSub('requestLog', async function(_limit) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onLogResult.send([]);
+                return;
+            }
+            try {
+                const log = JSON.parse(client.log());
+                app.ports.onLogResult.send(log);
+            } catch (e) {
+                app.ports.onLogResult.send([]);
+            }
+        });
+
+        safeSub('requestHistory', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onHistoryResult.send({ resource_id: resourceId, entries: [], error: 'WASM not loaded' });
+                return;
+            }
+            try {
+                const history = JSON.parse(await client.resource_history(resourceId));
+                app.ports.onHistoryResult.send(history);
+            } catch (e) {
+                app.ports.onHistoryResult.send({ resource_id: resourceId, entries: [], error: e.message });
+            }
+        });
+
+        safeSub('listFiles', async function(_) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onListFilesResult.send([]);
+                return;
+            }
+            try {
+                const files = JSON.parse(client.list_files());
+                app.ports.onListFilesResult.send(files);
+            } catch (e) {
+                app.ports.onListFilesResult.send([]);
+            }
+        });
+
+        safeSub('setUser', async function(args) {
+            await wasmReady;
+            if (!requireClient(null)) return;
+            try {
+                client.set_user(args.name, args.email);
+                console.log('[dyna] User set to:', args.name);
+            } catch (e) {
+                console.error('[dyna] Failed to set user:', e.message);
+            }
+        });
+
+        safeSub('listSnapshots', async function(_) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onListSnapshotsResult.send([]);
+                return;
+            }
+            try {
+                const snapshots = JSON.parse(client.list_snapshots());
+                app.ports.onListSnapshotsResult.send(snapshots);
+            } catch (e) {
+                app.ports.onListSnapshotsResult.send([]);
+            }
+        });
+
+        // -----------------------------------------------------------------
+        // New ports for features
+        // -----------------------------------------------------------------
+
+        // Get snapshot content for tooltip
+        safeSub('getSnapshot', async function(resourceId) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onSnapshotResult.send({ resourceId: resourceId, content: '', error: 'WASM not loaded' });
+                return;
+            }
+            try {
+                const content = client.get_snapshot(resourceId);
+                app.ports.onSnapshotResult.send({ resourceId: resourceId, content: content, error: null });
+            } catch (e) {
+                // Try reading from working directory instead
+                try {
+                    const path = resourceId.replace(/\./g, '/') + '.json';
+                    const content = client.read_file(path);
+                    app.ports.onSnapshotResult.send({ resourceId: resourceId, content: content, error: null });
+                } catch (e2) {
+                    app.ports.onSnapshotResult.send({ resourceId: resourceId, content: '', error: e.message });
+                }
+            }
+        });
+
+        // Cherry-pick a changeset
+        safeSub('cherryPick', async function(changeId) {
+            await wasmReady;
+            if (!requireClient(app.ports.onCherryPickResult)) return;
+            try {
+                const newId = client.cherry_pick(changeId);
+                app.ports.onCherryPickResult.send({ success: true, changeId: newId, error: null });
+            } catch (e) {
+                app.ports.onCherryPickResult.send({ success: false, changeId: null, error: e.message });
+            }
+        });
+
+        // Restore resource from another channel
+        safeSub('restoreFromChannel', async function(args) {
+            await wasmReady;
+            if (!requireClient(app.ports.onRestoreResult)) return;
+            try {
+                const path = args.resourceId.replace(/\./g, '/') + '.json';
+                client.restore_from_channel(path, args.channel);
+                app.ports.onRestoreResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onRestoreResult.send({ success: false, error: e.message });
+            }
+        });
+
+        // Restore resource from a specific changeset
+        safeSub('restoreFromChangeset', async function(args) {
+            await wasmReady;
+            if (!requireClient(app.ports.onRestoreResult)) return;
+            try {
+                client.restore_from_changeset(args.resourceId, args.changeId);
+                app.ports.onRestoreResult.send({ success: true, error: null });
+            } catch (e) {
+                app.ports.onRestoreResult.send({ success: false, error: e.message });
+            }
+        });
+
+        // Get changeset details
+        safeSub('getChangeset', async function(changeId) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onChangesetResult.send({ error: 'WASM not loaded' });
+                return;
+            }
+            try {
+                const cs = JSON.parse(client.get_changeset(changeId));
+                app.ports.onChangesetResult.send(cs);
+            } catch (e) {
+                app.ports.onChangesetResult.send({ error: e.message });
+            }
+        });
+
+        // Get log for a specific channel
+        safeSub('logForChannel', async function(channelName) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onChannelLogResult.send([]);
+                return;
+            }
+            try {
+                const log = JSON.parse(client.log_for_channel(channelName));
+                app.ports.onChannelLogResult.send(log);
+            } catch (e) {
+                app.ports.onChannelLogResult.send([]);
+            }
+        });
+
+        // List resources in a specific channel
+        safeSub('listChannelResources', async function(channelName) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onChannelResourcesResult.send([]);
+                return;
+            }
+            try {
+                const resources = JSON.parse(client.list_channel_resources(channelName));
+                app.ports.onChannelResourcesResult.send(resources);
+            } catch (e) {
+                app.ports.onChannelResourcesResult.send([]);
+            }
+        });
+
+        // Get snapshot from a specific channel (for preview)
+        safeSub('getSnapshotFromChannel', async function(args) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onSnapshotFromChannelResult.send({ content: '', error: 'WASM not loaded' });
+                return;
+            }
+            try {
+                const content = client.get_snapshot_from_channel(args.resourceId, args.channel);
+                app.ports.onSnapshotFromChannelResult.send({ resourceId: args.resourceId, content: content, error: null });
+            } catch (e) {
+                app.ports.onSnapshotFromChannelResult.send({ resourceId: args.resourceId, content: '', error: e.message });
+            }
+        });
+
+        // Pull a remote channel: create locally, switch to it, pull from remote
+        safeSub('pullChannel', async function(channelName) {
+            await wasmReady;
+            if (!requireClient(app.ports.onPullChannelResult)) return;
+            try {
+                // 1. Create the channel locally (ignore error if it already exists)
+                try {
+                    client.create_channel(channelName, null);
+                } catch (e) {
+                    // Channel may already exist locally, that's fine
+                    console.log('[dyna] Channel may already exist locally:', e.message);
+                }
+
+                // 2. Switch to the new channel
+                client.switch_channel(channelName);
+
+                // 3. Pull changesets from the remote server
+                const result = await client.pull();
+                const pullInfo = JSON.parse(result);
+
+                app.ports.onPullChannelResult.send({
+                    success: true,
+                    channel: channelName,
+                    pulled: pullInfo.pulled || 0,
+                    error: null
+                });
+            } catch (e) {
+                app.ports.onPullChannelResult.send({
+                    success: false,
+                    channel: channelName,
+                    pulled: 0,
+                    error: e.message
+                });
+            }
+        });
+
+        // Sync main channel: pull main from remote without switching away from current channel
+        safeSub('syncMain', async function(_) {
+            await wasmReady;
+            if (!requireClient(app.ports.onSyncMainResult)) return;
+            try {
+                // 1. Remember current channel
+                const statusJson = client.status();
+                const status = JSON.parse(statusJson);
+                const currentChannel = status.channel;
+
+                // 2. Create main locally if it doesn't exist
+                try {
+                    client.create_channel('main', null);
+                } catch (e) {
+                    // main may already exist locally
+                }
+
+                // 3. Switch to main
+                client.switch_channel('main');
+
+                // 4. Pull from remote
+                let pulled = 0;
+                try {
+                    const result = await client.pull();
+                    const pullInfo = JSON.parse(result);
+                    pulled = pullInfo.pulled || 0;
+                } catch (e) {
+                    console.log('[dyna] syncMain pull error (may be no remote):', e.message);
+                }
+
+                // 5. Switch back to original channel
+                if (currentChannel && currentChannel !== 'main') {
+                    client.switch_channel(currentChannel);
+                }
+
+                app.ports.onSyncMainResult.send({
+                    success: true,
+                    pulled: pulled,
+                    error: null
+                });
+            } catch (e) {
+                // Try to switch back to original channel on error
+                try {
+                    const statusJson = client.status();
+                    const status = JSON.parse(statusJson);
+                    // Already switched back or still on original
+                } catch (_) {}
+                app.ports.onSyncMainResult.send({
+                    success: false,
+                    pulled: 0,
+                    error: e.message
+                });
+            }
+        });
+
+        // List remote channels
+        safeSub('listRemoteChannels', async function(_) {
+            await wasmReady;
+            if (!requireClient(null)) {
+                app.ports.onRemoteChannelsResult.send([]);
+                return;
+            }
+            try {
+                const channels = JSON.parse(await client.list_remote_channels());
+                app.ports.onRemoteChannelsResult.send(channels);
+            } catch (e) {
+                console.warn('[dyna] Failed to fetch remote channels:', e.message);
+                app.ports.onRemoteChannelsResult.send([]);
+            }
+        });
+
+        // -----------------------------------------------------------------
+        // WebSocket notifications
+        // -----------------------------------------------------------------
+        let ws = null;
+        safeSub('connectNotifications', async function(_) {
+            await wasmReady;
+            if (!requireClient(null)) return;
+            try {
+                ws = client.subscribe_notifications(function(json) {
+                    app.ports.onNotification.send(json);
+                });
+            } catch (e) {
+                console.error('[dyna] WebSocket connect failed:', e);
+            }
+        });
+
+        safeSub('disconnectNotifications', function(_) {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        });
+    </script>
+</body>
+</html>

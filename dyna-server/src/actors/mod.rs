@@ -1,5 +1,10 @@
-//! Actor implementations for the Dyna server.
+//! Actor implementations for the Dyna remote server.
+//!
+//! The server is organized into three elfo actor groups:
+//! - [`api`]: HTTP bridge (axum) for CLI client communication.
+//! - [`changeset`]: Core business logic for changeset operations.
+//! - [`storage`]: S3-compatible persistent storage via `object_store`.
 
 pub mod storage;
-pub mod changeset_manager;
-pub mod api_gateway;
+pub mod changeset;
+pub mod api;

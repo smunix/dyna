@@ -3,3 +3,14 @@
 *.pdb
 .dyna/
 .env
+dyna-app/elm-stuff/
+dyna-app/public/elm.js
+
+# Nix
+result
+result-*
+.direnv/
+
+# WASM build output
+pkg/
+lazy-elm-demo/elm-stuff/

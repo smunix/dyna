@@ -1,15 +1,19 @@
 //! Elfo message definitions for inter-actor communication.
 //!
-//! These messages define the protocol between the API Gateway actor,
-//! the Changeset Manager actor, and the S3 Storage actor.
+//! These messages define the typed protocol between the three actor groups:
+//! - **API → Changeset**: `HandlePush`, `HandlePull`,
+//!   `HandleClone`, `HandlePromote`, `HandleGetChangeset`, `HandleListChannels`.
+//! - **Changeset → Storage**: `StoreChangeset`, `LoadChangeset`,
+//!   `StoreChannel`, `LoadChannel`, `ListChannels`.
 //!
-//! Note: elfo's `#[message]` macro automatically derives Serialize and
-//! Deserialize, so we must not derive them again.
+//! All messages use elfo's `#[message]` macro for automatic serialization
+//! and routing. The protocol is **changeset-centric**: push, pull, clone,
+//! and promote operations exchange [`Changeset`] objects.
 
-use dyna_common::models::{Channel, Patch};
-use dyna_common::protocol::{
-    CloneResponse, CreateChannelResponse, ListChannelsResponse, PromoteResponse, PullResponse,
-    PushResponse,
+use dyna_core::models::{Changeset, Channel};
+use dyna_core::protocol::{
+    CloneResponse, CreateChannelResponse, DeleteChannelResponse, ListChannelsResponse,
+    PromoteResponse, PullResponse, PushResponse, ResourceHistoryResponse,
 };
 use elfo::prelude::*;
 
@@ -17,27 +21,27 @@ use elfo::prelude::*;
 // Storage Actor Messages
 // ---------------------------------------------------------------------------
 
-/// Store a patch in S3.
-#[message(ret = StorePatchResult)]
-pub struct StorePatch {
-    pub patch: Patch,
+/// Store a changeset in S3.
+#[message(ret = StoreChangesetResult)]
+pub struct StoreChangeset {
+    pub changeset: Changeset,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum StorePatchResult {
+pub enum StoreChangesetResult {
     Ok,
     Error(String),
 }
 
-/// Load a patch from S3 by hash.
-#[message(ret = LoadPatchResult)]
-pub struct LoadPatch {
-    pub hash: String,
+/// Load a changeset from S3 by change_id.
+#[message(ret = LoadChangesetResult)]
+pub struct LoadChangeset {
+    pub change_id: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum LoadPatchResult {
-    Ok(Patch),
+pub enum LoadChangesetResult {
+    Ok(Changeset),
     NotFound,
     Error(String),
 }
@@ -67,6 +71,18 @@ pub enum LoadChannelResult {
     Error(String),
 }
 
+/// Delete a channel from S3.
+#[message(ret = DeleteChannelStorageResult)]
+pub struct DeleteChannelStorage {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum DeleteChannelStorageResult {
+    Ok,
+    Error(String),
+}
+
 /// List all channels in S3.
 #[message(ret = ListChannelsResult)]
 pub struct ListAllChannels;
@@ -80,6 +96,7 @@ pub enum ListChannelsResult {
 /// Save a resource snapshot to S3.
 #[message(ret = SaveSnapshotResult)]
 pub struct SaveSnapshot {
+    pub channel: String,
     pub resource_id: String,
     pub value: serde_json::Value,
 }
@@ -93,6 +110,7 @@ pub enum SaveSnapshotResult {
 /// Load a resource snapshot from S3.
 #[message(ret = LoadSnapshotResult)]
 pub struct LoadSnapshot {
+    pub channel: String,
     pub resource_id: String,
 }
 
@@ -105,7 +123,9 @@ pub enum LoadSnapshotResult {
 
 /// Load all resource snapshots from S3.
 #[message(ret = LoadAllSnapshotsResult)]
-pub struct LoadAllSnapshots;
+pub struct LoadAllSnapshots {
+    pub channel: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum LoadAllSnapshotsResult {
@@ -114,22 +134,22 @@ pub enum LoadAllSnapshotsResult {
 }
 
 // ---------------------------------------------------------------------------
-// Changeset Manager Messages
+// Changeset Messages
 // ---------------------------------------------------------------------------
 
-/// Handle a push request from a client.
+/// Handle a push request from a client (changeset-based).
 #[message(ret = PushResponse)]
 pub struct HandlePush {
     pub channel: String,
-    pub patches: Vec<Patch>,
+    pub changesets: Vec<Changeset>,
     pub expected_head: Option<String>,
 }
 
-/// Handle a pull request from a client.
+/// Handle a pull request from a client (changeset-based).
 #[message(ret = PullResponse)]
 pub struct HandlePull {
     pub channel: String,
-    pub since_hash: Option<String>,
+    pub since_change_id: Option<String>,
 }
 
 /// Handle a clone request from a client.
@@ -138,7 +158,7 @@ pub struct HandleClone {
     pub channel: Option<String>,
 }
 
-/// Handle a promote request.
+/// Handle a promote request (changeset-based).
 #[message(ret = PromoteResponse)]
 pub struct HandlePromote {
     pub source_channel: String,
@@ -155,3 +175,21 @@ pub struct HandleCreateChannel {
 /// Handle a list channels request.
 #[message(ret = ListChannelsResponse)]
 pub struct HandleListChannels;
+
+/// Handle a get changeset detail request.
+#[message(ret = dyna_core::protocol::GetChangesetResponse)]
+pub struct HandleGetChangeset {
+    pub change_id: String,
+}
+
+/// Handle a resource history query.
+#[message(ret = ResourceHistoryResponse)]
+pub struct HandleResourceHistory {
+    pub resource_id: String,
+}
+
+/// Handle a delete channel request.
+#[message(ret = DeleteChannelResponse)]
+pub struct HandleDeleteChannel {
+    pub body: dyna_core::protocol::DeleteChannelRequest,
+}
